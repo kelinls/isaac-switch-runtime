@@ -1,0 +1,31 @@
+{
+  "schema": "isaac-layout-table/1",
+  "build_id": "91C73FDD575061318D68886316AFEAC72388B2AB",
+  "struct": "Room",
+  "source_table": "room",
+  "note": [
+    "Room 目前只登记**已经拿到硬证据**的字段：引擎自己的 Room::WorldToScreenPosition 里就把滚动偏移",
+    "当成 Room + 0x1938 用（先 mov w8, #0x1938 再 add x1, x19, x8，把该字段的**地址**交给",
+    "Vector2::operator+）—— 这是「取地址传参」形态，不是 ldr [x19,#…]。",
+    "confidence 沿用 room_descriptor.json 的口径：confirmed 才允许对外暴露成 API。"
+  ],
+  "rows": [
+    {
+      "name": "RenderScrollOffset",
+      "kind": "vector2",
+      "offset": 6456,
+      "width": 16,
+      "confidence": "confirmed",
+      "semantic": "房间渲染的滚动偏移向量（PC 侧 Room:GetRenderScrollOffset()）。世界坐标转屏幕坐标时先加它、再加 Game 的渲染位置",
+      "evidence": [
+        {
+          "function": "_ZNK15IsaacRepentance4Room21WorldToScreenPositionEN4KAGE4Math7Vector2E",
+          "address": "0x0048937c",
+          "offset": 6456,
+          "width": 0,
+          "why": "该函数把 Room + 0x1938 的地址传给 Vector2::operator+（前一条指令 mov w8, #0x1938 给出偏移）⇒ 这个字段就是房间的渲染滚动偏移；紧随其后又加上 Game + 0x24F9B0 的向量才得到屏幕坐标"
+        }
+      ]
+    }
+  ]
+}

@@ -43,6 +43,14 @@ void SetLevelIsAscentBinding(uintptr_t method);
 //   一次发布，两个都是"可选能力"——任一个为 0 时对应 handler 报"绑定不可用"，
 //   绝不返回编造的值（`Level:GetAbsoluteStage()` 编个 0 会让 Mod 以为"在第一层"）。
 void SetLevelGetAbsoluteStageBinding(uintptr_t method);
+// `Room:WorldToScreenPosition()` 用的引擎函数（PLT 桩）。宿主上由注入的实现替代。
+[[nodiscard]] uintptr_t GetRenderPositionThunk() noexcept;
+void SetGetRenderPositionBinding(uintptr_t method);
+#if !defined(__SWITCH__)
+using RenderPositionHostFunction = void (*)(const float* input, float* output, bool useCamera);
+void SetGetRenderPositionHostFunction(RenderPositionHostFunction function) noexcept;
+[[nodiscard]] RenderPositionHostFunction GetRenderPositionHostFunction() noexcept;
+#endif
 void SetLevelIsNextStageAvailableBinding(uintptr_t method);
 void SetItemPoolGetCollectibleBinding(uintptr_t method);
 void SetMusicBindings(uintptr_t getCurrentMusicId, uintptr_t pause, uintptr_t resume);

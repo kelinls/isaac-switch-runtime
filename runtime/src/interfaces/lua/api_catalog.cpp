@@ -200,6 +200,17 @@ constexpr LuaApiDescriptor kDefaultApis[] = {
      ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
     {MakeId(ApiDomain::Room, 1, 0x0007), ApiDomain::Room, "Room", "GetGridEntity", kV1, 0,
      ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    // 2026-09-15：`Room:GetRenderScrollOffset()` —— EID 用到而运行时里没有的一条。
+    // 偏移 `+0x1938` 的证据在布局表 `tools/layout_tables/room`（引擎自己的
+    // `Room::WorldToScreenPosition` 就把这个字段的地址交给 `Vector2::operator+`，
+    // `build_layout_table.py --verify` 会重新反汇编核对）。
+    {MakeId(ApiDomain::Room, 1, 0x0008), ApiDomain::Room, "Room", "GetRenderScrollOffset", kV1,
+     0, ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    // 批次 10（2026-09-15）：`Room:WorldToScreenPosition(Vector)`。换算方式来自引擎自己的
+    // `Room::WorldToScreenPosition @ 0x489354`：`GetRenderPosition(世界坐标, true)`
+    // 加上房间滚动偏移、再加上 Game 的调整量（三个常量的证据见 `runtime_constants.hpp`）。
+    {MakeId(ApiDomain::Room, 1, 0x0009), ApiDomain::Room, "Room", "WorldToScreenPosition", kV1,
+     0, ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
     {MakeId(ApiDomain::ItemPool, 1, 0x0001), ApiDomain::ItemPool, "ItemPool", "GetCollectible", kV1,
      0, ThreadAffinity::ManagedCallback, ApiMaturity::HostVerified},
     {MakeId(ApiDomain::ItemPool, 1, 0x0002), ApiDomain::ItemPool, "ItemPool", "GetLastPool", kV1,
@@ -485,6 +496,12 @@ constexpr LuaApiDescriptor kDefaultApis[] = {
      kV1, 0, ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
     {MakeId(ApiDomain::Isaac, 1, 0x0050), ApiDomain::Isaac, "ItemConfig_Item", "IsTrinket",
      kV1, 0, ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    // 批次 9（2026-09-15）：`Entity:ToFamiliar()` —— EID 用到而运行时里没有的一条。
+    // 判据同 `Entity:ToPickup()`：`Type == ENTITY_FAMILIAR(3)` 且 vptr 精确等于
+    // `base + 0xA35728`（`_ZTVN15IsaacRepentance15Entity_FamiliarE` @ `0xA35718` 加 `0x10`，
+    // 与既有两个 vtable 常量同一条规则、互为交叉验证）。
+    {MakeId(ApiDomain::Isaac, 1, 0x0051), ApiDomain::Isaac, "Entity", "ToFamiliar", kV1, 0,
+     ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
 
     // 批次 4：房间实体枚举（`Isaac.FindInRadius`/`FindByType`/`CountEnemies` 从 stub 变成
     // 真实现，id 不变）与实体视图补全。

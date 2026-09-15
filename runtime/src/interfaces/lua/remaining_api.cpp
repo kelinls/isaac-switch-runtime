@@ -1,5 +1,7 @@
 #include "interfaces/lua/remaining_api.hpp"
 
+#include "room_layout.hpp"
+
 #include "interfaces/lua/api_sequence_probe.hpp"
 #include "interfaces/lua/engine_memory_guard.hpp"
 #include "interfaces/lua/owner_binding.hpp"
@@ -68,6 +70,8 @@ int RoomGetGridSize(lua_State* state);
 int RoomGetGridIndex(lua_State* state);
 int RoomGetGridPath(lua_State* state);
 int RoomGetGridEntity(lua_State* state);
+int RoomGetRenderScrollOffset(lua_State* state);
+int RoomGetWorldToScreenPosition(lua_State* state);
 int ItemPoolGetLastPool(lua_State* state);
 int ItemPoolGetCollectible(lua_State* state);
 
@@ -92,6 +96,8 @@ constexpr LuaHandlerBinding kRoomHandlers[] = {
     {0x04010005, &RoomGetGridIndex},
     {0x04010006, &RoomGetGridPath},
     {0x04010007, &RoomGetGridEntity},
+    {0x04010008, &RoomGetRenderScrollOffset},
+    {0x04010009, &RoomGetWorldToScreenPosition},
 };
 
 constexpr LuaHandlerBinding kItemPoolHandlers[] = {
@@ -383,6 +389,35 @@ bool CallLevelIntMethod(std::uintptr_t method, const std::array<u8, 16>& expecte
     return true;
 }
 
+// 调"向量进、向量出"的引擎函数（`GetRenderPosition(const Vector2&, bool)`）。
+//
+// 与 `CallLevelIntMethod` 同一形态：**先核对入口 16 字节**再调用 —— 只认"这个地址上确实是
+// 那一串指令"，不认"地址恰好落在模块里"。返回值是 8 字节的结构体（两个 float），
+// AAPCS64 下走 `s0/s1`，所以直接按 `Vec2` 值返回即可。
+[[maybe_unused]] bool CallVectorEngineMethod(std::uintptr_t method,
+                                            const std::array<u8, 16>& expected,
+                            const float* input, float* output, bool argument) noexcept {
+    if (method == 0 || input == nullptr || output == nullptr || (method & 3) != 0 ||
+        !IsEngineMemoryReadable(method, expected.size())) {
+        return false;
+    }
+    std::array<u8, 16> actual{};
+    std::memcpy(actual.data(), reinterpret_cast<const void*>(method), actual.size());
+    if (std::memcmp(expected.data(), actual.data(), actual.size()) != 0) {
+        return false;
+    }
+    struct Vector2Value {
+        float x;
+        float y;
+    };
+    using Method = Vector2Value (*)(const Vector2Value&, bool);
+    const Vector2Value value{input[0], input[1]};
+    const Vector2Value result = reinterpret_cast<Method>(method)(value, argument);
+    output[0] = result.x;
+    output[1] = result.y;
+    return true;
+}
+
 bool CallLevelBoolMethod(std::uintptr_t method, const std::array<u8, 16>& expected,
                          bool* value) noexcept {
     if (value == nullptr || method == 0 || (method & 3) != 0 ||
@@ -645,6 +680,120 @@ int RoomGetGridEntity(lua_State* state) {
     }
     // 没有真实的网格实体数据：返回 nil（"这里没有网格实体"），不编造对象。
     lua_pushnil(state);
+    return 1;
+}
+
+// `Room:GetRenderScrollOffset()`（PC 文档 `Room.md:473`，返回 `const Vector`）：
+// 房间渲染的滚动偏移。EID 用它把世界坐标换算到屏幕坐标。
+//
+// 偏移 `+0x1938` 的证据（`tools/layout_tables/room.json`）：引擎自己的
+// `Room::WorldToScreenPosition` 里先 `mov w8, #0x1938`、再 `add x1, x19, x8`，
+// 把这个字段的**地址**交给 `Vector2::operator+` —— 也就是"世界→屏幕"要加上的那个向量。
+// `build_layout_table.py --verify` 会重新反汇编核对这条证据。
+int RoomGetRenderScrollOffset(lua_State* state) {
+    luaL_checkudata(state, 1, kRoomMetatable);
+    if (lua_gettop(state) != 1) {
+        return luaL_error(state, "Room:GetRenderScrollOffset accepts no arguments");
+    }
+    if (!InManagedCallbackScope()) {
+        return luaL_error(state,
+                          "Room:GetRenderScrollOffset is only available during a Runtime callback");
+    }
+    void* room = nullptr;
+    if (ReadCurrentGameRoom(GameOwnerSlot(), &room) != GameRoomObservation::Success ||
+        room == nullptr) {
+        return luaL_error(state,
+                          "Room:GetRenderScrollOffset could not read the native Room state");
+    }
+    const std::uintptr_t address = reinterpret_cast<std::uintptr_t>(room);
+    float x = 0.0F;
+    float y = 0.0F;
+    const std::uintptr_t scrollOffset = address + layout::kRoomRenderScrollOffsetOffset;
+    if (!IsEngineMemoryReadable(scrollOffset, sizeof(x) + sizeof(y))) {
+        return luaL_error(state,
+                          "Room:GetRenderScrollOffset could not read the native Room state");
+    }
+    std::memcpy(&x, reinterpret_cast<const void*>(scrollOffset), sizeof(x));
+    std::memcpy(&y, reinterpret_cast<const void*>(scrollOffset + sizeof(float)), sizeof(y));
+    // 每次返回**新的** `Vector` userdata：别名会让 `room:GetRenderScrollOffset().X = 1`
+    // 这类写法改到下一次读取的结果上（与 `Entity.Position` 同一口径）。
+    auto* vector = static_cast<LuaRuntime::VectorHandle*>(
+        lua_newuserdata(state, sizeof(LuaRuntime::VectorHandle)));
+    vector->x = x;
+    vector->y = y;
+    luaL_getmetatable(state, LuaRuntime::kVectorMetatable);
+    lua_setmetatable(state, -2);
+    return 1;
+}
+
+// `Room:WorldToScreenPosition(Vector)`（批次 10）：把世界坐标换算成屏幕坐标。
+// PC 文档 `Room.md:974`，EID 用它把实体位置画到屏幕上。
+//
+// **换算方式直接来自引擎自己的实现**（`Room::WorldToScreenPosition @ 0x489354` 的反汇编）：
+//   `GetRenderPosition(世界坐标, true) + Room.RenderScrollOffset + Game.ToScreenAdjust`
+// 三处偏移/入口的证据见 `runtime_constants.hpp` 里那三个常量各自的注释。
+//
+// 失败一律报 Lua 错误（PC 返回 Vector，编一个 (0,0) 会让 Mod 把东西画到左上角）。
+int RoomGetWorldToScreenPosition(lua_State* state) {
+    luaL_checkudata(state, 1, kRoomMetatable);
+    if (lua_gettop(state) != 2) {
+        return luaL_error(state, "Room:WorldToScreenPosition expects a Vector");
+    }
+    auto* input = static_cast<LuaRuntime::VectorHandle*>(
+        luaL_testudata(state, 2, LuaRuntime::kVectorMetatable));
+    if (input == nullptr) {
+        return luaL_error(state, "Room:WorldToScreenPosition expects a Vector");
+    }
+    if (!InManagedCallbackScope()) {
+        return luaL_error(state,
+                          "Room:WorldToScreenPosition is only available during a Runtime callback");
+    }
+    void* room = nullptr;
+    if (ReadCurrentGameRoom(GameOwnerSlot(), &room) != GameRoomObservation::Success ||
+        room == nullptr) {
+        return luaL_error(state, "Room:WorldToScreenPosition could not read the native Room state");
+    }
+    float screen[2] = {input->x, input->y};
+    bool rendered = false;
+#if !defined(__SWITCH__)
+    // 宿主：没有引擎映像，用注入的实现（与 `HasCollectible` 的宿主钩子同一形态）。
+    if (LuaRuntime::GetRenderPositionHostFunction() != nullptr) {
+        LuaRuntime::GetRenderPositionHostFunction()(&input->x, screen, true);
+        rendered = true;
+    }
+#else
+    rendered = CallVectorEngineMethod(LuaRuntime::GetRenderPositionThunk(),
+                                      kGetRenderPositionStubExpectedBytes, &input->x, screen, true);
+#endif
+    if (!rendered) {
+        return luaL_error(state, "Room:WorldToScreenPosition is unavailable in this build");
+    }
+    // 再加上房间与 Game 各自那一份调整量（同一个函数里的两条 `Vector2::operator+`）。
+    const std::uintptr_t roomAddress = reinterpret_cast<std::uintptr_t>(room);
+    const std::uintptr_t roomScroll = roomAddress + layout::kRoomRenderScrollOffsetOffset;
+    std::uintptr_t game = 0;
+    if (ResolveCurrentLevel(&game) == false || game == 0) {
+        return luaL_error(state, "Room:WorldToScreenPosition could not read the native Game state");
+    }
+    const std::uintptr_t gameAdjust = game + kGameToScreenAdjustOffset;
+    if (!IsEngineMemoryReadable(roomScroll, sizeof(float) * 2) ||
+        !IsEngineMemoryReadable(gameAdjust, sizeof(float) * 2)) {
+        return luaL_error(state, "Room:WorldToScreenPosition could not read the native state");
+    }
+    float roomX = 0.0F;
+    float roomY = 0.0F;
+    float gameX = 0.0F;
+    float gameY = 0.0F;
+    std::memcpy(&roomX, reinterpret_cast<const void*>(roomScroll), sizeof(float));
+    std::memcpy(&roomY, reinterpret_cast<const void*>(roomScroll + sizeof(float)), sizeof(float));
+    std::memcpy(&gameX, reinterpret_cast<const void*>(gameAdjust), sizeof(float));
+    std::memcpy(&gameY, reinterpret_cast<const void*>(gameAdjust + sizeof(float)), sizeof(float));
+    auto* result = static_cast<LuaRuntime::VectorHandle*>(
+        lua_newuserdata(state, sizeof(LuaRuntime::VectorHandle)));
+    result->x = screen[0] + roomX + gameX;
+    result->y = screen[1] + roomY + gameY;
+    luaL_getmetatable(state, LuaRuntime::kVectorMetatable);
+    lua_setmetatable(state, -2);
     return 1;
 }
 

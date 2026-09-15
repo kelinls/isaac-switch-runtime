@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -162,7 +163,22 @@ def verify_evidence(table: dict, nro: pathlib.Path) -> list[str]:
             kind = entry.get("kind", "access")
             if kind == "access":
                 # 这条指令本身就是字段访问：偏移必须出现在它的寻址表达式里。
-                if f"#{entry['offset']:#x}" not in found and entry["offset"] != 0:
+                # 例外（2026-09-15 实测）：**"取地址传参"形态**是先 `mov wN, #offset` 再
+                # `add xD, xThis, xN`（把字段地址交给别的函数，例如 `Vector2::operator+`），
+                # 偏移在前一条指令上。这时往上看几条，核对那个立即数确实等于本行的偏移。
+                expressed = f"#{entry['offset']:#x}" in found or entry["offset"] == 0
+                if not expressed and re.search(r'\badd\s+x\d+,\s*x\d+,\s*[wx]\d+', found):
+                    register = found.split(",")[-1].strip()
+                    index = window.index(found)
+                    for back in range(max(0, index - 3), index):
+                        previous = window[back]
+                        match = re.search(
+                            r'\bmov\s+[wx]' + re.escape(register[1:]) + r',\s*#(?P<imm>0x[0-9a-f]+|\d+)',
+                            previous)
+                        if match and int(match.group('imm'), 0) == entry["offset"]:
+                            expressed = True
+                            break
+                if not expressed:
                     problems.append(
                         f"{row['name']}：{wanted} 这条指令里没有偏移 {entry['offset']:#x}（实际：{found}）"
                     )

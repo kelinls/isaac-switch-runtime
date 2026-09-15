@@ -144,6 +144,16 @@ void SetEngineModuleBase(std::uintptr_t base) noexcept;
 [[nodiscard]] std::uintptr_t LevelIsAscentThunk() noexcept;
 // 批次 8（2026-09-15）：`Level` 家族另外两个方法入口。0 表示"没通过安装期守卫 ⇒ 不可用"。
 [[nodiscard]] std::uintptr_t LevelGetAbsoluteStageThunk() noexcept;
+// 批次 10（2026-09-15）：`Room:WorldToScreenPosition()` 要调的引擎函数（PLT 桩地址，
+// 由 hook_manager 校验 16 字节入口后发布）。
+[[nodiscard]] std::uintptr_t GetRenderPositionThunk() noexcept;
+void SetGetRenderPositionBinding(std::uintptr_t method);
+#if !defined(__SWITCH__)
+// 宿主注入钩子（设备构建里不存在）：设备侧这条走"校验 16 字节入口 + 调用引擎函数"，
+// 宿主上没有引擎映像，所以用注入的实现替代。类型别名与 `lua_runtime.hpp` 逐字一致。
+using RenderPositionHostFunction = void (*)(const float* input, float* output, bool useCamera);
+[[nodiscard]] RenderPositionHostFunction GetRenderPositionHostFunction() noexcept;
+#endif
 [[nodiscard]] std::uintptr_t LevelIsNextStageAvailableThunk() noexcept;
 [[nodiscard]] std::uintptr_t ItemPoolGetCollectibleThunk() noexcept;
 [[nodiscard]] std::uintptr_t MusicGetCurrentMusicIdThunk() noexcept;

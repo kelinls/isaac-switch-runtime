@@ -73,6 +73,23 @@ _PAIR = re.compile(
     r'(?:,\s*#(?P<offset>0x[0-9a-f]+|\d+))?\]'
 )
 _MOV = re.compile(r'^[0-9a-f]{8}\s+[0-9a-f]{8}\s+mov\s+(?P<dst>x\d+),\s*(?P<src>x\d+)$')
+# `mov wN, #imm`：把常量装进寄存器。它自己不是访存，但**下一条 `add` 会拿它当偏移**，
+# 所以必须跟（见 `_ADD_REG` 的说明）。
+_MOV_IMMEDIATE = re.compile(
+    r'^[0-9a-f]{8}\s+[0-9a-f]{8}\s+mov\s+(?P<dst>[wx]\d+),\s*#(?P<imm>0x[0-9a-f]+|\d+)'
+)
+# `movz`/`movk`：大常量分两三条装（`mov w9,#0xf9b0` + `movk w9,#0x24,lsl#16` = 0x24f9b0）。
+_MOV_WIDE = re.compile(
+    r'^[0-9a-f]{8}\s+[0-9a-f]{8}\s+(?P<mnemonic>movz|movk)\s+(?P<dst>[wx]\d+),\s*'
+    r'#(?P<imm>0x[0-9a-f]+|\d+)(?:,\s*lsl\s*#(?P<shift>\d+))?'
+)
+# `add xD, xS, xN`：偏移来自寄存器 ⇒ 与 `_MOV_IMMEDIATE` 合起来就是"结构体 + 固定偏移"。
+# 为什么必须认这种形态（2026-09-15 实测）：`Room::WorldToScreenPosition` 读滚动偏移用的是
+#   `mov w8, #0x1938` / `add x1, x19, x8`（把字段**地址**传给 `Vector2::operator+`），
+# 全是"取地址传参"而不是 `ldr [x19,#0x1938]` ⇒ 旧版一条都提取不到，会误判成"这个函数没碰字段"。
+_ADD_REG = re.compile(
+    r'^[0-9a-f]{8}\s+[0-9a-f]{8}\s+add\s+(?P<dst>x\d+),\s*(?P<src>x\d+),\s*(?P<off>[wx]\d+)'
+)
 # `add xD, xS, #imm` / `sub`：常见于"子对象地址 = 结构体基址 + 固定偏移"。
 _ADD_IMM = re.compile(
     r'^[0-9a-f]{8}\s+[0-9a-f]{8}\s+(?P<mnemonic>add|sub)\s+(?P<dst>x\d+),\s*(?P<src>x\d+),\s*#(?P<imm>0x[0-9a-f]+|\d+)$'
@@ -84,12 +101,23 @@ _WRITES_REGISTER = re.compile(r'^[0-9a-f]{8}\s+[0-9a-f]{8}\s+\w+\s+(?P<dst>x\d+|
 _RET = re.compile(r'\bret\b')
 
 
+def _register_slot(name: str) -> str:
+    """把 `w8`/`x8` 归一到同一个键：它们是同一个寄存器的不同宽度视图。
+
+    踩过的坑（2026-09-15）：`Room::WorldToScreenPosition` 里是 `mov w8, #0x1938` 配
+    `add x1, x19, x8` —— 按原样存键（`w8`）去查（`x8`）永远查不到，于是这条字段访问被静默丢掉。
+    """
+    return name[1:] if name[:1] in ("w", "x") else name
+
+
 def parse_accesses(lines: list[str], registers: set[str]) -> list[dict[str, object]]:
     """按指令顺序抽出 `[寄存器, #偏移]` 的每一次访问（寄存器可以有一组，见 `resolve_registers`）。"""
     accesses: list[dict[str, object]] = []
     # 每个寄存器的"当前偏移基准"：写回寻址会改变它（见 `_ACCESS` 上方的说明）。
     bias: dict[str, int] = {}
     tracked = set(registers)
+    # 寄存器里的常量（`mov`/`movz`/`movk` 装进去的）：`add xD, xS, xN` 要拿它当偏移。
+    constants: dict[str, int] = {}
     for line in lines:
         stripped = line.strip()
         # 先更新"这个寄存器现在指向哪里"，再做访存判定。
@@ -102,6 +130,36 @@ def parse_accesses(lines: list[str], registers: set[str]) -> list[dict[str, obje
             elif dst in tracked:
                 tracked.discard(dst)      # 搬来的不是结构体指针了
             continue
+        loaded = _MOV_IMMEDIATE.match(stripped)
+        if loaded is not None:
+            constants[_register_slot(loaded.group('dst'))] = int(loaded.group('imm'), 0)
+            continue
+        wide = _MOV_WIDE.match(stripped)
+        if wide is not None:
+            dst = _register_slot(wide.group('dst'))
+            value = int(wide.group('imm'), 0)
+            shift = int(wide.group('shift') or 0)
+            if wide.group('mnemonic') == 'movz':
+                constants[dst] = value << shift
+            else:
+                previous = constants.get(dst, 0) & ~(0xFFFF << shift)
+                constants[dst] = previous | (value << shift)
+            continue
+        combined_reg = _ADD_REG.match(stripped)
+        if combined_reg is not None:
+            src, off = combined_reg.group('src'), combined_reg.group('off')
+            if src in tracked and _register_slot(off) in constants:
+                # 字段**地址**被算出来交给别人（例如传给 `Vector2::operator+`）。
+                # 宽度在指令里看不出来（0 = 未知），由布局表的作者按类型注上。
+                accesses.append({
+                    'address': '0x' + stripped.split()[0],
+                    'base': src,
+                    'offset': bias.get(src, 0) + constants[_register_slot(off)],
+                    'width': 0,
+                    'direction': 'read',
+                    'mnemonic': 'add',
+                })
+            continue
         combined = _ADD_IMM.match(stripped)
         if combined is not None:
             src, dst = combined.group('src'), combined.group('dst')
@@ -113,8 +171,10 @@ def parse_accesses(lines: list[str], registers: set[str]) -> list[dict[str, obje
                 tracked.discard(dst)
             continue
         write_reg = _WRITES_REGISTER.match(stripped)
-        if write_reg is not None and write_reg.group('dst') in tracked and not stripped.startswith('st'):
-            tracked.discard(write_reg.group('dst'))
+        if write_reg is not None:
+            constants.pop(_register_slot(write_reg.group('dst')), None)
+            if write_reg.group('dst') in tracked and not stripped.startswith('st'):
+                tracked.discard(write_reg.group('dst'))
         registers = tracked
         pair = _PAIR.match(stripped)
         if pair is not None and pair.group('base') in registers:

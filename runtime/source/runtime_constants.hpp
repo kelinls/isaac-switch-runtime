@@ -140,6 +140,21 @@ inline constexpr std::uint32_t kEntityPlayerMaximumTypeForBoneHearts = 0x28;
 //
 // **容量是固定常量、从不重分配**（`Add` 溢出只打日志），所以三个容量值可以当**容器指纹**用。
 inline constexpr uintptr_t kRoomEntityListOffset = 0x1950;      // Room → 内嵌 EntityList
+
+// `Room:WorldToScreenPosition(Vector)`（批次 10，2026-09-15）：引擎里它就是
+// `GetRenderPosition(世界坐标, true) + Room.RenderScrollOffset + Game.ToScreenAdjust`。
+// 三处证据都来自 `Room::WorldToScreenPosition @ 0x489354` 这一条函数的反汇编：
+//   * `bl 0x670fa0`（PLT 桩，指向 `_ZN15IsaacRepentance17GetRenderPositionERKN4KAGE4Math7Vector2Eb`）；
+//   * `mov w8,#0x1938` + `add x1,x19,x8` → `Vector2::operator+` ⇒ 房间的滚动偏移；
+//   * `g_Game` → `*(g_Game)` + `0x24F9B0` → `Vector2::operator+` ⇒ Game 那一份调整量。
+inline constexpr uintptr_t kGetRenderPositionStubOffset = 0x670FA0;
+inline constexpr std::array<u8, 16> kGetRenderPositionStubExpectedBytes = {
+    0x70, 0x21, 0x00, 0xD0, 0x11, 0x9E, 0x43, 0xF9,
+    0x10, 0xE2, 0x1C, 0x91, 0x20, 0x02, 0x1F, 0xD6,
+};
+// Game 那一份"世界→屏幕"调整量的偏移。**名字只是结构性的**（该字段的语义没有单独定位），
+// 证据 = 同一条函数把它加进结果里；所以它只用于这条 API 的换算，不对外暴露字段。
+inline constexpr uintptr_t kGameToScreenAdjustOffset = 0x24F9B0;
 inline constexpr uintptr_t kEntityListLiveBeginOffset = 0x78;   // Entity**（步长 8）
 inline constexpr uintptr_t kEntityListLiveCapacityOffset = 0x80;  // u32，恒 0x800
 inline constexpr uintptr_t kEntityListLiveCountOffset = 0x84;     // u32
@@ -177,8 +192,17 @@ inline constexpr unsigned kEntityFlagNoQueryBit = 46;
 inline constexpr uintptr_t kEntityVtableRangeBeginOffset = 0xA34F58;
 inline constexpr uintptr_t kEntityVtableRangeEndOffset = 0xA38230;
 inline constexpr uintptr_t kEntityPickupVtableOffset = 0xA36E28;
+// `Entity_Familiar` 的 vtable 指针（`_ZTVN15IsaacRepentance15Entity_FamiliarE` @ `0xA35718`，
+// 加 `0x10` 跳过 "offset-to-top + typeinfo" 两个表头字 ⇒ `0xA35728`）。
+// 这条 `+0x10` 规则由既有两个常量交叉验证：`Entity_Player` 符号 `0xA37100` ↔ 本文件
+// `0xA37110`；`Entity_Pickup` 符号 `0xA36E18` ↔ `0xA36E28`（都差 `0x10`，一致）。
+// 用途：`Entity:ToFamiliar()` 的判据（`Type == ENTITY_FAMILIAR` 且 vptr 精确相等）。
+inline constexpr uintptr_t kEntityFamiliarVtableOffset = 0xA35728;
 inline constexpr std::uint32_t kEntityTypePlayer = 1;
 inline constexpr std::uint32_t kEntityTypePickup = 5;
+// `EntityType.ENTITY_FAMILIAR == 3`（PC 枚举；本项目既有的实体分区代码里也用 `type == 3`
+// 判"跟班"，且 `variant == 0xEF` 的特例归到敌人那一类）。
+inline constexpr std::uint32_t kEntityTypeFamiliar = 3;
 inline constexpr std::uint32_t kEntityTypeEffect = 0x3E8;
 // `IsEnemy = (u32)(Type - 10) < 0x3DE`（引擎 `EntityList::collide()` 里的同一条比较）。
 inline constexpr std::uint32_t kEntityEnemyTypeBase = 10;

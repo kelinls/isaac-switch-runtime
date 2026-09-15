@@ -179,6 +179,7 @@ int EntityPickupIndex(lua_State* state);
 int EntityPickupIsShopItem(lua_State* state);
 int EntityToPlayer(lua_State* state);
 int EntityToPickup(lua_State* state);
+int EntityToFamiliar(lua_State* state);
 int EntityGetData(lua_State* state);
 int EntityGetSprite(lua_State* state);
 int EntityPlayerHasCollectible(lua_State* state);
@@ -313,6 +314,7 @@ constexpr LuaHandlerBinding kEntityPlayerHandlers[] = {
 constexpr LuaHandlerBinding kEntityHandlers[] = {
     {0x0E010014, &EntityToPlayer},
     {0x0E010024, &EntityToPickup},
+    {0x0E010051, &EntityToFamiliar},
     {0x0E010025, &EntityGetData},
     {0x0E01002A, &EntityGetSprite},
 };
@@ -1734,6 +1736,39 @@ int EntityPickupIsShopItem(lua_State* state) {
 // （`features/eid_api.lua:2219`/`2229`）。
 //
 // 与 PC 的差异写在 `PushEntityDataTable` 的注释里（换房间会让旧的表失效）。
+// `Entity:ToFamiliar()`（批次 9）：PC 在**基类** `Entity` 上提供它，跟班返回 `EntityFamiliar`、
+// 其它实体返回 nil。EID 用它把跟班从候选实体里挑出来。
+//
+// 判据与 `Entity:ToPickup()` 同一形态（两条都要求 vptr **精确**相等，避免把别的派生类当跟班）：
+//   * `Type == ENTITY_FAMILIAR(3)`；
+//   * `*(u64*)entity == base + kEntityFamiliarVtableOffset`。
+// vtable 偏移的证据：符号表里 `_ZTVN15IsaacRepentance15Entity_FamiliarE` @ `0xA35718`，
+// 加 `0x10`（跳过 offset-to-top 与 typeinfo 两个表头字）⇒ `0xA35728`；同一条规则在既有的
+// `Entity_Player`（符号 `0xA37100` → 常量 `0xA37110`）与 `Entity_Pickup`（`0xA36E18` → `0xA36E28`）
+// 上已经对过两次，互为交叉验证。
+//
+// 视图用 `Entity` 基类元表：我们目前没有 `EntityFamiliar` 专属元表，而 PC 里跟班的方法绝大部分
+// 继承自 `Entity`；返回 nil 会让 EID 的筛选取不到跟班，返回基类视图至少语义正确。
+int EntityToFamiliar(lua_State* state) {
+    RecordFilterChain(6U);
+    auto* handle = CheckEntityHandle(state, 1);
+    if (lua_gettop(state) != 1) {
+        return luaL_error(state, "Entity:ToFamiliar accepts no arguments");
+    }
+    const std::uintptr_t entity = ValidatedEntity(handle);
+    const std::uintptr_t base = EngineModuleBase();
+    std::uintptr_t vtable = 0;
+    std::uint32_t type = 0;
+    if (entity == 0 || base == 0 || base > UINTPTR_MAX - kEntityFamiliarVtableOffset ||
+        !ReadEngine(entity, &vtable) || !ReadEngine(entity + kEntityTypeOffset, &type) ||
+        type != kEntityTypeFamiliar || vtable != base + kEntityFamiliarVtableOffset) {
+        PushNil(state);
+        return 1;
+    }
+    PushEntityHandle(state, entity, kEntityMetatable);
+    return 1;
+}
+
 int EntityGetData(lua_State* state) {
     RecordFilterChain(0U);
     auto* handle = CheckEntityHandle(state, 1);

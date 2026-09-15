@@ -2678,6 +2678,29 @@ bool VerifyLevelIsAscent(const TargetModule& module, uintptr_t* method) {
 // 形状与 `VerifyLevelIsAscent` 完全相同（`const` 成员、只吃 `this`），所以三份逻辑逐句对应：
 // 偏移不越界、入口 4 字节对齐、落在模块代码段且映射为 Rx、再逐字节比对 16 字节守卫。
 // 任一项不符就只留绑定为 0（handler 会报"绑定不可用"），不影响其它挂点安装。
+bool VerifyGetRenderPositionStub(const TargetModule& module, uintptr_t* method) {
+    if (method == nullptr || module.base == 0 || module.buildId != kTargetBuildId ||
+        kGetRenderPositionStubOffset > UINTPTR_MAX - module.base ||
+        kGetRenderPositionStubExpectedBytes.size() > module.textSize ||
+        kGetRenderPositionStubOffset >
+            module.textSize - kGetRenderPositionStubExpectedBytes.size()) {
+        return false;
+    }
+    const uintptr_t candidate = module.base + kGetRenderPositionStubOffset;
+    if ((candidate & 3) != 0 ||
+        !module.Contains(candidate, kGetRenderPositionStubExpectedBytes.size()) ||
+        !IsMappedRxModuleCodeWindow(candidate, kGetRenderPositionStubExpectedBytes.size())) {
+        return false;
+    }
+    std::array<u8, kGetRenderPositionStubExpectedBytes.size()> bytes{};
+    std::memcpy(bytes.data(), reinterpret_cast<const void*>(candidate), bytes.size());
+    if (!verify_bytes(kGetRenderPositionStubExpectedBytes.data(), bytes.data(), bytes.size())) {
+        return false;
+    }
+    *method = candidate;
+    return true;
+}
+
 bool VerifyLevelGetAbsoluteStage(const TargetModule& module, uintptr_t* method) {
     if (method == nullptr || module.base == 0 || module.buildId != kTargetBuildId ||
         kLevelGetAbsoluteStageOffset > UINTPTR_MAX - module.base ||
@@ -3623,6 +3646,11 @@ HookInstallResult TryInstallManagerUpdateHook(const TargetModule& module) {
         VerifyLevelIsNextStageAvailable(module, &nextStageAvailable);
         LuaRuntime::SetLevelGetAbsoluteStageBinding(absoluteStage);
         LuaRuntime::SetLevelIsNextStageAvailableBinding(nextStageAvailable);
+        // 批次 10：`Room:WorldToScreenPosition()` 的引擎函数（两处发布点都要发 —— 漏发会让
+        // 诊断档里少一个方法，这条教训本项目已经栽过一次）。
+        uintptr_t getRenderPosition = 0;
+        VerifyGetRenderPositionStub(module, &getRenderPosition);
+        LuaRuntime::SetGetRenderPositionBinding(getRenderPosition);
     }
     LuaRuntime::SetMusicBindings(getCurrentMusicId, musicPause, musicResume);
     LuaRuntime::SetInputBindings(isActionPressed, isActionTriggered, getActionValue);
@@ -3698,6 +3726,11 @@ void PublishManagerEngineBindings(const TargetModule& module) {
     VerifyLevelIsNextStageAvailable(module, &nextStageAvailable);
     LuaRuntime::SetLevelGetAbsoluteStageBinding(absoluteStage);
     LuaRuntime::SetLevelIsNextStageAvailableBinding(nextStageAvailable);
+    // 批次 10（2026-09-15）：`Room:WorldToScreenPosition()` 要调的引擎函数。同样按"可选能力"
+    // 处理：守卫不符只留 0，handler 报"绑定不可用"，不编造坐标。
+    uintptr_t getRenderPosition = 0;
+    VerifyGetRenderPositionStub(module, &getRenderPosition);
+    LuaRuntime::SetGetRenderPositionBinding(getRenderPosition);
     LuaRuntime::SetMusicBindings(getCurrentMusicId, musicPause, musicResume);
     LuaRuntime::SetInputBindings(isActionPressed, isActionTriggered, getActionValue);
     // RNG is optional; an unavailable guard must not block the default Mod.

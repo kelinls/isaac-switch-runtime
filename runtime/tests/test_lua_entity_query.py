@@ -299,7 +299,10 @@ void FillEntities() {
     FillEntity(kSizeOnly, 24, 7, 0, 80.0F, 305.0F, 30.0F, 4, 900, GenericEntityVtable(), 0);
     FillEntity(kNoQuery, 22, 9, 0, 80.0F, 280.0F, 5.0F, 5, 900, GenericEntityVtable(),
                kNoQueryFlag);
-    FillEntity(kFamiliar, 3, 5, 0, 80.0F, 280.0F, 5.0F, 6, 900, GenericEntityVtable(), 0);
+    // 真跟班：`Type == 3` 且 vptr **精确**等于 `Entity_Familiar` 的 vtable ——
+    // `Entity:ToFamiliar()` 的判据要求两者同时成立（见 `kEntityFamiliarVtableOffset`）。
+    FillEntity(kFamiliar, 3, 5, 0, 80.0F, 280.0F, 5.0F, 6, 900,
+               g_EngineBase + kEntityFamiliarVtableOffset, 0);
     // `Type 3 && Variant 0xEF` → 引擎 `collide()` 把它算进 ENEMY。
     FillEntity(kCharmed, 3, 0xEF, 0, 80.0F, 280.0F, 5.0F, 7, 900, GenericEntityVtable(), 0);
     FillEntity(kBullet, 9, 0, 0, 80.0F, 280.0F, 3.0F, 8, 900, GenericEntityVtable(), 0);
@@ -629,6 +632,17 @@ local function verifyRadiusAndPartitions()
 
   -- 逐个分区。
   checkSet(Isaac.FindInRadius(center, 100, FAMILIAR), { 'familiar' }, 'FAMILIAR')
+  -- `Entity:ToFamiliar()`（批次 9，与 `ToPickup` 同一形态）：真跟班（`Type==3` 且 vptr 是
+  -- `Entity_Familiar`）必须非 nil；被魅惑的实体（`Type==3`、`Variant==0xEF`、vptr 是通用实体）
+  -- 必须 nil —— 否则 EID 会把敌人当跟班。
+  local familiars = Isaac.FindInRadius(center, 100, FAMILIAR)
+  check(#familiars == 1 and familiars[1]:ToFamiliar() ~= nil,
+        'a real familiar must answer ToFamiliar with an object')
+  for _, entity in ipairs(Isaac.FindInRadius(center, 100, ENEMY)) do
+    if entity.Variant == 0xEF then
+      check(entity:ToFamiliar() == nil, 'charmed must not be reported as a familiar')
+    end
+  end
   checkSet(Isaac.FindInRadius(center, 100, BULLET), { 'bullet' }, 'BULLET')
   checkSet(Isaac.FindInRadius(center, 100, TEAR), { 'tearNear' }, 'TEAR')
   checkSet(Isaac.FindInRadius(center, 100, PICKUP), { 'pickup' }, 'PICKUP')
@@ -777,6 +791,13 @@ local function verifyToPickup()
   check(fakePickupEntity:ToPickup() == nil, 'Type==5 without the pickup vtable must not cast')
   local enemy = Isaac.FindByType(20, 5, 0, false, false)[1]
   check(enemy:ToPickup() == nil, 'a non-pickup entity must not cast')
+  -- `Entity:ToFamiliar()`（批次 9）与 `ToPickup` 同一形态：**Type 与 vptr 都要对**。
+  -- 玩家（Type==1、vptr 是 Entity_Player）必须 nil —— 否则 EID 会把玩家当跟班。
+  local playerEntity = Isaac.GetPlayer(0)
+  if playerEntity ~= nil then
+    check(playerEntity:ToFamiliar() == nil, 'a player must not be reported as a familiar')
+  end
+
 end
 
 local function verifyPlayerGetters()

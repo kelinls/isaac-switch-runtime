@@ -549,7 +549,14 @@ class ApiCatalogContractTests(unittest.TestCase):
         # 形态（`{id, k...Offset, …}`，共享处理器 `FieldApiHandler`），所以上面的计数正则
         # 同时认"手写绑定行"与"数据行"两种形态（见 `registered_ids` 处的注释）。
         # 地基三期（成本压缩）把 5 条既有成员也迁成了数据行，**总数不变**，只是换了登记形态。
-        self.assertEqual(checked, 168, "家族绑定行数应与已登记 API 数一致")
+        # 168 + 批次 8（2026-09-15）的 1 行 `Room.GetRenderScrollOffset`：
+        # EID 用到而运行时里没有的一条；偏移 `+0x1938` 有引擎自身代码的硬证据
+        # （见 `tools/layout_tables/room.json` 与布局表复核门禁）。
+        # 169 + 批次 9（2026-09-15）的 1 行 `Entity.ToFamiliar`：EID 用它把跟班从候选实体里挑出来。
+        # 判据同 `ToPickup`（Type 与 vptr 都要对），vtable 偏移由符号表推出并与既有两个常量互相验证。
+        # 170 + 批次 10（2026-09-15）的 1 行 `Room.WorldToScreenPosition`：EID 用它把实体位置
+        # 画到屏幕上；换算方式直接取自引擎自己的实现（引擎函数 + 房间滚动 + Game 调整量）。
+        self.assertEqual(checked, 171, "家族绑定行数应与已登记 API 数一致")
 
     def test_options_fields_are_registered_as_values(self):
         """`Options` 的两个字段是**值**而不是方法：Catalog 里有条目、绑定表里没有绑定行。

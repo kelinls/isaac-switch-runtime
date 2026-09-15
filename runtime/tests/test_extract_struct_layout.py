@@ -35,6 +35,16 @@ WRITE_ROOM = ("_ZN15IsaacRepentance9GameState10write_RoomERNS_19GameStateRoomCon
 RESET = "_ZN15IsaacRepentance14RoomDescriptor5ResetEv"
 
 
+def load_tool():
+    """直接导入工具模块：这两条用例只验**解析规则**，不需要 NRO 也不需要起子进程。"""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("extract_struct_layout_gate", TOOL)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def run_tool(*arguments: str) -> dict:
     result = subprocess.run(
         [sys.executable, str(TOOL), *arguments, "--json"],
@@ -92,6 +102,38 @@ class ExtractStructLayoutTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2)
         self.assertIn("找不到 NRO", result.stderr)
+
+    def test_address_taken_field_access_is_recognized(self):
+        """`mov wN, #off` + `add xD, xThis, xN` 必须被认成一次字段访问。
+
+        为什么单独立一条：`Room::WorldToScreenPosition` 读渲染滚动偏移用的就是这个形态
+        （把字段**地址**交给 `Vector2::operator+`，而不是 `ldr [x19,#0x1938]`）。
+        旧版提取器一条都认不出来，会把它误判成"这个函数没碰字段" —— 于是"没有证据"被当成
+        "没有这个字段"。另外 `mov` 写的是 `w8`、`add` 用的是 `x8`，同一个寄存器两种写法
+        必须归一，否则静默丢结果（这两点都踩过）。
+        """
+        lines = [
+            "00489364  aa0003f3  mov        x19, x0",
+            "00489370  52800021  mov        w1, #0x1                // =1",
+            "00489378  52832708  mov        w8, #0x1938             // =6456",
+            "0048937c  8b080261  add        x1, x19, x8",
+            "00489388  94079af2  bl         0x66ff50",
+        ]
+        accesses = load_tool().parse_accesses(lines, {"x0", "x19"})
+        offsets = [(a["offset"], a["direction"]) for a in accesses]
+        self.assertIn((0x1938, "read"), offsets, f"没认出取地址型字段访问：{accesses}")
+
+    def test_immediate_register_value_is_not_kept_when_overwritten(self):
+        """寄存器被重新写入后，旧常量不许再被当成偏移（否则会造出假字段）。"""
+        lines = [
+            "00489364  aa0003f3  mov        x19, x0",
+            "00489378  52832708  mov        w8, #0x1938",
+            "0048937c  91004308  add        x8, sp, #0x10",
+            "00489380  8b080261  add        x1, x19, x8",
+        ]
+        accesses = load_tool().parse_accesses(lines, {"x0", "x19"})
+        self.assertEqual([a for a in accesses if a["offset"] == 0x1938], [],
+                         "寄存器被覆盖后仍用旧常量解释了偏移")
 
 
 if __name__ == "__main__":

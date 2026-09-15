@@ -50,6 +50,7 @@ SOURCE = ROOT / "runtime" / "source"
 
 HARNESS = r'''
 #include "lua_runtime.hpp"
+#include "room_layout.hpp"
 #include "game_observer.hpp"
 #include "lua_runtime_state.hpp"
 #include "runtime_constants.hpp"
@@ -85,17 +86,36 @@ std::uintptr_t AddressOf(const std::vector<unsigned char>& block) {
     return reinterpret_cast<std::uintptr_t>(block.data());
 }
 
+// 宿主版"引擎函数"的前置声明（定义在文件末尾，注入点在中间）。
+void HostGetRenderPosition(const float* input, float* output, bool useCamera);
+
 void PublishFakeEngine() {
     g_ModuleBytes.assign(kGameOwnerGlobalSlotOffset + sizeof(std::uint64_t), 0);
     g_OwnerSlotBytes.assign(sizeof(std::uint64_t), 0);
     // 覆盖到维度字段（`+0x21560`）。
-    g_GameBytes.assign(kLevelCurrentRoomDimensionOffset + sizeof(std::uint32_t), 0);
-    g_RoomBytes.assign(kRoomTypeOffset + sizeof(std::uint32_t), 0);
+    // 覆盖到"世界→屏幕"调整量（`Game + 0x24F9B0` 起 8 字节）—— `Room:WorldToScreenPosition` 读它。
+    g_GameBytes.assign(kGameToScreenAdjustOffset + sizeof(float) * 2, 0);
+    WriteAt<float>(g_GameBytes, kGameToScreenAdjustOffset, 3.0F);
+    WriteAt<float>(g_GameBytes, kGameToScreenAdjustOffset + sizeof(float), 4.0F);
+    // 覆盖到渲染滚动偏移（`+0x1938` 起 16 字节）—— `Room:GetRenderScrollOffset()` 读它。
+    g_RoomBytes.assign(isaac::runtime::layout::kRoomRenderScrollOffsetOffset + isaac::runtime::layout::kRoomRenderScrollOffsetWidth, 0);
+    // 值刻意非零、X/Y 不同：证明读的是这两个 float，而不是"返回一个空向量"。
+    WriteAt<float>(g_RoomBytes, isaac::runtime::layout::kRoomRenderScrollOffsetOffset, 12.5F);
+    WriteAt<float>(g_RoomBytes, isaac::runtime::layout::kRoomRenderScrollOffsetOffset + sizeof(float), -7.25F);
     WriteWord(g_ModuleBytes, kGameOwnerGlobalSlotOffset, AddressOf(g_OwnerSlotBytes));
     WriteWord(g_OwnerSlotBytes, 0, AddressOf(g_GameBytes));
     WriteWord(g_GameBytes, kGameRoomPointerOffset, AddressOf(g_RoomBytes));
     WriteAt<std::uint32_t>(g_RoomBytes, kRoomTypeOffset, kRoomType);
     LuaRuntime::SetEngineModuleBase(AddressOf(g_ModuleBytes));
+    LuaRuntime::SetGetRenderPositionHostFunction(&HostGetRenderPosition);
+}
+
+// 宿主版"引擎函数"：把世界坐标平移 (1000, 2000)，好让断言能分开"引擎算的"与"我们加的"两段。
+// 设备侧这条是引擎的 `GetRenderPosition`（PLT 桩 + 16 字节入口守卫），宿主上由注入实现替代。
+void HostGetRenderPosition(const float* input, float* output, bool useCamera) {
+    output[0] = input[0] + 1000.0F;
+    output[1] = input[1] + 2000.0F;
+    static_cast<void>(useCamera);
 }
 
 }  // namespace
@@ -161,7 +181,20 @@ int main(int argc, char** argv) {
             " if type(index)~='number' then error('index must be a number') end"
             " if room:GetType()~=gameRoom:GetType() then error('GetCurrentRoom must be the Game room') end"
             " if room:GetType()~=4 then error('room type must come from Room+0x10') end"
-            " print('INDEX='..tostring(index)..' TYPE='..tostring(room:GetType()))"
+            " local scroll=room:GetRenderScrollOffset()"
+            " if math.abs(scroll.X-12.5)>0.001 or math.abs(scroll.Y+7.25)>0.001 then"
+            " error('GetRenderScrollOffset must read Room+0x1938, got '..scroll.X..','..scroll.Y) end"
+            " local again=room:GetRenderScrollOffset()"
+            " again.X=999"
+            " if math.abs(room:GetRenderScrollOffset().X-12.5)>0.001 then"
+            " error('GetRenderScrollOffset must return a fresh Vector') end"
+            " local screen=room:WorldToScreenPosition(Vector(80,280))"
+            " if math.abs(screen.X-(80+1000+12.5+3))>0.001 or"
+            " math.abs(screen.Y-(280+2000-7.25+4))>0.001 then"
+            " error('WorldToScreenPosition must compose engine+room+game, got '"
+            " ..screen.X..','..screen.Y) end"
+            " print('INDEX='..tostring(index)..' TYPE='..tostring(room:GetType())"
+            " ..' SCROLL='..scroll.X..','..scroll.Y..' SCREEN='..screen.X..','..screen.Y)"
             " end)";
     }
 

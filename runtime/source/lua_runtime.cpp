@@ -257,6 +257,13 @@ std::atomic<uintptr_t> g_LevelIsAscent{0};
 std::atomic<uintptr_t> g_LevelGetAbsoluteStage{0};
 std::atomic<uintptr_t> g_LevelIsNextStageAvailable{0};
 std::atomic<uintptr_t> g_ItemPoolGetCollectible{0};
+// 批次 10（2026-09-15）：`Room:WorldToScreenPosition()` 要调的引擎函数（PLT 桩地址）。
+std::atomic<uintptr_t> g_GetRenderPosition{0};
+// 宿主注入：设备侧走"校验 16 字节入口 + 调用"那条路，宿主上没有引擎映像，用注入的实现替代。
+// 与 `HasCollectible` 的宿主钩子同一形态（`#if !defined(__SWITCH__)` 才存在）。
+#if !defined(__SWITCH__)
+RenderPositionHostFunction g_GetRenderPositionHost{nullptr};
+#endif
 std::atomic<uintptr_t> g_MusicGetCurrentMusicId{0};
 std::atomic<uintptr_t> g_MusicPause{0};
 std::atomic<uintptr_t> g_MusicResume{0};
@@ -1816,6 +1823,20 @@ std::uintptr_t LevelIsNextStageAvailableThunk() noexcept {
     return g_LevelIsNextStageAvailable.load(std::memory_order_acquire);
 }
 
+std::uintptr_t GetRenderPositionThunk() noexcept {
+    return g_GetRenderPosition.load(std::memory_order_acquire);
+}
+
+#if !defined(__SWITCH__)
+void SetGetRenderPositionHostFunction(RenderPositionHostFunction function) noexcept {
+    g_GetRenderPositionHost = function;
+}
+
+RenderPositionHostFunction GetRenderPositionHostFunction() noexcept {
+    return g_GetRenderPositionHost;
+}
+#endif
+
 std::uintptr_t ItemPoolGetCollectibleThunk() noexcept {
     return g_ItemPoolGetCollectible.load(std::memory_order_acquire);
 }
@@ -2115,6 +2136,10 @@ void SetLevelIsAscentBinding(uintptr_t method) {
 
 // 批次 8（2026-09-15）：两个新绑定的发布点。与 `SetLevelIsAscentBinding` 同一种形态：
 // 各自一条 release 存储，handler 各自一条 acquire 读 —— 不会出现"半个已校验记录"。
+void SetGetRenderPositionBinding(uintptr_t method) {
+    g_GetRenderPosition.store(method, std::memory_order_release);
+}
+
 void SetLevelGetAbsoluteStageBinding(uintptr_t method) {
     g_LevelGetAbsoluteStage.store(method, std::memory_order_release);
 }
