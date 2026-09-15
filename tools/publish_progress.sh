@@ -32,7 +32,20 @@ fi
 # 允许公开的路径（白名单）。**新增目录要显式加进来**，避免把设备备份/文档/第三方内容一起推上去。
 PUBLIC_PATHS=(runtime tools tests README.md CONTRIBUTING.md LICENSE .gitignore)
 # 白名单里也要**排除**的路径：第三方模组内容（可再分发的授权不明确），保持仓库不夹带他人作品。
-PUBLIC_EXCLUDES=(runtime/pc-mods/MuteOnPause)
+PUBLIC_EXCLUDES=(runtime/pc-mods/MuteOnPause runtime/.apiart-build)
+
+# 守卫②：白名单路径下**不许有未跟踪文件/目录**。
+# 为什么：第 2 步用的是 `git add -A -- <白名单>`，它会连未跟踪文件一起收进来 ——
+# 2026-09-15 就把宿主测试留下的 `runtime/.apiart-build/`（223 个 `.o`/`.d`）推上了公开仓库。
+# 真正的修复是给构建产物加 `.gitignore` 或加进 `PUBLIC_EXCLUDES`；这条守卫只是保证
+# "下次再有新的未跟踪产物时，发布**失败**而不是悄悄带上去"。
+untracked="$(git status --porcelain --untracked-files=all -- "${PUBLIC_PATHS[@]}")"
+if [ -n "$untracked" ]; then
+  echo "白名单路径下有未跟踪文件，发布会把它们一起推上去。请先加 .gitignore"
+  echo "或把路径加进 PUBLIC_EXCLUDES，然后再发布："
+  echo "$untracked" | head -20
+  exit 1
+fi
 
 echo "== 1/4 门禁测试 =="
 if [ "${SKIP_TESTS:-0}" = "1" ]; then

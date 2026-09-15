@@ -3,3 +3,7 @@ deploy/
 *.elf
 *.nso
 *.npdm
+
+# 宿主 API 还原构建（tests 里按需生成再清理；曾经因为是"白名单下未跟踪目录"
+# 被发布脚本的 `git add -A -- runtime` 带进公开仓库，223 个 .o/.d 文件）。
+.apiart-build/
