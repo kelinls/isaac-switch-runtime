@@ -408,7 +408,22 @@ def parse_mappings(text: str) -> list[tuple[int, int, str, str]]:
     return out
 
 
-def locate_by_scan(session: 'GdbSession', elf: Path) -> tuple[int | None, int | None]:
+def scan_candidates(maps: list[tuple[int, int, str, str]], minimum_size: int) -> list[int]:
+    """从映射表里挑出"可能装着那个模块"的段起点（`locate_by_scan` 的候选筛选）。
+
+    **必须按权限筛**：要认的指纹是**代码**（身份函数头 16 字节、入口函数序言），只有可执行段
+    才可能命中。2026-09-16 实测：不筛权限时一次要读 115 个段，输出被堆/共享内存挤满，
+    真正的候选反而被截断 —— 那是"看起来在读、其实白读一次 attach"的典型（attach 预算很贵）。
+
+    纯函数，门禁测试直接钉（在设备上试错的代价是挂载预算）。
+    """
+    return [start for start, end, perm, kind in maps
+            if 'x' in perm and end - start > minimum_size
+            and kind not in ('Stack', 'SharedCode')]
+
+
+def locate_by_scan(session: 'GdbSession', elf: Path, *, max_candidates: int = 48
+                   ) -> tuple[int | None, int | None]:
     """`monitor get info` 不给模块清单时的兜底：扫内存映射，按**内容指纹**认出两个模块。
 
     为什么能这么认：身份函数那 16 字节是**我们自己的代码**，只有我们的运行时模块里才有；
@@ -418,10 +433,10 @@ def locate_by_scan(session: 'GdbSession', elf: Path) -> tuple[int | None, int | 
     maps = parse_mappings(session.command('monitor get mappings'))
     if not maps:
         return None, None
-    print(f'  （monitor get info 没给模块表，改用 mappings 扫描：{len(maps)} 个已映射段）')
+    candidates = scan_candidates(maps, SYMS['identity'] + 0x100)[:max_candidates]
+    print(f'  （monitor get info 没给模块表，改用 mappings 扫描：{len(maps)} 段里 '
+          f'{len(candidates)} 个可执行候选）')
     identity_expect = local_bytes(elf, SYMS['identity'], 16)
-    candidates = [start for start, end, _p, _k in maps
-                  if end - start > SYMS['identity'] + 0x100 and _k not in ('Stack', 'SharedCode')]
     cmds = []
     for i, start in enumerate(candidates):
         cmds.append(f'echo TAG cand_{i}\\n')
