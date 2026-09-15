@@ -21,6 +21,14 @@ REMOTE="${PUBLIC_REMOTE:-public}"
 
 cd "$(git rev-parse --show-toplevel)"
 
+# 守卫：**只检查已跟踪文件的改动**。切换分支不能带着未提交改动跑——
+# 2026-09-15 就因此把未提交的诊断改动冲掉过（`reset --hard` 之后无影无踪）。
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  echo "工作区有未提交改动，先提交或 git stash 再发布（避免切换分支把改动冲掉）。"
+  git status --short --untracked-files=no
+  exit 1
+fi
+
 # 允许公开的路径（白名单）。**新增目录要显式加进来**，避免把设备备份/文档/第三方内容一起推上去。
 PUBLIC_PATHS=(runtime tools tests README.md CONTRIBUTING.md LICENSE .gitignore)
 # 白名单里也要**排除**的路径：第三方模组内容（可再分发的授权不明确），保持仓库不夹带他人作品。
@@ -47,7 +55,7 @@ done
 
 if git diff --cached --quiet; then
   echo "没有变化，不提交。"
-  git checkout master >/dev/null
+  git checkout -f master >/dev/null
   exit 0
 fi
 
@@ -56,5 +64,5 @@ git commit -m "$TITLE" -m "$DETAIL"
 
 echo "== 4/4 推送到 $REMOTE =="
 git push "$REMOTE" "$BRANCH:main"
-git checkout master >/dev/null
+git checkout -f master >/dev/null
 echo "完成：$TITLE"
