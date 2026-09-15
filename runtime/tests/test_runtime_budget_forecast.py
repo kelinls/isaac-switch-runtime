@@ -10,6 +10,7 @@
 
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -18,9 +19,12 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 
 from runtime_budget_forecast import (  # noqa: E402
+    DEFAULT_FLOOR_KIB,
     ENGINE_METHOD_API_CODE_BYTES,
     FIELD_READ_API_CODE_BYTES,
+    POLICY_ADVICE,
     RODATA_BYTES_PER_API,
+    evaluate_policy,
     forecast,
 )
 
@@ -71,6 +75,52 @@ class RuntimeBudgetForecastTests(unittest.TestCase):
         """
         self.assertEqual(RODATA_BYTES_PER_API, 272)
         self.assertEqual(RODATA_BYTES_PER_API * 4, 1088)
+
+    def test_the_gate_keeps_a_reserve_line(self):
+        """预算闸门：一批做完之后余量不得低于保留线 —— 低于就失败并给出处置清单。
+
+        这条闸门在真实基线上**现在就咬人**：96 条的批量做完代码段只剩 23 KiB，
+        低于默认 32 KiB 保留线 ⇒ 必须先把每条 API 的代码成本压下来（共享守卫校验等）。
+        这是有意为之：它把"先省再写"变成构建期的事实，而不是靠记性。
+        """
+        # 余量足够覆盖这一批、且做完仍在保留线之上 ⇒ 通过。
+        code_end = 0x80000 - 100 * 1024
+        ro_end = 0x100000 - 200 * 1024
+        ok = evaluate_policy(code_end, ro_end, apis=50, kind="engine")
+        self.assertTrue(ok["ok"], ok["problems"])
+        self.assertGreaterEqual(ok["remaining_code"], DEFAULT_FLOOR_KIB * 1024)
+
+        # 做完之后余量掉到保留线下面 ⇒ 失败，并明确指出是哪一段。
+        code_end = 0x80000 - 40 * 1024
+        below = evaluate_policy(code_end, ro_end, apis=50, kind="engine")
+        self.assertFalse(below["ok"])
+        self.assertTrue(any("代码段" in problem for problem in below["problems"]))
+
+        # 放不下（超过容量上限）⇒ 同样是失败，理由要说"放不下"。
+        over = evaluate_policy(0x80000 - 490, ro_end, apis=10, kind="engine")
+        self.assertFalse(over["ok"])
+        self.assertTrue(any("放不下" in problem for problem in over["problems"]))
+
+    def test_the_advice_lists_cost_reductions_before_raising_the_cap(self):
+        """闸门给出的处置顺序必须"先省再抬" —— 抬上限是最后一条，不是第一条。"""
+        text = "\n".join(POLICY_ADVICE)
+        self.assertIn("共享入口守卫校验", text)
+        self.assertIn("字段直读", text)
+        raise_index = text.index("link.ld")
+        self.assertGreater(raise_index, text.index("共享错误文本"),
+                           "抬高上限应当排在成本压缩手段之后")
+
+    def test_a_stub_toolchain_artifact_is_skipped(self):
+        """桩工具链产出的空文件 ⇒ 退出码 3（与布局工具同口径），构建里按"跳过"处理。"""
+        with tempfile.TemporaryDirectory() as temporary:
+            stub = Path(temporary) / "runtime.elf"
+            stub.write_bytes(b"")
+            result = subprocess.run(
+                [sys.executable, str(ROOT / "tools" / "runtime_budget_forecast.py"), "--elf", str(stub)],
+                text=True, capture_output=True, cwd=ROOT,
+            )
+            self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+            self.assertIn("跳过", result.stderr)
 
     def test_cli_reports_a_clear_error_for_a_missing_artifact(self):
         """产物路径不存在 ⇒ 退出码 2 并说清原因（不假装算出了结果）。"""

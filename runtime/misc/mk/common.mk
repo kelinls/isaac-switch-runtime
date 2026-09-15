@@ -284,6 +284,10 @@ all: $(BUILD)
 # 产物（桩工具链的 0 字节文件）上返回 3，这里按"跳过"处理；真实产物超限仍让构建失败。
 PYTHON ?= python3
 READ_ONLY_BUDGET_TOOL := ../tools/runtime_layout_budget.py
+# 预算闸门（2026-09-15 起）：布局工具回答"越没越限"，这个回答"还剩多少、下一批放不放得下"。
+# 默认只检查"当前余量是否还在保留线之上"（`--apis 0`）；要与一批具体工作量对账时，
+# 手工跑 `--apis <条数> --kind engine|field`。桩工具链产物按退出码 3 跳过（与布局工具同口径）。
+BUDGET_FORECAST_TOOL := ../tools/runtime_budget_forecast.py
 UNDEFINED_SYMBOL_TOOL := ../tools/check_runtime_elf_symbols.py
 
 $(BUILD):
@@ -294,6 +298,14 @@ $(BUILD):
 	  status=$$?; \
 	  if [ $$status -eq 3 ]; then \
 	    echo "只读预算：跳过 $(OUTPUT).elf（不是真实 ELF 产物，例如测试用桩工具链）"; \
+	  else \
+	    exit $$status; \
+	  fi; \
+	}
+	@$(PYTHON) $(BUDGET_FORECAST_TOOL) --elf $(OUTPUT).elf --apis 0 || { \
+	  status=$$?; \
+	  if [ $$status -eq 3 ]; then \
+	    echo "预算闸门：跳过 $(OUTPUT).elf（不是真实 ELF 产物，例如测试用桩工具链）"; \
 	  else \
 	    exit $$status; \
 	  fi; \
