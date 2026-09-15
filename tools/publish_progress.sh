@@ -33,10 +33,12 @@ fi
 
 echo "== 2/4 把白名单路径同步到公开分支 $BRANCH =="
 git checkout "$BRANCH" >/dev/null
+# ⚠️ 只同步白名单路径，**绝不用裸 `git add -A`**：工作区里躺着大量未跟踪的杂项
+# （设备备份、日志、`runtime/x/**` 之类），一条 `-A` 就会把它们一起推上公开仓库（踩过）。
 for path in "${PUBLIC_PATHS[@]}"; do
   git checkout master -- "$path"
 done
-git add -A
+git add -A -- "${PUBLIC_PATHS[@]}"
 
 if git diff --cached --quiet; then
   echo "没有变化，不提交。"
