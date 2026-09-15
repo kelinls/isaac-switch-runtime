@@ -1,3 +1,4 @@
+import concurrent.futures as futures
 import hashlib
 import os
 import re
@@ -154,33 +155,29 @@ class GameFileReaderStage11Tests(unittest.TestCase):
             return
 
         with tempfile.TemporaryDirectory(prefix="isaac-elf-isolation-") as temporary:
-            project, copied_runtime = copy_tracked_workspace(temporary)
+            # **两份**工作区：一份保持干净，一份塞进残留 `runtime.elf`，两遍套件**并发**跑。
+            # 为什么改并发（2026-09-15）：原先在同一份工作区里先跑一遍、再塞残留跑第二遍，
+            # 两遍串行 ⇒ 这条用例一个人就吃掉约 130 秒，是整套门禁的墙钟瓶颈。
+            # 判据（"两次的用例数与 OK/FAILED 摘要一致"）与覆盖都不变；并发还让它更干净：
+            # 两遍各跑在自己的目录里，不存在"第一遍的副作用影响第二遍"的可能。
+            clean_project, _clean_runtime = copy_tracked_workspace(temporary)
+            stale_project, copied_runtime = copy_tracked_workspace(str(Path(temporary) / "stale"))
             environment = os.environ.copy()
             environment.pop("ISAAC_RUN_DOCKER_INTEGRATION", None)
             environment["ISAAC_ARTIFACT_ISOLATION_PROBE"] = "1"
 
-            def run_suite():
+            def run_suite(project: Path):
                 # 内层这两遍跑的是**整套门禁**，判据只是"两次的用例数与 OK/FAILED 摘要一致"
                 # （见 `unittest_summary`），跟"谁跑、跑多快"无关。
-                # 2026-09-15 改成走并行脚本：原来用 `unittest discover` 串行跑，
-                # 光这一条用例就吃掉整套门禁 46% 的时间（实测 141 s + 131 s）。
-                # 并发数给 4 而不是默认 8：外层门禁本身已经在并行跑模块，
-                # 内外都拉满会互相抢 CPU，反而更慢。
+                # 并发数给 3、并带 `--fast`：外层门禁本身在并行跑模块，内层再拉满会互相抢 CPU；
+                # 而"工作区里有没有残留 ELF 产物"这件事与 Ghidra/docker 那几路无关。
                 return subprocess.run(
-                    [
-                        os.sys.executable,
-                        "tools/run_tests.py",
-                        "-j",
-                        "4",
-                    ],
+                    [os.sys.executable, "tools/run_tests.py", "-j", "3", "--fast"],
                     cwd=project,
                     env=environment,
                     text=True,
                     capture_output=True,
                 )
-
-            clean = run_suite()
-            self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)
 
             stale_markers = b"\n".join(
                 (
@@ -204,7 +201,14 @@ class GameFileReaderStage11Tests(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(stale_markers)
 
-            stale = run_suite()
+            with futures.ThreadPoolExecutor(max_workers=2) as pool:
+                clean_future = pool.submit(run_suite, clean_project)
+                stale_future = pool.submit(run_suite, stale_project)
+                clean = clean_future.result()
+                stale = stale_future.result()
+
+            self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)
+            self.assertEqual(stale.returncode, 0, stale.stdout + stale.stderr)
             self.assertEqual(stale.returncode, 0, stale.stdout + stale.stderr)
             self.assertEqual(
                 unittest_summary(stale.stdout + stale.stderr),

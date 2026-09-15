@@ -8,7 +8,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "analysis/ghidra/scripts/ExportStage86SwitchAscentCandidates.java"
-GHIDRA = Path("/opt/homebrew/Cellar/ghidra/12.1.3/libexec/support/analyzeHeadless")
+# 走缓存包装器（`tools/ghidra_cached.py`）：同一份「脚本 + 工程 + 参数」第二次直接复用上次的
+# 导出结果，不再重跑一次无头分析。35 个模块每次都重跑 = 整轮门禁 164 秒的墙钟下限，
+# 而它们做的事完全一样（打开同一个工程、跑一个导出脚本、写一个 JSON）。
+GHIDRA = Path(__file__).resolve().parents[2] / "tools" / "ghidra_cached.py"
 PROJECT = ROOT / "analysis/ghidra"
 
 

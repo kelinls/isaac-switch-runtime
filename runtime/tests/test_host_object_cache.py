@@ -235,17 +235,44 @@ class ParallelRunnerTests(unittest.TestCase):
             """self.assertIsNotNone(pattern.search('["docker", "run"]'))"""))
 
     def test_ghidra_modules_are_exclusive_too(self):
-        """Ghidra 模块必须串行：**35 个模块共用同一个 Ghidra 工程**，并发会撞工程锁。
+        """Ghidra 模块必须串行：**几十个模块共用同一个 Ghidra 工程**，并发会撞工程锁。
 
-        实测：第一版只把 docker 模块划成独占，结果 22 个 Ghidra 模块同时红
-        （`analyzeHeadless` 返回码 1）。
+        实测：第一版只把 docker 模块划成独占，结果 22 个模块同时红（无头分析返回码 1）。
+        另外两个判据都要认（直接指向可执行文件 / 指向缓存包装器），否则模块改用包装器之后
+        会被判成"与 Ghidra 无关"⇒ 进并行批次 ⇒ 首次未命中时一起打开同一个工程。
         """
-        self.assertTrue(self.runner.module_uses_ghidra(
-            'GHIDRA = Path("/opt/homebrew/Cellar/ghidra/12.1.3/libexec/support/analyzeHeadless")'))
+        # 判据是按"文件里有没有这个字符串常量"认的，所以这里**运行时拼**出来 ——
+        # 写死本文件就会被自己判成"要用 Ghidra"，白白进串行批次（实测多花 29 秒）。
+        headless_name = "analyze" + "Headless"
+        wrapper_name = "ghidra" + "_" + "cached.py"
+        self.assertTrue(self.runner.module_uses_ghidra(f'GHIDRA = Path("/opt/ghidra/support/{headless_name}")'))
+        self.assertTrue(self.runner.module_uses_ghidra(f'GHIDRA = ROOT / "tools" / "{wrapper_name}"'))
         self.assertFalse(self.runner.module_uses_ghidra("x = 1"))
         # 两个判据都要汇总到同一个入口上，别漏掉任何一个
         self.assertTrue(self.runner.module_needs_exclusive_resource('subprocess.run(["docker"])'))
-        self.assertTrue(self.runner.module_needs_exclusive_resource('G = "analyzeHeadless"'))
+        self.assertTrue(self.runner.module_needs_exclusive_resource(f'G = "{headless_name}"'))
+
+    def test_fast_mode_skips_exclusive_batch_and_nested_suite(self):
+        """`--fast` 必须：跳过独占批次 + 那条会跑整套门禁的嵌套用例，并**打印跳过了什么**。
+
+        为什么强调"打印"：绿了但没跑过，是这个项目最怕的假象 —— 跳过清单必须留在输出里。
+        """
+        import contextlib
+        import io
+
+        parallel, exclusive = self.runner.discover_modules()
+        self.assertIn(self.runner.NESTED_SUITE_MODULE, parallel,
+                      "嵌套套件用例应当在并行批次里被发现")
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = self.runner.main(["--fast", "--only", "zzz-no-such-module"])
+        output = buffer.getvalue()
+        self.assertEqual(code, 0, output)
+        self.assertIn("快速模式", output)
+        self.assertIn(self.runner.NESTED_SUITE_MODULE, output)
+        self.assertIn("不是交付证据", output)
+        for module in exclusive[:3]:
+            self.assertIn(module, output, "跳过的模块名要逐个打印出来")
 
     def test_discovery_splits_modules_into_two_groups(self):
         parallel, exclusive = self.runner.discover_modules()

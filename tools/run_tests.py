@@ -38,6 +38,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TESTS_DIR = ROOT / "runtime" / "tests"
 
+#: 会**自己再跑一遍整套门禁**的用例（`test_game_file_reader_stage10` 的产物隔离检查）。
+#: 快速模式跳过它；完整门禁必须跑。
+NESTED_SUITE_MODULE = "runtime.tests.test_game_file_reader_stage10"
+
 #: 需要**独占资源**、不能并行跑的模块：
 #:   1. 要用 docker 容器的（并发会互相抢容器与磁盘）；
 #:   2. 要跑 Ghidra 无头分析的（**所有 Ghidra 模块共用同一个 Ghidra 工程
@@ -50,6 +54,10 @@ _CONTAINER_HELPERS = frozenset({"run_in_toolchain", "docker_image_available"})
 _SUBPROCESS_CALLS = frozenset({"run", "Popen", "check_output", "check_call", "call"})
 #: Ghidra 无头分析的可执行文件名（模块里通常写成 `GHIDRA = Path("…/analyzeHeadless")`）。
 GHIDRA_MARKER = "analyzeHeadless"
+#: 缓存包装器的文件名（2026-09-15 起模块都指向它）。**两个都要认**：
+#: 只认前者的话，模块改用包装器之后会被判成"与 Ghidra 无关"⇒ 进并行批次 ⇒
+#: 首次未命中时几十个进程一起打开同一个 Ghidra 工程，撞工程锁（实测过一次，22 个模块同时红）。
+GHIDRA_WRAPPER_MARKER = "ghidra_cached.py"
 
 #: 兜底用的关键字匹配（只在 AST 解析失败时使用）。
 EXCLUSIVE_KEYWORDS = re.compile(
@@ -93,7 +101,7 @@ def module_uses_ghidra(source: str) -> bool:
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if GHIDRA_MARKER in node.value:
+            if GHIDRA_MARKER in node.value or GHIDRA_WRAPPER_MARKER in node.value:
                 return True
     return False
 
@@ -197,11 +205,27 @@ def main(argv: list[str] | None = None) -> int:
                         help="并发进程数（0 = min(8, CPU 核数)；1 = 串行）")
     parser.add_argument("--list", action="store_true", help="只列出模块与分组")
     parser.add_argument("--only", default="", help="只跑模块名里含这个子串的（排障用）")
+    parser.add_argument("--fast", action="store_true",
+                        help='快速模式：跳过独占批次（Ghidra/docker）与那条会跑整套门禁的嵌套用例；'
+                         '只用于日常改动的内循环，不能当交付证据')
     parser.add_argument("--verbose-failures", action="store_true", default=True,
                         help="失败时打印该模块的完整输出（默认开）")
     args = parser.parse_args(argv)
 
     parallel, exclusive = discover_modules()
+    if args.fast:
+        # 快速模式跳过的两类：
+        #   * 独占批次（Ghidra 无头分析 + docker 容器）—— 它们验的是"引擎里那些结论还成立吗"，
+        #     与"我刚改的这几行有没有把别处弄坏"无关，而它们是整轮门禁的墙钟大头；
+        #   * 嵌套用例 `test_game_file_reader_stage10` —— 它自己会再跑一遍整套门禁。
+        # 跳过的模块名会**原样打印**，免得"绿了但没跑"被当成"全跑过"。
+        skipped = sorted(exclusive + [NESTED_SUITE_MODULE]) if NESTED_SUITE_MODULE else sorted(exclusive)
+        parallel = [module for module in parallel if module != NESTED_SUITE_MODULE]
+        exclusive = []
+        print(f"⚡ 快速模式：跳过 {len(skipped)} 个模块（独占批次 + 嵌套套件用例）——")
+        for module in skipped:
+            print(f"     - {module}")
+        print("   ⚠ 这不是交付证据：发布前请跑不带 --fast 的完整门禁。", flush=True)
     if args.only:
         parallel = [m for m in parallel if args.only in m]
         exclusive = [m for m in exclusive if args.only in m]
@@ -262,6 +286,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"FAILED ({len(bad)} 个模块有问题)")
         for result in bad:
             print(f"  ✗ {result['module']}：{result['failed'] or '进程退出码 %d' % result['code']}")
+            # 改一处、只想重跑这一条时用（整轮 1.5 分钟，单条几秒）：
+            print(f"     重跑这一条：python3 tools/run_tests.py --only {result['module'].rsplit('.', 1)[-1]}")
             if args.verbose_failures:
                 print("-" * 70)
                 print(result["output"].strip()[:4000])
