@@ -3459,6 +3459,29 @@ std::uintptr_t ResolveFieldReceipt(lua_State* state, FieldReceipt receipt, int i
             auto* handle = CheckItemConfigItemHandle(state, index);
             return ValidatedItem(handle);
         }
+        case FieldReceipt::Level: {
+            // `Level` 内嵌在 `Game` 起始处，解析链与 `Room`/描述符那条**逐字相同**：
+            // `g_Game` 槽是"槽的地址"（指针变量）→ 解一次得 owner → 再解一次才是 `Game*`。
+            // 少解一层会去读模块里的代码字节（真机探针上踩过同一个坑）。
+            const std::uintptr_t moduleBase = EngineModuleBase();
+            if (moduleBase == 0 || moduleBase > UINTPTR_MAX - kGameOwnerGlobalSlotOffset) {
+                return 0;
+            }
+            const std::uintptr_t slot = moduleBase + kGameOwnerGlobalSlotOffset;
+            if (!IsEngineMemoryReadable(slot, sizeof(std::uintptr_t))) {
+                return 0;
+            }
+            std::uintptr_t owner = 0;
+            if (!ReadEngine(slot, &owner) || owner == 0 ||
+                !IsEngineMemoryReadable(owner, sizeof(std::uintptr_t))) {
+                return 0;
+            }
+            std::uintptr_t level = 0;
+            if (!ReadEngine(owner, &level)) {
+                return 0;
+            }
+            return level;
+        }
     }
     return 0;
 }
@@ -3485,7 +3508,9 @@ void PushMissingFieldValue(lua_State* state, FieldMissing missing) {
 //: 超过它说明 begin/end 读到的不是一对真指针（内存不可信），按"读不到"降级而不是返回巨大数字。
 constexpr std::uintptr_t kFieldVectorCountMaximum = 4096;
 
-//: Entity 族的字段读取型 API。
+//: `Isaac` 族（含 `Entity`/`EntityPlayer`/`ItemConfig_Item`）的字段读取型 API。
+//: **家族的绑定行必须住在自己的 TU 里**（契约门禁会逐条核对），所以 `Level` 的行表在
+//: `remaining_api.cpp`（`kLevelFieldApis`）——共享处理器是同一个 `FieldApiHandler`。
 //:
 //: 每一行 = 一个 API，**0 字节代码**；手写同类方法实测 236–312 字节。
 //: 只收"无参数、接收者+固定偏移、读不到按族约定降级"的形状；带参数或需要分支的（例如
@@ -3528,6 +3553,13 @@ constexpr FieldApiRow kFieldApis[] = {
 };
 
 } // namespace
+
+const FieldApiRow* FieldApiRows(std::size_t* count) noexcept {
+    if (count != nullptr) {
+        *count = sizeof(kFieldApis) / sizeof(kFieldApis[0]);
+    }
+    return kFieldApis;
+}
 
 int FieldApiHandler(lua_State* state) {
     const auto* row =
@@ -3615,6 +3647,17 @@ int FieldApiHandler(lua_State* state) {
             lua_pushinteger(state, static_cast<lua_Integer>(span / stride));
             return 1;
         }
+        case FieldKind::BoolNonZero: {
+            // 读一个 `u32`，"非零即真"。`Level:IsAltStage()` 就是这一条：
+            // PC 契约（`Level.md`）= "StageType 不是 STAGETYPE_ORIGINAL(0)"。
+            std::uint32_t value = 0;
+            if (!ReadEngine(receiver + row->offset, &value)) {
+                PushMissingFieldValue(state, row->missing);
+                return 1;
+            }
+            lua_pushboolean(state, value != 0 ? 1 : 0);
+            return 1;
+        }
         case FieldKind::SumU32Array: {
             // `offset`/`offset2` 是一对 `u32[]` 的 begin/end，把每一格**相加**。
             //
@@ -3676,9 +3719,10 @@ std::size_t AttachEntityMethods(lua_State* state) noexcept {
 }
 
 std::size_t AttachEntityPlayerMethods(lua_State* state) noexcept {
+    std::size_t fieldApiCount = 0;
     return AttachOwnerMethods(state, kEntityPlayerOwner, kEntityPlayerHandlers,
-                              RowCount(kEntityPlayerHandlers), kFieldApis,
-                              RowCount(kFieldApis));
+                              RowCount(kEntityPlayerHandlers), FieldApiRows(&fieldApiCount),
+                              fieldApiCount);
 }
 
 std::size_t AttachEntityPickupMethods(lua_State* state) noexcept {
@@ -3692,11 +3736,12 @@ std::size_t AttachItemConfigMethods(lua_State* state) noexcept {
 }
 
 std::size_t AttachItemConfigItemMethods(lua_State* state) noexcept {
+    std::size_t fieldApiCount = 0;
     // 同一张数据行表也挂给 `ItemConfig_Item` 族：绑定循环按 id 匹配，不会串族
     // （行里的 `receipt` 决定用哪套接收者校验）。
     return AttachOwnerMethods(state, kItemConfigItemOwner, kItemConfigItemHandlers,
-                              RowCount(kItemConfigItemHandlers), kFieldApis,
-                              RowCount(kFieldApis));
+                              RowCount(kItemConfigItemHandlers), FieldApiRows(&fieldApiCount),
+                              fieldApiCount);
 }
 
 #if !defined(__SWITCH__)

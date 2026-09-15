@@ -15,6 +15,7 @@ inline constexpr char kGameMetatable[] = "IsaacRuntime.Game";
 inline constexpr char kLevelMetatable[] = "IsaacRuntime.Level";
 inline constexpr char kItemPoolMetatable[] = "IsaacRuntime.ItemPool";
 inline constexpr char kRoomMetatable[] = "IsaacRuntime.Room";
+inline constexpr char kGridEntityMetatable[] = "IsaacRuntime.GridEntity";
 // 地基二期新增（`Level` 的三个房间描述符 API 的返回值）。
 inline constexpr char kRoomDescriptorMetatable[] = "IsaacRuntime.RoomDescriptor";
 inline constexpr char kRoomDescriptorListMetatable[] = "IsaacRuntime.RoomDescriptorList";
@@ -96,6 +97,17 @@ struct RngHandle {
 // （`features/eid_api.lua:1369`）用的就是七参形式。这三个值只保存在句柄里、不参与任何引擎调用
 // （`font_api` 传给引擎的仍然是句柄起头的 16 字节 RGBA，与既有的"16 字节颜色"假设一致）；
 // 好处是后三个参数不再被静默丢掉，而且整块内存都被初始化。
+// `GridEntity`（批次 12，2026-09-16）：**持有引擎指针**（网格实体对象地址），
+// 所以按本文件的约束摆在 `MusicHandle` 之后那一带（`RoomHandle`…`MusicHandle` 区间内
+// 不许放带 `void*`/`uintptr_t` 的结构体 —— 那条约束是契约门禁在管的）。
+//
+// 为什么现在才加：`Room:GetGridEntity()` 过去是登记在案的"恒返回 nil"偏离（网格实体表未定位）。
+// 2026-09-16 定位到表在 `Room + 0x30`（证据见 `runtime_constants.hpp` 的
+// `kRoomGridEntityTableOffset`），于是这一族可以建起来了。
+struct GridEntityHandle {
+    void* entity;
+};
+
 struct ColorHandle {
     float red;
     float green;

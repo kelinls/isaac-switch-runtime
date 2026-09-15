@@ -1,3 +1,4 @@
+#include "interfaces/lua/field_api.hpp"
 #include "interfaces/lua/remaining_api.hpp"
 
 #include "room_layout.hpp"
@@ -72,8 +73,13 @@ int RoomGetGridPath(lua_State* state);
 int RoomGetGridEntity(lua_State* state);
 int RoomGetRenderScrollOffset(lua_State* state);
 int RoomGetWorldToScreenPosition(lua_State* state);
+int LevelIsPreAscent(lua_State* state);
+int GridEntityGetVariant(lua_State* state);
+int GridEntityGetType(lua_State* state);
+int GridEntityGetRng(lua_State* state);
 int ItemPoolGetLastPool(lua_State* state);
 int ItemPoolGetCollectible(lua_State* state);
+int ItemPoolIsPillIdentified(lua_State* state);
 
 constexpr LuaHandlerBinding kLevelHandlers[] = {
     {0x03010001, &LevelGetStage},
@@ -86,6 +92,13 @@ constexpr LuaHandlerBinding kLevelHandlers[] = {
     {0x03010008, &LevelGetCurrentRoomDesc},
     {0x03010009, &LevelGetRoomByIdx},
     {0x0301000A, &LevelGetRooms},
+    {0x0301000D, &LevelIsPreAscent},
+};
+
+constexpr LuaHandlerBinding kGridEntityHandlers[] = {
+    {0x0E010052, &GridEntityGetVariant},
+    {0x0E010053, &GridEntityGetType},
+    {0x0E010054, &GridEntityGetRng},
 };
 
 constexpr LuaHandlerBinding kRoomHandlers[] = {
@@ -103,6 +116,7 @@ constexpr LuaHandlerBinding kRoomHandlers[] = {
 constexpr LuaHandlerBinding kItemPoolHandlers[] = {
     {0x05010001, &ItemPoolGetCollectible},
     {0x05010002, &ItemPoolGetLastPool},
+    {0x05010003, &ItemPoolIsPillIdentified},
 };
 
 template <typename Table>
@@ -678,10 +692,129 @@ int RoomGetGridEntity(lua_State* state) {
     if (!InManagedCallbackScope()) {
         return luaL_error(state, "Room:GetGridEntity is only available during a Runtime callback");
     }
-    // 没有真实的网格实体数据：返回 nil（"这里没有网格实体"），不编造对象。
-    lua_pushnil(state);
+    std::uintptr_t level = 0;
+    if (!ResolveCurrentLevel(&level) || level == 0) {
+        return luaL_error(state, "Room:GetGridEntity could not read the native Level state");
+    }
+    // 网格实体表在 `Room + 0x30`（证据见 `kRoomGridEntityTableOffset`），按网格下标索引、
+    // 每项一个 `GridEntity*`。下标越界/空项一律返回 nil（PC 语义："这里没有网格实体"）。
+    void* room = nullptr;
+    if (ReadCurrentGameRoom(GameOwnerSlot(), &room) != GameRoomObservation::Success ||
+        room == nullptr) {
+        return luaL_error(state, "Room:GetGridEntity could not read the native Room state");
+    }
+    const std::uintptr_t roomAddress = reinterpret_cast<std::uintptr_t>(room);
+    lua_Integer gridIndex = 0;
+    if (!RoomGridIndexArgument(state, 2, &gridIndex) || gridIndex < 0) {
+        return luaL_error(state, "Room:GetGridEntity accepts one grid index");
+    }
+    const std::uintptr_t slot = roomAddress + kRoomGridEntityTableOffset +
+                                static_cast<std::uintptr_t>(gridIndex) * sizeof(std::uintptr_t);
+    if (!IsEngineMemoryReadable(slot, sizeof(std::uintptr_t))) {
+        lua_pushnil(state);
+        return 1;
+    }
+    std::uintptr_t entity = 0;
+    std::memcpy(&entity, reinterpret_cast<const void*>(slot), sizeof(entity));
+    if (entity == 0) {
+        lua_pushnil(state);
+        return 1;
+    }
+    auto* handle = static_cast<LuaRuntime::GridEntityHandle*>(
+        lua_newuserdata(state, sizeof(LuaRuntime::GridEntityHandle)));
+    handle->entity = reinterpret_cast<void*>(entity);
+    luaL_getmetatable(state, LuaRuntime::kGridEntityMetatable);
+    lua_setmetatable(state, -2);
     return 1;
 }
+
+// `GridEntity:GetVariant()`（批次 12）：读 `GridEntity + 0x10`（证据见 `kGridEntityVariantOffset`：
+// 便便的 `InitSubclass`/`Update` 反复把该字段与 1000 比较，而便便 variant 正是 1000 起）。
+int GridEntityGetVariant(lua_State* state) {
+    auto* handle = static_cast<LuaRuntime::GridEntityHandle*>(
+        luaL_checkudata(state, 1, LuaRuntime::kGridEntityMetatable));
+    if (lua_gettop(state) != 1) {
+        return luaL_error(state, "GridEntity:GetVariant accepts no arguments");
+    }
+    if (!InManagedCallbackScope()) {
+        return luaL_error(state,
+                          "GridEntity:GetVariant is only available during a Runtime callback");
+    }
+    const std::uintptr_t entity = reinterpret_cast<std::uintptr_t>(handle->entity);
+    std::uint32_t variant = 0;
+    if (entity == 0 ||
+        !IsEngineMemoryReadable(entity + kGridEntityVariantOffset, sizeof(variant))) {
+        lua_pushnil(state);
+        return 1;
+    }
+    std::memcpy(&variant, reinterpret_cast<const void*>(entity + kGridEntityVariantOffset),
+                sizeof(variant));
+    lua_pushinteger(state, static_cast<lua_Integer>(variant));
+    return 1;
+}
+
+// `GridEntity:GetType()`：读 `GridEntity + 0x18`（`GridEntity::Init(eGridEntityType)` 的第一条存值）。
+int GridEntityGetType(lua_State* state) {
+    auto* handle = static_cast<LuaRuntime::GridEntityHandle*>(
+        luaL_checkudata(state, 1, LuaRuntime::kGridEntityMetatable));
+    if (lua_gettop(state) != 1) {
+        return luaL_error(state, "GridEntity:GetType accepts no arguments");
+    }
+    if (!InManagedCallbackScope()) {
+        return luaL_error(state, "GridEntity:GetType is only available during a Runtime callback");
+    }
+    const std::uintptr_t entity = reinterpret_cast<std::uintptr_t>(handle->entity);
+    std::uint32_t type = 0;
+    if (entity == 0 || !IsEngineMemoryReadable(entity + kGridEntityTypeOffset, sizeof(type))) {
+        lua_pushnil(state);
+        return 1;
+    }
+    std::memcpy(&type, reinterpret_cast<const void*>(entity + kGridEntityTypeOffset),
+                sizeof(type));
+    lua_pushinteger(state, static_cast<lua_Integer>(type));
+    return 1;
+}
+
+// `GridEntity:GetRNG()`（批次 13，2026-09-16）：PC 文档 `GridEntity.md:38` 返回该网格实体自己的
+// `RNG`（`RNG.md:18` 也把它列进 "RNG 从哪里来" 的清单）。EID 的用法是
+// `features/eid_itemprediction.lua:120` 的 `spikes:GetRNG():GetSeed()` —— 拿血契尖刺当前的种子，
+// 再用自己的 RNG 步骤推出下一次结果。
+//
+// 偏移（`GridEntity + 0x30`）与 RNG 内部布局（16 字节、种子在头 4 字节）的证据见
+// `runtime_constants.hpp` 的 `kGridEntityRngOffset` / `kRngObjectSize`。
+//
+// ★ 这里交回 Lua 的是**调用瞬间那 16 字节的一份快照**，不是引擎里那个 RNG 的活引用（PC 返回引用）。
+//   取舍的理由：网格实体会随时被销毁（石头炸掉、尖刺消耗、换房间重建），而本句柄只存实体地址、
+//   拿不到网格下标（`EntityHandle`/`SpriteHandle` 那种"每次访问重新解析并校验"的做法在这里无从
+//   落地），让 Lua 长期握着一个"引擎对象内部成员"的指针就等于把"写已释放内存"的口子开给模组。
+//   读语义上快照与引用逐值相同（`GetSeed`/`Next`/`RandomInt` 在取到的那一刻完全一致），
+//   差别只在"从返回对象上改状态会不会影响引擎" —— 已按项目规矩登记为偏离（见 `api_deviation.cpp`
+//   里 `0x0E010054` 那条），不是悄悄换掉。
+int GridEntityGetRng(lua_State* state) {
+    auto* handle = static_cast<LuaRuntime::GridEntityHandle*>(
+        luaL_checkudata(state, 1, LuaRuntime::kGridEntityMetatable));
+    if (lua_gettop(state) != 1) {
+        return luaL_error(state, "GridEntity:GetRNG accepts no arguments");
+    }
+    if (!InManagedCallbackScope()) {
+        return luaL_error(state, "GridEntity:GetRNG is only available during a Runtime callback");
+    }
+    const std::uintptr_t entity = reinterpret_cast<std::uintptr_t>(handle->entity);
+    if (entity == 0 || entity > UINTPTR_MAX - kGridEntityRngOffset ||
+        !IsEngineMemoryReadable(entity + kGridEntityRngOffset, kRngObjectSize)) {
+        lua_pushnil(state);
+        return 1;
+    }
+    auto* rng = static_cast<LuaRuntime::RngHandle*>(
+        lua_newuserdata(state, sizeof(LuaRuntime::RngHandle)));
+    *rng = {};
+    std::memcpy(rng->storage.data(), reinterpret_cast<const void*>(entity + kGridEntityRngOffset),
+                kRngObjectSize);
+    luaL_getmetatable(state, LuaRuntime::kRngMetatable);
+    lua_setmetatable(state, -2);
+    return 1;
+}
+
 
 // `Room:GetRenderScrollOffset()`（PC 文档 `Room.md:473`，返回 `const Vector`）：
 // 房间渲染的滚动偏移。EID 用它把世界坐标换算到屏幕坐标。
@@ -797,6 +930,7 @@ int RoomGetWorldToScreenPosition(lua_State* state) {
     return 1;
 }
 
+
 int ItemPoolGetLastPool(lua_State* state) {
     luaL_checkudata(state, 1, kItemPoolMetatable);
     if (lua_gettop(state) != 1) {
@@ -855,6 +989,64 @@ int ItemPoolGetCollectible(lua_State* state) {
         itemPool, static_cast<std::uint32_t>(poolType), static_cast<std::uint32_t>(seed),
         lua_toboolean(state, 3) ? 0u : 1u, static_cast<std::uint32_t>(defaultItem));
     lua_pushinteger(state, static_cast<lua_Integer>(result));
+    return 1;
+}
+
+// `ItemPool:IsPillIdentified(PillColor)`（批次 13，2026-09-16）：PC 文档 `ItemPool.md:89`
+// 的签名是 `boolean IsPillIdentified(PillColor PillColor)`。EID 用它决定"没识别过的药丸
+// 要不要泄底"（`main.lua:1649`、`eid_itemprediction.lua:339`、`eid_holdmapdesc.lua:575`）。
+//
+// 底座是 `ItemPool + 0xa68 + color` 这个**每个颜色一字节**的"已识别"表，紧挨在
+// `ItemPool + 0xa2c` 的 15 项药丸效果表后面（15×4 = 0x3C，0xa2c + 0x3C = 0xa68 —— 算术自洽）。
+// 完整证据链见 `runtime_constants.hpp` 的 `kItemPoolPillIdentifiedOffset`：
+//   * HUD 用它决定显示药丸真名还是 `#QUESTION_MARKS_NAME`（"???"）；
+//   * 存档恢复（`ItemPool::RestoreGameState`）与重掷药丸效果（`ItemPool::RerollPillEffect`）都写它。
+//
+// 两条边界口径（都刻意与"照抄引擎"不同，写在这里免得以后当成 bug）：
+//   * 颜色先按 `PILL_COLOR_MASK`（0x7ff）掩码 —— 引擎自己就是这么做的
+//     （`ItemPool::GetPillEffect` 的第一条指令就是 `and w8, w1, #0x7ff`），马匹药丸把高位置 1
+//     之后再掩码取本色；
+//   * 掩码后 >= `NUM_PILLS`(15) 或参数为负 ⇒ 直接回答"没识别"，**不报错**。PC 那条 Lua 访问器
+//     会按下标直接读（越界读进 `ItemPool` 的其它字段、得到一个没有语义的字节）；我们不复刻越界读，
+//     也不抛错 —— 抛错会摘掉整条描述回调（本项目已多次踩过），而"没识别"对越界输入是安全的保守答案。
+int ItemPoolIsPillIdentified(lua_State* state) {
+    luaL_checkudata(state, 1, kItemPoolMetatable);
+    if (lua_gettop(state) != 2 || !lua_isinteger(state, 2)) {
+        return luaL_error(state, "ItemPool:IsPillIdentified accepts one pill colour");
+    }
+    if (!InManagedCallbackScope()) {
+        return luaL_error(state,
+                          "ItemPool:IsPillIdentified is only available during a Runtime callback");
+    }
+    const lua_Integer colour = lua_tointegerx(state, 2, nullptr);
+    if (colour < 0) {
+        lua_pushboolean(state, 0);
+        return 1;
+    }
+    // **只掩码、不判"高位是否干净"**：巨大药丸（马匹药丸）的颜色就是"本色 | 0x800"，
+    // 引擎自己也是先 `and w8, w1, #0x7ff` 再按下标取表（见 `ItemPool::GetPillEffect`），
+    // 所以这里必须与它同口径 —— 否则 `IsPillIdentified(3 | 0x800)` 会错答 false。
+    const std::uint32_t masked = static_cast<std::uint32_t>(colour) & kPillColorMask;
+    if (masked >= kPillColorCount) {
+        lua_pushboolean(state, 0);
+        return 1;
+    }
+    void* itemPool = nullptr;
+    if (ReadCurrentGameItemPool(GameOwnerSlot(), &itemPool) != GameItemPoolObservation::Success) {
+        return luaL_error(state,
+                          "ItemPool:IsPillIdentified could not read the native ItemPool state");
+    }
+    const std::uintptr_t address = reinterpret_cast<std::uintptr_t>(itemPool);
+    if (address == 0 || address > UINTPTR_MAX - kItemPoolPillIdentifiedOffset ||
+        !IsEngineMemoryReadable(address + kItemPoolPillIdentifiedOffset + masked,
+                                sizeof(std::uint8_t))) {
+        return luaL_error(state, "ItemPool:IsPillIdentified could not read the pill state");
+    }
+    std::uint8_t identified = 0;
+    std::memcpy(&identified,
+                reinterpret_cast<const void*>(address + kItemPoolPillIdentifiedOffset + masked),
+                sizeof(identified));
+    lua_pushboolean(state, identified != 0 ? 1 : 0);
     return 1;
 }
 
@@ -1108,10 +1300,70 @@ int LevelGetRooms(lua_State* state) {
     return 1;
 }
 
+// `Level:IsPreAscent()`（批次 11）：PC 文档（`Level.md`）说它表示"玩家处在**通往升华**的
+// 幕府/革赫那第二层"。
+//
+// 判据由两个已定名的字段组成：
+//   * `Level + 0x00` == `STAGE4_3(9)`（幕府 II / 革赫那 II）；
+//   * `Level + 0x04` 属于忏悔时代关卡 —— 引擎自己的写法是"清掉 bit0 后等于 4"，
+//     正好把 `STAGETYPE_REPENTANCE(4)` 与 `STAGETYPE_REPENTANCE_B(5)` 归成一类
+//     （证据见 `kLevelStageTypeOffset`）。
+// ⚠ 这条判据来自**文档 + 字段证据**；真机上要走到幕府/革赫那第二层才能实测到 true，
+// 普通楼层必须返回 false（这一条宿主与真机都能验）。
+int LevelIsPreAscent(lua_State* state) {
+    luaL_checkudata(state, 1, kLevelMetatable);
+    if (lua_gettop(state) != 1) {
+        return luaL_error(state, "Level:IsPreAscent accepts no arguments");
+    }
+    if (!InManagedCallbackScope()) {
+        return luaL_error(state, "Level:IsPreAscent is only available during a Runtime callback");
+    }
+    // 解析链用 `ResolveCurrentLevel`（模块偏移那条），**不要**用 `ResolveLevelForDescriptor`：
+    // 后者从安装期发布的 `GameOwnerSlot()` 出发、比前者多解一层 —— 宿主夹具上直接段错误
+    // （实测：把 `g_Game` 槽前 8 字节当成指针，读到的是"关卡+类型"打包成的 0x400000009）。
+    // 本文件里设备验证过的 `Level:GetCurrentRoomIndex` 用的就是 `ResolveCurrentLevel`（真机 `idx=84` ✓）。
+    std::uintptr_t level = 0;
+    std::uint32_t stage = 0;
+    std::uint32_t stageType = 0;
+    if (!ResolveCurrentLevel(&level) || level == 0 ||
+        !IsEngineMemoryReadable(level + kLevelStageOffset, sizeof(stage)) ||
+        !IsEngineMemoryReadable(level + kLevelStageTypeOffset, sizeof(stageType))) {
+        lua_pushboolean(state, 0);
+        return 1;
+    }
+    std::memcpy(&stage, reinterpret_cast<const void*>(level + kLevelStageOffset), sizeof(stage));
+    std::memcpy(&stageType, reinterpret_cast<const void*>(level + kLevelStageTypeOffset),
+                sizeof(stageType));
+    const bool preAscent =
+        stage == kLevelStagePreAscent && (stageType & ~1U) == kStageTypeRepentanceEraMasked;
+    lua_pushboolean(state, preAscent ? 1 : 0);
+    return 1;
+}
+
 } // namespace
 
+
+//: `Level` 族的字段读取型 API。**家族的行表住在自己的 TU 里**（契约门禁逐条核对），
+//: 处理器 `FieldApiHandler` 是共享的那一个。
+//:
+//: 字段证据（`runtime_constants.hpp` 的 `kLevelStageTypeOffset`）：`Level::SetStage(eLevelStage,
+//: eStageType)` 用 `stp w21, w20, [x19]` 把两个参数**连着**写进 `this+0x00`/`+0x04`。
+constexpr FieldApiRow kLevelFieldApis[] = {
+    // `Level:GetStageType()`：读 `Level + 0x04`（`eStageType`）。这条顺带让真机探针能**直接核对**
+    // 这个字段（原始枚举值比一个布尔更好对照）。
+    {0x0301000B, kLevelStageTypeOffset, 0, FieldKind::U32, FieldMissing::Nil,
+     FieldReceipt::Level, 0xFF},
+    // `Level:IsAltStage()`：PC 契约（`Level.md`）= "StageType **不是** `STAGETYPE_ORIGINAL(0)`"，
+    // 判据就是 `Level + 0x04 != 0`。
+    {0x0301000C, kLevelStageTypeOffset, 0, FieldKind::BoolNonZero, FieldMissing::False,
+     FieldReceipt::Level, 0xFF},
+};
+
 std::size_t AttachLevelMethods(lua_State* state) noexcept {
-    return AttachOwnerMethods(state, "Level", kLevelHandlers, RowCount(kLevelHandlers));
+    // 字段读取型行表也挂给 `Level` 族（批次 11 起）：绑定循环按 id 匹配，不会串族；
+    // 行里的 `receipt` 决定用哪套接收者校验。
+    return AttachOwnerMethods(state, "Level", kLevelHandlers, RowCount(kLevelHandlers),
+                              kLevelFieldApis, RowCount(kLevelFieldApis));
 }
 
 // `RoomDescriptor` 的字段访问。**只服务已 confirmed 的字段**；其它一律 nil。
@@ -1234,6 +1486,12 @@ std::size_t AttachRoomDescriptorListMethods(lua_State* state) noexcept {
 
 std::size_t AttachRoomMethods(lua_State* state) noexcept {
     return AttachOwnerMethods(state, "Room", kRoomHandlers, RowCount(kRoomHandlers));
+}
+
+// `GridEntity` 族的方法表（元表在 `lua_runtime.cpp` 里建）。
+std::size_t AttachGridEntityMethods(lua_State* state) noexcept {
+    return AttachOwnerMethods(state, "GridEntity", kGridEntityHandlers,
+                              RowCount(kGridEntityHandlers));
 }
 
 std::size_t AttachItemPoolMethods(lua_State* state) noexcept {

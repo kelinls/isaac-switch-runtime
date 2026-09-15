@@ -42,9 +42,11 @@ constexpr ApiDeviation kApiDeviations[] = {
     // ---- `Room` 网格/寻路（保守占位）-----------------------------------------
     {0x04010002,
      ApiDeviationKind::Placeholder,
-     "`Room` 的网格尺寸字段未定位。宽高返回标准房间边长 13（只为让 EID 的下标计算不除零），"
-     "`GetGridPath` 恒报'不可走'、`GetGridEntity` 返回 nil。偏离后果：EID 的寻路判定恒为"
-     "'没有可达路径' —— 刻意选择'少画提示'而不是'用假数据画出错误提示'。"},
+     "`Room` 的网格尺寸字段未定位。宽高返回标准房间边长 13（只为让 EID 的下标计算不除零）。"
+     "偏离后果：EID 的寻路判定恒为'没有可达路径' —— 刻意选择'少画提示'而不是'用假数据画出"
+     "错误提示'。**注意**：这条文本在 2026-09-16 更新过一次，删掉了'GetGridEntity 恒返回 nil'"
+     "那半句 —— 网格实体表已定位（`Room + 0x30`），`GetGridEntity` 现在是真的，"
+     "别把已经消掉的偏离继续挂在这条上。"},
     {0x04010003,
      ApiDeviationKind::Placeholder,
      "`Room:GetGridHeight()`：网格高度字段未定位 ⇒ 返回标准房间边长 13。"
@@ -62,10 +64,10 @@ constexpr ApiDeviation kApiDeviations[] = {
      "`Room:GetGridPath()`：网格与寻路数据未定位 ⇒ 恒返回'不可走'（1000，高于 EID 的 900 阈值）。"
      "偏离后果：EID 的寻路判定恒为'没有可达路径'，相关提示不显示 —— 刻意选它，"
      "而不是用假数据画出并不存在的路径。"},
-    {0x04010007,
-     ApiDeviationKind::Placeholder,
-     "`Room:GetGridEntity()`：网格实体容器未定位 ⇒ 恒返回 nil。"
-     "偏离后果：依赖'某个格子上有什么东西'的少数描述不生效（EID 对此有 nil 判断，不会报错）。"},
+    // 0x04010007 `Room:GetGridEntity()` 的偏离**已于 2026-09-16 解除**：网格实体表定位到
+    // `Room + 0x30`（证据见 `runtime_constants.hpp` 的 `kRoomGridEntityTableOffset`），
+    // 现在返回真实的 `GridEntity` 句柄（`GridEntity:GetVariant()`/`GetType()` 同批落地）。
+    // 记录保留在此，是为了"曾经登记过的偏离"有迹可循 —— 条目本身已从表里移除。
 
     // ---- `Sprite` ------------------------------------------------------------
     {0x0D010012,
@@ -114,6 +116,17 @@ constexpr ApiDeviation kApiDeviations[] = {
      ApiDeviationKind::Placeholder,
      "`EntityPlayer:GetName()`：名字来自存档、偏移未定位 ⇒ 恒 nil"
      "（EID 只做字符串拼接，nil 会被 `tostring` 兜住）。"},
+    // 批次 13（2026-09-16）新增。
+    {0x0E010054,
+     ApiDeviationKind::Partial,
+     "`GridEntity:GetRNG()`：PC 返回引擎里那个 RNG 的**引用**（从返回对象上 `SetSeed`/`Next` "
+     "会改到实体自己），这里返回的是**取到那一刻的 16 字节快照**。"
+     "为什么这样选：网格实体随时会被销毁（石头被炸、尖刺被消耗、换房间重建），而本句柄只存实体"
+     "地址、拿不到网格下标，做不到'每次访问重新解析并校验'；让 Lua 长期持有'引擎对象内部成员'"
+     "的指针，等于把写已释放内存的口子开给模组。"
+     "偏离后果：读语义与 PC 逐值相同（`GetSeed`/`Next`/`RandomInt` 在取到的那一刻完全一致，"
+     "EID 的 `spikes:GetRNG():GetSeed()` 正属此类）；只有在'从返回的 RNG 上改状态、并期待实体"
+     "跟着变'这种用法上才与 PC 不同 —— 那类用法目前没有任何模组在用。"},
 };
 
 constexpr std::size_t kApiDeviationCount = sizeof(kApiDeviations) / sizeof(kApiDeviations[0]);

@@ -1040,6 +1040,14 @@ void RegisterGameApi(lua_State* state) {
 
     // 地基二期：`RoomDescriptor` 与它的列表。两者的 `__index` 都是**函数**（同时服务字段与方法），
     // 方法表挂在元表的 `__methods` 上（与 `Sprite`/`Vector` 同一形态）。
+    // 批次 12：`GridEntity` 族（`Room:GetGridEntity()` 的返回值）。它的方法都住在 `Room`
+    // 所在的那个家族 TU 里（`AttachGridEntityMethods`），与"行表住在自己 TU 里"的规矩一致。
+    luaL_newmetatable(state, kGridEntityMetatable);
+    lua_newtable(state);
+    static_cast<void>(isaac::runtime::AttachGridEntityMethods(state));
+    lua_setfield(state, -2, "__index");
+    lua_pop(state, 1);
+
     luaL_newmetatable(state, kRoomDescriptorMetatable);
     lua_pushcfunction(state, isaac::runtime::RoomDescriptorIndex);
     lua_setfield(state, -2, "__index");

@@ -180,6 +180,14 @@ constexpr LuaApiDescriptor kDefaultApis[] = {
      ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
     {MakeId(ApiDomain::Level, 1, 0x000A), ApiDomain::Level, "Level", "GetRooms", kV1, 0,
      ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    // 批次 11（2026-09-16）：`Level` 的关卡类型三条。字段证据见 `runtime_constants.hpp` 的
+    // `kLevelStageTypeOffset`（`Level::SetStage` 把两个参数连着写进 `+0x00`/`+0x04`）。
+    {MakeId(ApiDomain::Level, 1, 0x000B), ApiDomain::Level, "Level", "GetStageType", kV1, 0,
+     ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    {MakeId(ApiDomain::Level, 1, 0x000C), ApiDomain::Level, "Level", "IsAltStage", kV1, 0,
+     ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    {MakeId(ApiDomain::Level, 1, 0x000D), ApiDomain::Level, "Level", "IsPreAscent", kV1, 0,
+     ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
     {MakeId(ApiDomain::Room, 1, 0x0001), ApiDomain::Room, "Room", "GetType", kV1, 0,
      ThreadAffinity::ManagedCallback, ApiMaturity::HostVerified},
     // 批次 7（2026-09-12）：EID 在网格/寻路路径上无条件调用的一批 `Room` 成员
@@ -215,6 +223,12 @@ constexpr LuaApiDescriptor kDefaultApis[] = {
      0, ThreadAffinity::ManagedCallback, ApiMaturity::HostVerified},
     {MakeId(ApiDomain::ItemPool, 1, 0x0002), ApiDomain::ItemPool, "ItemPool", "GetLastPool", kV1,
      0, ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    // 批次 13（2026-09-16）：`ItemPool:IsPillIdentified(PillColor)` —— EID 用它决定"没识别过的
+    // 药丸要不要泄底"（`main.lua:1649`、`eid_itemprediction.lua:339`、`eid_holdmapdesc.lua:575`）。
+    // 底座是 `ItemPool + 0xa68 + color` 的每色一字节"已识别"表（15 项，紧跟在 `+0xa2c` 的药丸
+    // 效果表之后）；证据见 `runtime_constants.hpp` 的 `kItemPoolPillIdentifiedOffset`。
+    {MakeId(ApiDomain::ItemPool, 1, 0x0003), ApiDomain::ItemPool, "ItemPool", "IsPillIdentified",
+     kV1, 0, ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
 
     // Music surface.
     {MakeId(ApiDomain::Music, 1, 0x0001), ApiDomain::Music, "MusicManager", "GetCurrentMusicID",
@@ -228,6 +242,11 @@ constexpr LuaApiDescriptor kDefaultApis[] = {
     {MakeId(ApiDomain::Rng, 1, 0x0001), ApiDomain::Rng, "RNG", "SetSeed", kV1, 0,
      ThreadAffinity::ManagedCallback, ApiMaturity::HostVerified},
     {MakeId(ApiDomain::Rng, 1, 0x0002), ApiDomain::Rng, "RNG", "Next", kV1, 0,
+     ThreadAffinity::ManagedCallback, ApiMaturity::HostVerified},
+    // 批次 13（2026-09-16）：`RNG:GetSeed()` —— EID 的 `spikes:GetRNG():GetSeed()` 链上少不了
+    // 这一环（缺它就是 "attempt to call a nil value"）。种子就是 RNG 对象头 4 字节
+    // （`RNG::SetSeed @ 0x44E3C0` 的第一条存值 `str w1, [x0]`），所以这是纯读、不走引擎调用。
+    {MakeId(ApiDomain::Rng, 1, 0x0003), ApiDomain::Rng, "RNG", "GetSeed", kV1, 0,
      ThreadAffinity::ManagedCallback, ApiMaturity::HostVerified},
 
     // Input surface: reachability was probed, the edge timing is still unproven.
@@ -501,6 +520,21 @@ constexpr LuaApiDescriptor kDefaultApis[] = {
     // `base + 0xA35728`（`_ZTVN15IsaacRepentance15Entity_FamiliarE` @ `0xA35718` 加 `0x10`，
     // 与既有两个 vtable 常量同一条规则、互为交叉验证）。
     {MakeId(ApiDomain::Isaac, 1, 0x0051), ApiDomain::Isaac, "Entity", "ToFamiliar", kV1, 0,
+     ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    // 批次 12（2026-09-16）：`GridEntity` 族两条 —— EID 的网格描述用 `entity:GetVariant()`
+    // 与具体 variant 比较。前置是"网格实体视图"这一族本身：`Room:GetGridEntity()` 过去恒返回
+    // nil（登记在案的偏离），表已定位（`Room + 0x30`，证据见 `runtime_constants.hpp`）。
+    {MakeId(ApiDomain::Isaac, 1, 0x0052), ApiDomain::Isaac, "GridEntity", "GetVariant", kV1, 0,
+     ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    {MakeId(ApiDomain::Isaac, 1, 0x0053), ApiDomain::Isaac, "GridEntity", "GetType", kV1, 0,
+     ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    // 批次 13（2026-09-16）：`GridEntity:GetRNG()` —— EID 的
+    // `features/eid_itemprediction.lua:120` 直接 `spikes:GetRNG():GetSeed()`（血契尖刺的种子）。
+    // 实体自己的 RNG 在 `GridEntity + 0x30`（证据：`GridEntity::hurt_func` 里
+    // `add x0, x19, #0x30; bl RNG::Next`，以及 `GridEntity_Spikes::InitSubclass` 里
+    // `add x0, x19, #0x30; RNG::SetSeed(…, 35)`；见 `runtime_constants.hpp`）。
+    // ★ 交回 Lua 的是**调用瞬间的 16 字节快照**（PC 返回活引用），已登记为偏离。
+    {MakeId(ApiDomain::Isaac, 1, 0x0054), ApiDomain::Isaac, "GridEntity", "GetRNG", kV1, 0,
      ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
 
     // 批次 4：房间实体枚举（`Isaac.FindInRadius`/`FindByType`/`CountEnemies` 从 stub 变成

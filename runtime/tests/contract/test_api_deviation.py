@@ -34,6 +34,17 @@ DEVIATIONS = ROOT / "runtime" / "src" / "interfaces" / "lua" / "api_deviation.cp
 #:   `Sprite:GetTexel`（1）；`Isaac.GetTime`（1）；`Entity`/`EntityPlayer:GetData`（2）；
 #:   `ItemConfig`/`ItemConfig_Item:HasTags`（2）；`EntityPickup:IsShopItem`（1）；
 #:   `EntityPlayer:GetPill`/`GetCard`（2）；`EntityPlayer:GetName`（1）。
+#:
+#: **22 → 21（2026-09-16）**：`Room:GetGridEntity()`（`0x04010007`）的偏离**已解除** ——
+#: 网格实体表定位到 `Room + 0x30`（证据见 `runtime_constants.hpp` 的
+#: `kRoomGridEntityTableOffset`），现在返回真实句柄；`GridEntity:GetVariant()`/`GetType()`
+#: 同批落地。这是**第一条第 ④ 类偏离被消掉**（不是"改成不承认"，而是真的实现出来了）。
+#:
+#: **21 → 22（2026-09-16，批次 13）**：新增 `GridEntity:GetRNG()`（`0x0E010054`）一条
+#: `Partial` —— PC 返回引擎 RNG 的**引用**，我们交回的是**取到那一刻的 16 字节快照**
+#: （理由见 `api_deviation.cpp` 那一整段：网格实体随时销毁，而句柄只存实体地址、拿不到网格
+#: 下标，做不到"每次访问重新解析并校验"）。同批的 `ItemPool:IsPillIdentified`（`0x05010003`）
+#: 与 `RNG:GetSeed`（`0x07010003`）都是真读引擎字段/自身句柄，**不**记偏离。
 EXPECTED_DEVIATIONS = 22
 
 #: 允许的偏离种类（与 `ApiDeviationKind` 一致）。

@@ -467,7 +467,9 @@ class ApiCatalogContractTests(unittest.TestCase):
             # `Game` 之外还有 `Seeds`（`Game:GetSeeds()` 的返回值，2026-09-12 第五轮加入）：
             # 它的两个方法就落在同一个 TU 里，因为句柄与元表都跟着 `Game` 家族走。
             "game_api.cpp": {"Game", "Seeds"},
-            "remaining_api.cpp": {"Level", "Room", "ItemPool"},
+            # 批次 12（2026-09-16）：`GridEntity` 族（`Room:GetGridEntity()` 的返回值）的绑定表
+            # 也住在 `remaining_api.cpp` —— 与 `Room` 同族、同一个 TU。
+            "remaining_api.cpp": {"Level", "Room", "ItemPool", "GridEntity"},
             "music_api.cpp": {"MusicManager"},
             "rng_api.cpp": {"RNG"},
             "input_api.cpp": {"Input"},
@@ -556,7 +558,18 @@ class ApiCatalogContractTests(unittest.TestCase):
         # 判据同 `ToPickup`（Type 与 vptr 都要对），vtable 偏移由符号表推出并与既有两个常量互相验证。
         # 170 + 批次 10（2026-09-15）的 1 行 `Room.WorldToScreenPosition`：EID 用它把实体位置
         # 画到屏幕上；换算方式直接取自引擎自己的实现（引擎函数 + 房间滚动 + Game 调整量）。
-        self.assertEqual(checked, 171, "家族绑定行数应与已登记 API 数一致")
+        # 171 + 批次 11（2026-09-16）的 3 行 `Level` 成员：`GetStageType`/`IsAltStage`（数据行，
+        # 读 `Level+0x04`）与 `IsPreAscent`（两个字段的组合判据，手写）。字段证据见
+        # `runtime_constants.hpp` 的 `kLevelStageTypeOffset`：`Level::SetStage` 把两个参数
+        # 连着写进 `+0x00`/`+0x04`。
+        # 174 + 批次 12（2026-09-16）的 2 行 `GridEntity` 成员（`GetVariant`/`GetType`）：
+        # EID 的网格描述需要它们；前置是"网格实体视图"这一族本身 —— 同批把
+        # `Room:GetGridEntity()` 从"恒返回 nil"（登记在案的偏离）改成真返回。
+        # 176 + 批次 13（2026-09-16）的 3 行：`GridEntity.GetRNG`（`0x0E010054`）、
+        # `ItemPool.IsPillIdentified`（`0x05010003`）与 `RNG.GetSeed`（`0x07010003`）。
+        # 它们就是 EID 缺口表里最后剩下的两条高置信缺口（`spikes:GetRNG():GetSeed()` 需要
+        # `GetRNG` 与 `GetSeed` 各一行；`pool:IsPillIdentified(color)` 一行）。
+        self.assertEqual(checked, 179, "家族绑定行数应与已登记 API 数一致")
 
     def test_options_fields_are_registered_as_values(self):
         """`Options` 的两个字段是**值**而不是方法：Catalog 里有条目、绑定表里没有绑定行。

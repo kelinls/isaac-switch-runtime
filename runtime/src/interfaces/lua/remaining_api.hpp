@@ -20,6 +20,8 @@ namespace isaac::runtime {
 
 [[nodiscard]] std::size_t AttachLevelMethods(lua_State* state) noexcept;
 [[nodiscard]] std::size_t AttachRoomMethods(lua_State* state) noexcept;
+//: `GridEntity` 族（批次 12，2026-09-16）：`Room:GetGridEntity()` 的返回值。
+[[nodiscard]] std::size_t AttachGridEntityMethods(lua_State* state) noexcept;
 // 地基二期（2026-09-15）：`RoomDescriptor` 的字段访问与列表的 `Size`/`Get`。
 // 两者的 `__index` 都是函数（同时服务字段与方法），由 `lua_runtime.cpp` 注册元表时接线。
 int RoomDescriptorIndex(lua_State* state);

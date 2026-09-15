@@ -31,6 +31,7 @@
 // `runtime/source/*_layout.hpp`），不能在实现里现编一个偏移 —— 这条与地基二期一致，
 // 门禁 `runtime/tests/test_field_api_rows.py` 会把"行里的 id/族/偏移"逐条核对。
 
+#include <cstddef>
 #include <cstdint>
 
 extern "C" {
@@ -44,6 +45,7 @@ enum class FieldReceipt : std::uint8_t {
     Entity = 0,          // `Entity`/`EntityPlayer`/`EntityPickup` 三张元表都接受
     EntityPlayer = 1,    // 必须是精确的 `Entity_Player` vptr
     ItemConfigItem = 2,  // `ItemConfig_Item`
+    Level = 3,           // `Game`/`Level`（引擎里 Level 内嵌在 Game 起始处，解析链同一条）
 };
 
 //: 读什么、怎么读。
@@ -55,6 +57,7 @@ enum class FieldKind : std::uint8_t {
     BoolEquals = 4,   // 读一个 `u32`，与 `offset2` 里的常量比较后按布尔压回
                       // （例如 `ItemConfig_Item:IsTrinket()` = `Type == ITEM_TRINKET`）
     VectorCount = 5,  // `offset`/`offset2` 是一对 `T*` 的 begin/end，按元素数压回
+    BoolNonZero = 7,  // 读一个 `u32`，"非零即真"（例如 `Level:IsAltStage()` = `StageType != 0`）
     SumU32Array = 6,  // `offset`/`offset2` 是一对 `u32[]` 的 begin/end，把各格**相加**后压回
                       // （例如 `EntityPlayer:GetCollectibleCount()`：每格是"该收藏品有几件"）
 };
@@ -82,6 +85,12 @@ struct FieldApiRow {
 //: 一行必须正好 16 字节（4+4+4+1+1+1+1，按对齐排好）。这是这套机制的**成本前提**：
 //: 行变大就会削弱"每个 API 只花一行数据"的结论。改结构体先看这条断言。
 static_assert(sizeof(FieldApiRow) == 16, "FieldApiRow 必须保持 16 字节（见成本说明）");
+
+//: 取字段读取型 API 的**总表**（表本身定义在 `isaac_api.cpp` 的匿名命名空间里，所以用访问器
+//: 而不是 `extern` 数组 —— 两处同名会让编译器说"引用有歧义"）。
+//: 各族在各自的注册点把它传给 `AttachOwnerMethods`：绑定循环按 id 匹配，
+//: 所以**一张表可以服务多个 owner**（行里的 `receipt` 决定用哪套接收者校验）。
+[[nodiscard]] const FieldApiRow* FieldApiRows(std::size_t* count) noexcept;
 
 //: 字段读取型 API 的**共享处理器**。行通过闭包上值传入（见 `AttachOwnerMethods`）。
 //:

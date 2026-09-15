@@ -17,6 +17,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+REMAINING_API = (ROOT / "runtime" / "src" / "interfaces" / "lua"
+                 / "remaining_api.cpp")
 ISAAC_API = ROOT / "runtime" / "src" / "interfaces" / "lua" / "isaac_api.cpp"
 CATALOG = ROOT / "runtime" / "src" / "interfaces" / "lua" / "api_catalog.cpp"
 BINDING = ROOT / "runtime" / "src" / "interfaces" / "lua" / "owner_binding.cpp"
@@ -56,19 +58,36 @@ def constant_values() -> dict[str, int]:
     return values
 
 
+#: 行表所在的位置与它们各自允许的 owner（**家族的行表住在自己的 TU 里**，契约门禁也这么要求）。
+ROW_TABLES = (
+    (ISAAC_API, "kFieldApis",
+     {"Entity": {"Entity", "EntityPlayer", "EntityPickup"}, "EntityPlayer": {"EntityPlayer"},
+      "ItemConfigItem": {"ItemConfig_Item"}}),
+    (REMAINING_API, "kLevelFieldApis", {"Level": {"Level"}}),
+)
+
+
 def field_rows() -> list[dict]:
-    """`kFieldApis` 里的每一行（解析字段而不是执行 C++）。"""
-    text = read(ISAAC_API)
-    table = re.search(r"constexpr FieldApiRow kFieldApis\[\] = \{(.*?)\n\};", text, re.S)
+    """所有字段读取型行表的每一行（解析字段而不是执行 C++）。"""
+    rows: list[dict] = []
+    for path, table_name, _owners in ROW_TABLES:
+        rows.extend(_rows_of(path, table_name))
+    return rows
+
+
+def _rows_of(path, table_name: str) -> list[dict]:
+    text = read(path)
+    table = re.search(r"constexpr FieldApiRow " + table_name + r"\[\] = \{(.*?)\n\};", text, re.S)
     if table is None:
         return []
-    rows = []
+    rows: list[dict] = []
     offset2 = r"(?:static_cast<std::uint32_t>\(\s*)?(k\w+Offset|0x[0-9A-Fa-f]+|\d+)\s*\)?"
     pattern = (r"\{\s*(0x[0-9A-Fa-f]+)\s*,\s*(k\w+Offset)\s*,\s*"
                + offset2 + r"\s*,\s*FieldKind::(\w+)\s*,\s*FieldMissing::(\w+)\s*,"
                r"\s*FieldReceipt::(\w+)\s*,\s*(0x[0-9A-Fa-f]+|\d+)\s*\}")
     for match in re.finditer(pattern, table.group(1)):
         rows.append({
+            "_table": table_name,
             "id": int(match.group(1), 16),
             "offset_name": match.group(2),
             "offset2": match.group(3),
@@ -91,12 +110,12 @@ class FieldApiRowTests(unittest.TestCase):
         """行表必须真的解析出内容 —— 解析器失效会让下面几条"全绿但什么都没查"。"""
         self.assertGreaterEqual(len(self.rows), 4, f"只解析到 {len(self.rows)} 行")
 
-    #: 接收者族 → 允许的 catalog owner。同一张数据行表服务多个族（绑定循环按 id 匹配），
-    #: 所以这里按 `receipt` 判断 owner 对不对，而不是假定全是 EntityPlayer。
+    #: 接收者族 → 允许的 catalog owner（按"行所在的那张表"取，见 `ROW_TABLES`）。
     OWNERS_BY_RECEIPT = {
         "Entity": {"Entity", "EntityPlayer", "EntityPickup"},
         "EntityPlayer": {"EntityPlayer"},
         "ItemConfigItem": {"ItemConfig_Item"},
+        "Level": {"Level"},
     }
 
     def test_every_row_id_exists_in_the_catalog_with_the_right_owner(self):
@@ -143,10 +162,13 @@ class FieldApiRowTests(unittest.TestCase):
     def test_rows_are_registered_through_attach_owner_methods(self):
         """行表必须真的传给 `AttachOwnerMethods`，否则整张表是死数据。"""
         text = read(ISAAC_API)
-        self.assertRegex(text, r"AttachOwnerMethods\(state, kEntityPlayerOwner,[^;]*kFieldApis",
+        self.assertRegex(text, r"AttachOwnerMethods\(state, kEntityPlayerOwner,[^;]*FieldApiRows",
                          "EntityPlayer 族的行表没有传给 AttachOwnerMethods ⇒ 那些方法根本不会被挂上")
-        self.assertRegex(text, r"AttachOwnerMethods\(state, kItemConfigItemOwner,[^;]*kFieldApis",
-                         "ItemConfig_Item 族的行表没有挂上（批次 7 起两个族共用同一张表）")
+        self.assertRegex(text, r"AttachOwnerMethods\(state, kItemConfigItemOwner,[^;]*FieldApiRows",
+                         "ItemConfig_Item 族的行表没有挂上")
+        remaining = read(REMAINING_API)
+        self.assertRegex(remaining, r"AttachOwnerMethods\(state, \"Level\",[^;]*kLevelFieldApis",
+                         "Level 族的行表没有挂上")
 
     def test_binding_mechanism_supports_rows_with_a_closure_upvalue(self):
         """绑定机制要按"闭包 + 行作为上值"注册，而不是把行指针忘了传。"""

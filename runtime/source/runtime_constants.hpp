@@ -35,6 +35,22 @@ inline constexpr uintptr_t kGameRoomPointerOffset = 0x21550;              // Gam
 // `Level::GetRoomByIdx(int, int)` PLT thunk，即这两个字段就是"当前 descriptor 的解析参数对"。
 // 见 `docs/PC-Mod-兼容矩阵.md`（Stage104 条目）与 `docs/会话交接-2026-08-26.md`。
 inline constexpr uintptr_t kLevelCurrentRoomIndexOffset = 0x21558;        // 当前房间在描述符表里的索引
+// `Level + 0x00` = 关卡（`eLevelStage`）、`Level + 0x04` = **关卡类型**（`eStageType`）。
+// 证据（2026-09-16，`Level::SetStage(eLevelStage, eStageType) @ 0x3E420C` 的收尾两条）：
+//   `stp w21, w20, [x19]` —— 把第 1 个参数（关卡）与第 2 个参数（类型）**连着**写进 `this+0x00`/`+0x04`；
+// 另有两条交叉验证：
+//   * `Level::GetAbsoluteStage @ 0x3E7F3C` 只读 `*(u32*)this`（就是关卡，贪婪模式再做一次映射）；
+//   * 同函数里对 `+0x04` 做 `and w8, w8, #0xfffffffe; cmp w8, #0x4` —— 清掉 bit0 后与 4 比较，
+//     正好把 `STAGETYPE_REPENTANCE(4)` 与 `STAGETYPE_REPENTANCE_B(5)` 归成一类
+//     ⇒ 该字里存的就是**枚举原值**（4/5 互为"忏悔时代关卡"）。
+inline constexpr uintptr_t kLevelStageOffset = 0x00;
+inline constexpr uintptr_t kLevelStageTypeOffset = 0x04;
+//: `StageType.STAGETYPE_ORIGINAL`（PC 枚举 0）：`Level:IsAltStage()` 的判据是"类型不是它"。
+inline constexpr std::uint32_t kStageTypeOriginal = 0;
+//: `TruppeStageType`：`STAGETYPE_REPENTANCE(4)` / `STAGETYPE_REPENTANCE_B(5)` 清掉 bit0 都是 4。
+inline constexpr std::uint32_t kStageTypeRepentanceEraMasked = 0x4;
+//: 幕府/革赫那第二层（`STAGE4_3 == 9`）—— PC 文档说 `IsPreAscent()` 指的是"通往升华的那一层"。
+inline constexpr std::uint32_t kLevelStagePreAscent = 9;
 inline constexpr uintptr_t kLevelCurrentRoomDimensionOffset = 0x21560;    //   … 对应的维度参数
 inline constexpr uintptr_t kGameHudOffset = 0xE8468;                      // Game → HUD
 
@@ -140,6 +156,36 @@ inline constexpr std::uint32_t kEntityPlayerMaximumTypeForBoneHearts = 0x28;
 //
 // **容量是固定常量、从不重分配**（`Add` 溢出只打日志），所以三个容量值可以当**容器指纹**用。
 inline constexpr uintptr_t kRoomEntityListOffset = 0x1950;      // Room → 内嵌 EntityList
+// `Room + 0x30` = **网格实体表**（按网格下标索引，每项 8 字节的 `GridEntity*`）。
+// 证据（2026-09-16）：`Room::SpawnGridEntity(int index, eGridEntityType type, u32, u32, int) @ 0x452528`
+// 里 `add x8, x0, w1, uxtw #3; ldr x8, [x8, #0x30]` —— 就是用网格下标取这一族的指针；
+// 同处还看到 `ldr w0, [x8, #0x40]`（`GridEntity + 0x40` 参与碰撞判定）。
+inline constexpr uintptr_t kRoomGridEntityTableOffset = 0x30;
+// `GridEntity + 0x18` = 类型（`eGridEntityType`）：`GridEntity::Init(eGridEntityType) @ 0x37E438`
+// 的第一条存值就是 `str w1, [x0, #0x18]`（w1 即类型参数）。
+inline constexpr uintptr_t kGridEntityTypeOffset = 0x18;
+// `GridEntity + 0x10` = **variant**。证据（2026-09-16，行为锚点）：
+// `GridEntity_Poop::InitSubclass` / `GridEntity_Poop::Update` 反复读 `+0x10` 并与 **1000 (0x3E8)**
+// 比较 —— Isaac 里便便的 variant 正是 1000 起（1000=普通便便、1001=玉米…），共 4 处独立比较。
+// 另有结构证据：`GridEntity::Init(const Desc&) @ 0x37E4BC` 把 `Desc+0x00..0x1C` 整段拷到
+// 对象 `+0x08..0x24`，其中对象 `+0x18` ← `Desc+0x10`（与上面那条"类型在 +0x18"一致 ✓）。
+inline constexpr uintptr_t kGridEntityVariantOffset = 0x10;
+// `GridEntity + 0x30` = **该网格实体自己的 RNG**（PC Lua 的 `GridEntity:GetRNG()`）。
+// 两条互相独立的证据（2026-09-16 反汇编，`add x0, xThis, #0x30` 形态 —— 不是 `ldr`，是把字段
+// **地址**当 `this` 交给 `RNG` 的方法，所以看起来像"取地址传参"）：
+//   * `GridEntity::hurt_func(Entity*, float, int, unsigned, bool) @ 0x37E57C`：
+//     序言 `mov x19, x0`（0x37E5B8）说明 x19 就是 `this`；函数体 0x37E928 处
+//     `add x0, x19, #0x30; bl RNG::Next`，紧接着把这个返回值当种子构造临时 RNG
+//     （`RNG::RNG(seed, 2)`）—— 这正是引擎里"从本实体的 RNG 派生一个新 RNG"的标准写法；
+//   * `GridEntity_Spikes::InitSubclass() @ 0x393B34`：0x393CB8 处
+//     `add x0, x19, #0x30; RNG::SetSeed([x19+0x24], 35)` —— 尖刺在初始化时把自己的 RNG
+//     按 shift=35（Isaac 内部最常用的档位）重新播种，与 IsaacDocs `GridEntity.md:38` 那句
+//     "这个 RNG 在全关卡的所有网格实体上用同一个种子初始化"完全对上。
+// `RNG` 自身布局来自 `RNG::SetSeed(uint, uint) @ 0x44E3C0`：`[this+0x0] = seed`、
+// `[this+0x4..0xB] = s_Shifts[idx]`、`[this+0xC] = s_Shifts[idx].second` ⇒ 共 16 字节、
+// **种子就是头 4 字节**（PC 的 `RNG:GetSeed()` 读它、`Next()` 原地更新它）。
+inline constexpr uintptr_t kGridEntityRngOffset = 0x30;
+inline constexpr std::size_t kRngObjectSize = 16;
 
 // `Room:WorldToScreenPosition(Vector)`（批次 10，2026-09-15）：引擎里它就是
 // `GetRenderPosition(世界坐标, true) + Room.RenderScrollOffset + Game.ToScreenAdjust`。
@@ -256,6 +302,26 @@ inline constexpr uintptr_t kLevelCursesOffset = 0x0C;
 // `[ItemPool + 0x8C0]`；`get_chaos_pool()` 返回该池后立即写回，证明这里保存的就是最近一次
 // `GetCollectible` 实际使用的池。
 inline constexpr uintptr_t kItemPoolLastPoolOffset = 0x8C0;
+
+// 药丸的两张并行小表（批次 13，2026-09-16）：PC Lua 的 `ItemPool:IsPillIdentified(PillColor)`
+// 就是读第二张表的第 color 个字节。三条互相独立的指令作证：
+//   * 读表一：`ItemPool::GetPillEffect(ePillColor, Entity_Player*) @ 0x3C857C` 里
+//     `and w8, w1, #0x7ff` → `add x8, x0, w8, uxtw #2` → `ldr w20, [x8, #0xa2c]`
+//     —— 按颜色取药丸效果，颜色先被 **0x7ff** 掩码（IsaacDocs 的 `PILL_COLOR_MASK`）；
+//   * 表二的语义锚点：`HUD::PlayerHUD::RenderPocketItems @ 0x3A6094` 在 0x3A6608 处
+//     `ldrb w9, [Game + 0x24D28 + color]`，非 0 就显示药丸真名，为 0 就显示字符串表里的
+//     `#QUESTION_MARKS_NAME`（"???"）—— `Game + 0x242C0` 正是 `ItemPool`
+//     （见 `game_observer.cpp` 的 `kGameItemPoolOffset`），所以那个字节就是"这个颜色认不认得"；
+//   * 表二的写入：`ItemPool::RestoreGameState @ 0x3CA1A0` 把存档里的 15 组
+//     `[state+0x3b0+4i] → [this+0xa2c+4i]`（药丸效果）与 `[state+0x3ec+i] → [this+0xa68+i]`
+//     （识别位）逐条展开写回；`ItemPool::RerollPillEffect(ePillColor, uint, bool) @ 0x3CAA7C`
+//     也在重掷时写 `[this+0xa68+color] = 第三个参数 & 1`。
+// 数量 15 = IsaacDocs `enums/PillColor.md` 的 `NUM_PILLS`（普通药丸 0..13 + 金色药丸 14），
+// 与"0xa2c 起 15×4 字节后正好是 0xa68"这条算术完全吻合。
+inline constexpr uintptr_t kItemPoolPillEffectOffset = 0xA2C;
+inline constexpr uintptr_t kItemPoolPillIdentifiedOffset = 0xA68;
+inline constexpr std::uint32_t kPillColorCount = 15;
+inline constexpr std::uint32_t kPillColorMask = 0x7FF;
 
 // --- ItemConfig（2026-09-12 反汇编 + 真机现象逐位互证）--------------------------------
 //

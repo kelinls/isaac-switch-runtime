@@ -69,6 +69,7 @@ std::vector<unsigned char> g_ModuleBytes;
 std::vector<unsigned char> g_OwnerSlotBytes;
 std::vector<unsigned char> g_GameBytes;
 std::vector<unsigned char> g_RoomBytes;
+std::vector<unsigned char> g_GridEntityBytes;
 
 constexpr std::uint32_t kRoomType = 4;      // ROOM_TREASURE
 constexpr std::uint32_t kRoomTypeOffset = 0x10;
@@ -106,6 +107,14 @@ void PublishFakeEngine() {
     WriteWord(g_OwnerSlotBytes, 0, AddressOf(g_GameBytes));
     WriteWord(g_GameBytes, kGameRoomPointerOffset, AddressOf(g_RoomBytes));
     WriteAt<std::uint32_t>(g_RoomBytes, kRoomTypeOffset, kRoomType);
+    // 伪造一个网格实体并挂进网格实体表（批次 12：`Room + 0x30` 按网格下标索引）。
+    // `+0x10` = variant（写 1000，就是便便那一档的取值）、`+0x18` = 类型（写 7）。
+    g_GridEntityBytes.assign(kGridEntityTypeOffset + sizeof(std::uint32_t), 0);
+    WriteAt<std::uint32_t>(g_GridEntityBytes, kGridEntityVariantOffset, 1000u);
+    WriteAt<std::uint32_t>(g_GridEntityBytes, kGridEntityTypeOffset, 7u);
+    WriteWord(g_RoomBytes, kRoomGridEntityTableOffset + 5 * sizeof(std::uintptr_t),
+              AddressOf(g_GridEntityBytes));
+    // 下标 6 留空（= 这个格子上没有东西），用来验"空项返回 nil"。
     LuaRuntime::SetEngineModuleBase(AddressOf(g_ModuleBytes));
     LuaRuntime::SetGetRenderPositionHostFunction(&HostGetRenderPosition);
 }
@@ -147,6 +156,12 @@ int main(int argc, char** argv) {
     PublishFakeEngine();
     const std::uint32_t index = std::strcmp(scenario, "index_second") == 0 ? 77u : 42u;
     WriteAt<std::uint32_t>(g_GameBytes, kLevelCurrentRoomIndexOffset, index);
+    // 关卡与关卡类型（批次 11 的三条 API 读这两个字段）。默认摆成**幕府 II / 忏悔时代**：
+    // `stage == 9`（STAGE4_3）、`type == 4`（STAGETYPE_REPENTANCE）⇒ IsAltStage 与 IsPreAscent 都是真。
+    // 另一个场景 `normal_stage` 摆成普通楼层（stage 1 / type 0）⇒ 两条都必须是假。
+    const bool normalStage = std::strcmp(scenario, "normal_stage") == 0;
+    WriteAt<std::uint32_t>(g_GameBytes, kLevelStageOffset, normalStage ? 1u : 9u);
+    WriteAt<std::uint32_t>(g_GameBytes, kLevelStageTypeOffset, normalStage ? 0u : 4u);
 
     // 引擎方法的绑定：默认**不发布**（0 = 不可用）；`guard_mismatch` 场景发布一个守卫不符的地址。
     if (std::strcmp(scenario, "guard_mismatch") == 0) {
@@ -193,6 +208,19 @@ int main(int argc, char** argv) {
             " math.abs(screen.Y-(280+2000-7.25+4))>0.001 then"
             " error('WorldToScreenPosition must compose engine+room+game, got '"
             " ..screen.X..','..screen.Y) end"
+            " local grid=room:GetGridEntity(5)"
+            " if grid==nil then error('GetGridEntity(5) must return a handle') end"
+            " if grid:GetVariant()~=1000 then error('GridEntity:GetVariant must read +0x10, got '"
+            " ..tostring(grid:GetVariant())) end"
+            " if grid:GetType()~=7 then error('GridEntity:GetType must read +0x18, got '"
+            " ..tostring(grid:GetType())) end"
+            " if room:GetGridEntity(6)~=nil then error('an empty grid slot must be nil') end"
+            " print('GRID='..tostring(grid:GetVariant())..','..tostring(grid:GetType()))"
+            " local stageType=Game():GetLevel():GetStageType()"
+            " local isAlt=Game():GetLevel():IsAltStage()"
+            " local preAscent=Game():GetLevel():IsPreAscent()"
+            " print('STAGE=type:'..tostring(stageType)..' alt:'..tostring(isAlt)"
+            " ..' pre:'..tostring(preAscent))"
             " print('INDEX='..tostring(index)..' TYPE='..tostring(room:GetType())"
             " ..' SCROLL='..scroll.X..','..scroll.Y..' SCREEN='..screen.X..','..screen.Y)"
             " end)";
@@ -252,6 +280,22 @@ class LuaLevelBatch8Tests(unittest.TestCase):
         result = self.run_scenario("index_second")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(f"{INDEX_PATTERN}77", result.stdout)
+
+    def test_stage_type_and_alt_stage_come_from_the_level_fields(self):
+        """批次 11：`Level + 0x00` / `+0x04` 是"关卡 / 关卡类型"。
+
+        证据：`Level::SetStage(eLevelStage, eStageType)` 用 `stp w21, w20, [x19]` 把两个参数
+        连着写进 `this+0x00`/`+0x04`。契约：`IsAltStage()` = "StageType 不是 STAGETYPE_ORIGINAL(0)"。
+        """
+        result = self.run_scenario("index_first")          # stage 9 / type 4（幕府 II）
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("STAGE=type:4 alt:true pre:true", result.stdout)
+
+    def test_normal_floor_reports_neither_alt_stage_nor_pre_ascent(self):
+        """普通楼层必须两条都为假 —— 排除"恒真"的假实现。"""
+        result = self.run_scenario("normal_stage")         # stage 1 / type 0
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("STAGE=type:0 alt:false pre:false", result.stdout)
 
     def test_current_room_is_the_same_object_as_game_get_room(self):
         """`Level:GetCurrentRoom()` 与 `Game:GetRoom()` 必须是同一个 `Room`（PC 语义）。"""

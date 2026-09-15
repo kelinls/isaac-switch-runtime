@@ -64,6 +64,16 @@ def load_inventory() -> dict[str, str]:
     return status
 
 
+def canonical_owner(owner: str) -> str:
+    """owner 标签的归一口径：去下划线 + 小写。
+
+    为什么需要（2026-09-16 实测）：PC 清单里这个族叫 `ItemConfigItem`，而我们的目录用
+    `ItemConfig_Item` —— 两边逐字比对就会把**已经实现**的 `IsTrinket` 判成"缺失"，
+    于是账本看起来"还缺 9 条"（其实只缺 4 条）。账本可信是这套验收的地基，所以按归一后比对。
+    """
+    return owner.replace("_", "").lower()
+
+
 def load_catalog_entries() -> dict[str, dict[str, str]]:
     """Catalog 里 `Owner:Name` → `{id, maturity}`（`kDefaultApis[]` 之内）。
 
@@ -89,7 +99,7 @@ def load_catalog_entries() -> dict[str, dict[str, str]]:
         if domain not in domain_values:
             continue
         identifier = (domain_values[domain] << 24) | (int(group) << 16) | int(sequence, 16)
-        entries[f'{owner}:{name}'] = {'id': f'0x{identifier:08X}'}
+        entries[f'{canonical_owner(owner)}:{name}'] = {'id': f'0x{identifier:08X}'}
     return entries
 
 
@@ -125,7 +135,9 @@ def load_runtime_apis() -> set[str]:
     start = text.find('kDefaultApis[]')
     end = text.find('const ApiCatalog g_defaultCatalog', start)
     body = text[start:end if end > start else len(text)]
-    return {f'{owner}:{name}' for owner, name in re.findall(r'"([A-Za-z_][A-Za-z0-9_]*)",\s*"([A-Za-z_][A-Za-z0-9_]*)"', body)}
+    # owner 归一（见 `canonical_owner` 的说明）：PC 清单与我们目录对这个族的拼法不同。
+    return {f'{canonical_owner(owner)}:{name}'
+            for owner, name in re.findall(r'"([A-Za-z_][A-Za-z0-9_]*)",\s*"([A-Za-z_][A-Za-z0-9_]*)"', body)}
 
 
 def load_mod_definitions(mod: pathlib.Path) -> set[str]:
@@ -187,14 +199,14 @@ def main() -> int:
             continue                    # 方法名不在 PC 目录里 ⇒ 不是游戏 API
         for candidate_owner in owners_of[name]:
             api = f'{candidate_owner}:{name}'
-            identifier = catalog_entries.get(api, {}).get('id', '')
+            identifier = catalog_entries.get(f'{canonical_owner(candidate_owner)}:{name}', {}).get('id', '')
             deviation = deviations.get(identifier) if identifier else None
             rows.append({
                 'api': api,
                 'called_as': key,
                 'calls': count,
                 'pc_status': inventory.get(api, 'unknown'),
-                'in_runtime': api in runtime_apis,
+                'in_runtime': f'{canonical_owner(candidate_owner)}:{name}' in runtime_apis,
                 # ② 语义维的标记：有实现、但**已知与 PC 语义不同**（差在哪见 `text`）。
                 'deviation_kind': deviation['kind'] if deviation else '',
                 'deviation': deviation['text'] if deviation else '',
