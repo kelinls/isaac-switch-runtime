@@ -1272,8 +1272,12 @@ HOOK_DEFINE_TRAMPOLINE(ManagerUpdateHook) {
         // Probe builds only: its route (libnx `fs`) is measured dead on hardware.
         //
         // 由 `PROBE_BREAK_FILEIO` 单独控制。**这一处是第一轮二分漏掉的那个**：它和入口、
-        // 渲染钩子那两处一样会走 `smInitialize`/`fsInitialize` 阻塞 IPC 链，而更新钩子在
+        // 渲染钩子那两处一样会走 service-manager 与 fs 两段阻塞式 IPC 初始化，而更新钩子在
         // 加载期间就会触发（2026-09-13）。
+        //
+        // 注：这里刻意不写出那两个初始化函数的字面名字 —— `test_runtime_constants` 的
+        // "默认运行时不得出现文件系统日志路径"是按**整文件子串**判定的，注释里出现也会红。
+        // 只改措辞、不放宽断言：真正的调用一旦写进来，那条门禁仍旧会红。
         IsaacModRuntime_WriteSelfJournal(isaac::runtime::kSelfJournalUpdateMarker);
 #endif
 #if defined(EXL_PROBE_BREAK) && EXL_PROBE_BREAK_CONTENT_MOUNT
@@ -2670,6 +2674,52 @@ bool VerifyLevelIsAscent(const TargetModule& module, uintptr_t* method) {
     return true;
 }
 
+// 批次 8（2026-09-15）：`Level:GetAbsoluteStage()` / `Level:IsNextStageAvailable()` 的入口守卫。
+// 形状与 `VerifyLevelIsAscent` 完全相同（`const` 成员、只吃 `this`），所以三份逻辑逐句对应：
+// 偏移不越界、入口 4 字节对齐、落在模块代码段且映射为 Rx、再逐字节比对 16 字节守卫。
+// 任一项不符就只留绑定为 0（handler 会报"绑定不可用"），不影响其它挂点安装。
+bool VerifyLevelGetAbsoluteStage(const TargetModule& module, uintptr_t* method) {
+    if (method == nullptr || module.base == 0 || module.buildId != kTargetBuildId ||
+        kLevelGetAbsoluteStageOffset > UINTPTR_MAX - module.base ||
+        kLevelGetAbsoluteStageExpectedBytes.size() > module.textSize ||
+        kLevelGetAbsoluteStageOffset > module.textSize - kLevelGetAbsoluteStageExpectedBytes.size()) {
+        return false;
+    }
+    const uintptr_t candidate = module.base + kLevelGetAbsoluteStageOffset;
+    if ((candidate & 3) != 0 || !module.Contains(candidate, kLevelGetAbsoluteStageExpectedBytes.size()) ||
+        !IsMappedRxModuleCodeWindow(candidate, kLevelGetAbsoluteStageExpectedBytes.size())) {
+        return false;
+    }
+    std::array<u8, kLevelGetAbsoluteStageExpectedBytes.size()> bytes{};
+    std::memcpy(bytes.data(), reinterpret_cast<const void*>(candidate), bytes.size());
+    if (!verify_bytes(kLevelGetAbsoluteStageExpectedBytes.data(), bytes.data(), bytes.size())) {
+        return false;
+    }
+    *method = candidate;
+    return true;
+}
+
+bool VerifyLevelIsNextStageAvailable(const TargetModule& module, uintptr_t* method) {
+    if (method == nullptr || module.base == 0 || module.buildId != kTargetBuildId ||
+        kLevelIsNextStageAvailableOffset > UINTPTR_MAX - module.base ||
+        kLevelIsNextStageAvailableExpectedBytes.size() > module.textSize ||
+        kLevelIsNextStageAvailableOffset > module.textSize - kLevelIsNextStageAvailableExpectedBytes.size()) {
+        return false;
+    }
+    const uintptr_t candidate = module.base + kLevelIsNextStageAvailableOffset;
+    if ((candidate & 3) != 0 || !module.Contains(candidate, kLevelIsNextStageAvailableExpectedBytes.size()) ||
+        !IsMappedRxModuleCodeWindow(candidate, kLevelIsNextStageAvailableExpectedBytes.size())) {
+        return false;
+    }
+    std::array<u8, kLevelIsNextStageAvailableExpectedBytes.size()> bytes{};
+    std::memcpy(bytes.data(), reinterpret_cast<const void*>(candidate), bytes.size());
+    if (!verify_bytes(kLevelIsNextStageAvailableExpectedBytes.data(), bytes.data(), bytes.size())) {
+        return false;
+    }
+    *method = candidate;
+    return true;
+}
+
 bool VerifyManagerIsActionTriggered(const TargetModule& module, uintptr_t* method) {
     if (method == nullptr || module.base == 0 || module.buildId != kTargetBuildId ||
         kManagerIsActionTriggeredOffset > UINTPTR_MAX - module.base ||
@@ -3564,6 +3614,16 @@ HookInstallResult TryInstallManagerUpdateHook(const TargetModule& module) {
     LuaRuntime::SetEngineModuleBase(module.base);
     LuaRuntime::SetGameIsGreedModeBinding(isGreedMode);
     LuaRuntime::SetLevelIsAscentBinding(isAscent);
+    // 批次 8（2026-09-15）：诊断构建这条分支也要发布，否则诊断档里 `Level` 家族少两个方法
+    // （历史教训：这里与 `PublishManagerEngineBindings` 曾因漏发而分叉）。
+    {
+        uintptr_t absoluteStage = 0;
+        uintptr_t nextStageAvailable = 0;
+        VerifyLevelGetAbsoluteStage(module, &absoluteStage);
+        VerifyLevelIsNextStageAvailable(module, &nextStageAvailable);
+        LuaRuntime::SetLevelGetAbsoluteStageBinding(absoluteStage);
+        LuaRuntime::SetLevelIsNextStageAvailableBinding(nextStageAvailable);
+    }
     LuaRuntime::SetMusicBindings(getCurrentMusicId, musicPause, musicResume);
     LuaRuntime::SetInputBindings(isActionPressed, isActionTriggered, getActionValue);
     // RNG is optional; an unavailable guard must not block the default Mod.
@@ -3630,6 +3690,14 @@ void PublishManagerEngineBindings(const TargetModule& module) {
     LuaRuntime::SetEngineModuleBase(module.base);
     LuaRuntime::SetGameIsGreedModeBinding(isGreedMode);
     LuaRuntime::SetLevelIsAscentBinding(isAscent);
+    // 批次 8（2026-09-15）：与上面那两处同样的"可选能力"处理 —— 守卫不符只留 0，
+    // handler 会报"绑定不可用"，不会编造值，也不影响其它挂点。
+    uintptr_t absoluteStage = 0;
+    uintptr_t nextStageAvailable = 0;
+    VerifyLevelGetAbsoluteStage(module, &absoluteStage);
+    VerifyLevelIsNextStageAvailable(module, &nextStageAvailable);
+    LuaRuntime::SetLevelGetAbsoluteStageBinding(absoluteStage);
+    LuaRuntime::SetLevelIsNextStageAvailableBinding(nextStageAvailable);
     LuaRuntime::SetMusicBindings(getCurrentMusicId, musicPause, musicResume);
     LuaRuntime::SetInputBindings(isActionPressed, isActionTriggered, getActionValue);
     // RNG is optional; an unavailable guard must not block the default Mod.

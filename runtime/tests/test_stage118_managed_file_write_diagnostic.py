@@ -1,6 +1,11 @@
 import unittest
 from pathlib import Path
 
+try:
+    from .test_support import makefile_accepted_diagnostic_stages
+except ImportError:
+    from test_support import makefile_accepted_diagnostic_stages
+
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNTIME = ROOT / "runtime"
@@ -15,7 +20,8 @@ class Stage118ManagedFileWriteDiagnosticTests(unittest.TestCase):
         hook = (SOURCE / "hook_manager.cpp").read_text(encoding="utf-8")
         reader = (SOURCE / "game_file_reader.cpp").read_text(encoding="utf-8")
 
-        self.assertIn("118,$(DIAGNOSTIC_STAGE)", makefile)
+        # 见 `makefile_accepted_diagnostic_stages` 的注释：按阶段号集合判成员。
+        self.assertIn(118, makefile_accepted_diagnostic_stages(makefile))
         self.assertIn("EXL_DIAGNOSTIC_STAGE != 118", selector)
         self.assertIn("EXL_DIAGNOSTIC_STAGE == 118", entry)
         self.assertIn("TryInstallStage118ManagedFileWriteDiagnostic", entry)

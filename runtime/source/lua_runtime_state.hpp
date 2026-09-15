@@ -142,6 +142,9 @@ inline constexpr int kStage13CallbackValue = 1;
 void SetEngineModuleBase(std::uintptr_t base) noexcept;
 [[nodiscard]] std::uintptr_t GameIsGreedModeThunk() noexcept;
 [[nodiscard]] std::uintptr_t LevelIsAscentThunk() noexcept;
+// 批次 8（2026-09-15）：`Level` 家族另外两个方法入口。0 表示"没通过安装期守卫 ⇒ 不可用"。
+[[nodiscard]] std::uintptr_t LevelGetAbsoluteStageThunk() noexcept;
+[[nodiscard]] std::uintptr_t LevelIsNextStageAvailableThunk() noexcept;
 [[nodiscard]] std::uintptr_t ItemPoolGetCollectibleThunk() noexcept;
 [[nodiscard]] std::uintptr_t MusicGetCurrentMusicIdThunk() noexcept;
 [[nodiscard]] std::uintptr_t MusicPauseThunk() noexcept;

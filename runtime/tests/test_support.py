@@ -1,8 +1,26 @@
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 
 TARGET_BUILD_ID = bytes.fromhex("91C73FDD575061318D68886316AFEAC72388B2AB") + bytes(12)
+
+
+def makefile_accepted_diagnostic_stages(makefile: str) -> set[int]:
+    """`runtime/Makefile` 允许的 `DIAGNOSTIC_STAGE` 阶段号集合。
+
+    为什么需要它：审计用例过去写的是 `assertIn("88 89,$(DIAGNOSTIC_STAGE)", makefile)`
+    这种**按阶段分组、每组一行**的字面断言。后来所有允许的阶段号合并进了同一行
+    （`ifeq ($(filter 0 1 … 128,$(DIAGNOSTIC_STAGE)),)`），那些字面串不再出现 ⇒ 断言误红，
+    而"这个阶段被构建系统接受"这件事并没有变。
+
+    这里改为解析 `$(filter …,$(DIAGNOSTIC_STAGE))` 的阶段号集合再判成员：含义不变，
+    也不会因为将来合并/换行/重排而误红；真正的语义变化（阶段号被剔除）仍然会红。
+    """
+    stages: set[int] = set()
+    for group in re.findall(r"\$\(filter ([0-9 ]+),\$\(DIAGNOSTIC_STAGE\)\)", makefile):
+        stages.update(int(item) for item in group.split())
+    return stages
 
 
 def layered_lua_runtime_sources(source_root: Path) -> list[Path]:

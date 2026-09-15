@@ -1,6 +1,11 @@
 import unittest
 from pathlib import Path
 
+try:
+    from .test_support import makefile_accepted_diagnostic_stages
+except ImportError:
+    from test_support import makefile_accepted_diagnostic_stages
+
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNTIME = ROOT / "runtime"
@@ -16,7 +21,9 @@ class Stage88InstantRestartObservationDiagnosticTests(unittest.TestCase):
         header = (SOURCE / "hook_manager.hpp").read_text(encoding="utf-8")
         constants = (SOURCE / "runtime_constants.hpp").read_text(encoding="utf-8")
 
-        self.assertIn("88 89,$(DIAGNOSTIC_STAGE)", makefile)
+        # 阶段号"被构建系统接受"这件事按集合判成员，而不是按旧的分组字面串
+        # （旧写法见 `makefile_accepted_diagnostic_stages` 的注释）。
+        self.assertIn(88, makefile_accepted_diagnostic_stages(makefile))
         self.assertIn("EXL_DIAGNOSTIC_STAGE != 88", selector)
         self.assertIn("EXL_DIAGNOSTIC_STAGE == 88", entry)
         self.assertIn("ObserveStage88InstantRestart", hook)

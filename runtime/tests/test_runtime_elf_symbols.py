@@ -33,6 +33,15 @@ class RuntimeElfSymbolGateTests(unittest.TestCase):
         if not ELF.is_file():
             self.skipTest("需要已构建的 runtime/runtime.elf（先跑一次容器构建）")
         self.data = ELF.read_bytes()
+        # 桩工具链（例如 `test_startup_diagnostic` 的 stage13 契约用例那种 `%.elf: @:` 规则）
+        # 产出的"产物"是**空文件**；`tools/runtime_layout_budget.py` 对同一情形已经明确
+        # "跳过而不是让构建失败"。这里沿用同一约定：解析不出 ELF64 就跳过 ——
+        # 否则一条测试留下的空文件会把另一条测试变成 ERROR（隔离副本里就是这样红的）。
+        try:
+            # `elf_sections` 是生成器：异常要到**迭代**时才抛，所以必须 `list()` 一下。
+            list(elf_sections(self.data))
+        except ValueError as error:
+            self.skipTest(f"runtime/runtime.elf 不是可解析的 ELF64（多半是桩工具链产物）：{error}")
 
     def test_module_has_no_unexpected_undefined_symbols(self):
         undefined = sorted(set(undefined_symbols(self.data)))

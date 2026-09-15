@@ -39,6 +39,11 @@ u32 PreparationFailureDetail();
 void SetGameBindings(uintptr_t ownerSlot, uintptr_t isPausedThunk);
 void SetGameIsGreedModeBinding(uintptr_t method);
 void SetLevelIsAscentBinding(uintptr_t method);
+// 批次 8（2026-09-15）：`Level` 家族另外两个成员方法的入口地址。
+//   一次发布，两个都是"可选能力"——任一个为 0 时对应 handler 报"绑定不可用"，
+//   绝不返回编造的值（`Level:GetAbsoluteStage()` 编个 0 会让 Mod 以为"在第一层"）。
+void SetLevelGetAbsoluteStageBinding(uintptr_t method);
+void SetLevelIsNextStageAvailableBinding(uintptr_t method);
 void SetItemPoolGetCollectibleBinding(uintptr_t method);
 void SetMusicBindings(uintptr_t getCurrentMusicId, uintptr_t pause, uintptr_t resume);
 

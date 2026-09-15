@@ -29,6 +29,13 @@ inline constexpr uintptr_t kGamePlayerArrayCapacityOffset = 0x25C60;      //   �
 // vptr 校验（`Isaac.GetPlayer`）或这条向量自身的形状（`Game:GetNumPlayers`）。
 inline constexpr std::size_t kEnginePlayerMaximumCount = 32;
 inline constexpr uintptr_t kGameRoomPointerOffset = 0x21550;              // Game → Room*
+// `Level` 就是 `Game`（同一地址），"当前房间"是同一段里的两个 u32：
+// 证据是固定 NRO 里 `Level::GetCurrentRoomDesc @ 0x3DC684` 的反汇编 —— 它把
+// `Level + 0x21558` 读进 `w1`、`Level + 0x21560` 读进 `w2`，随后尾跳到唯一的
+// `Level::GetRoomByIdx(int, int)` PLT thunk，即这两个字段就是"当前 descriptor 的解析参数对"。
+// 见 `docs/PC-Mod-兼容矩阵.md`（Stage104 条目）与 `docs/会话交接-2026-08-26.md`。
+inline constexpr uintptr_t kLevelCurrentRoomIndexOffset = 0x21558;        // 当前房间在描述符表里的索引
+inline constexpr uintptr_t kLevelCurrentRoomDimensionOffset = 0x21560;    //   … 对应的维度参数
 inline constexpr uintptr_t kGameHudOffset = 0xE8468;                      // Game → HUD
 
 // `Manager::GetLanguageCode() const`：读取 `Manager + 0x36CC0` 的 StringTable 当前语言索引，
@@ -716,6 +723,27 @@ inline constexpr uintptr_t kLevelIsAscentOffset = 0x3E1D98;
 inline constexpr std::array<u8, 16> kLevelIsAscentExpectedBytes = {
     0x08, 0x00, 0x40, 0xB9, 0x08, 0x05, 0x00, 0x51,
     0x1F, 0x15, 0x00, 0x71, 0x28, 0x01, 0x00, 0x54,
+};
+// 批次 8（2026-09-15）：EID 在**描述构建**路径上无条件调用、而我们此前没有的两个 `Level` 成员。
+// 两个偏移与守卫都取自 `docs/PC-Lua-API-对照清单.md` 的 `missing_easy` 表（该表的
+// `file_offset` 已由两个上机验证过的守卫证明"等于运行时模块偏移"，见文档 §3.3）；
+// 守卫就是该偏移处的 16 字节原文，安装期逐字节比对。
+//
+//   * `Level:GetAbsoluteStage()` —— `features/eid_modifiers.lua:197`（潘多拉魔盒条目）与
+//     `eid_conditionals_funcs.lua:363/369`、`eid_grid_descriptions.lua:108`、`eid_modifiers.lua:1164`；
+//   * `Level:IsNextStageAvailable()` —— `features/eid_holdmapdesc.lua:174`。
+//
+// 两者都是 `const` 成员函数，返回 `int` / `bool`，参数只有 `this`（`Level*`）一个 —— 与
+// `Level::IsAscent` 同一形状，所以 handler 走同一条"解析指针链 → 直接调用"的路。
+inline constexpr uintptr_t kLevelGetAbsoluteStageOffset = 0x3E7F3C;
+inline constexpr std::array<u8, 16> kLevelGetAbsoluteStageExpectedBytes = {
+    0xFD, 0x7B, 0xBE, 0xA9, 0xF3, 0x0B, 0x00, 0xF9,
+    0xFD, 0x03, 0x00, 0x91, 0x28, 0x36, 0x00, 0xB0,
+};
+inline constexpr uintptr_t kLevelIsNextStageAvailableOffset = 0x3DBDBC;
+inline constexpr std::array<u8, 16> kLevelIsNextStageAvailableExpectedBytes = {
+    0xFD, 0x7B, 0xBC, 0xA9, 0xF8, 0x5F, 0x01, 0xA9,
+    0xFD, 0x03, 0x00, 0x91, 0xF6, 0x57, 0x02, 0xA9,
 };
 inline constexpr uintptr_t kManagerMusicOffset = 0x36068;
 inline constexpr uintptr_t kMusicGetCurrentMusicIdOffset = 0x426C38;

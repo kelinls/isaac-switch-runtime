@@ -102,11 +102,13 @@ DRIVER = textwrap.dedent(
         Status collectible{StatusCode::Ok};
         Status present{StatusCode::Ok};
         Status rebuild{StatusCode::Ok};
+        Status gameStart{StatusCode::Ok};
         std::uint32_t updateCalls = 0;
         std::uint32_t renderCalls = 0;
         std::uint32_t collectibleCalls = 0;
         std::uint32_t presentCalls = 0;
         std::uint32_t rebuildCalls = 0;
+        std::uint32_t gameStartCalls = 0;
 
         Status Install(HookId id, const HookTarget&) noexcept override {
             switch (id) {
@@ -115,6 +117,10 @@ DRIVER = textwrap.dedent(
                 case HookId::PreGetCollectible: ++collectibleCalls; return collectible;
                 case HookId::ManagerPresent: ++presentCalls; return present;
                 case HookId::RebuildMountPoints: ++rebuildCalls; return rebuild;
+                // `GameStart` 走的是 `RelaySlot` 后端（只往引擎侧回调槽里写我们的指针，
+                // 见 `domain/runtime/hook_catalog.hpp`）。夹具里必须为它留一支，
+                // 否则 `-Werror,-Wswitch` 直接判编译失败。
+                case HookId::GameStart: ++gameStartCalls; return gameStart;
                 case HookId::Count: break;
             }
             return Status{StatusCode::InvalidArgument};
@@ -298,14 +304,18 @@ DRIVER = textwrap.dedent(
               "installed_count_counts_every_hook");
         Check(report.FirstFailureSlot() == 0, "no_failure_slot_when_every_hook_is_installed");
         Check(hooks.updateCalls == 1 && hooks.renderCalls == 1 && hooks.collectibleCalls == 1 &&
-                  hooks.presentCalls == 1 && hooks.rebuildCalls == 1,
+                  hooks.presentCalls == 1 && hooks.rebuildCalls == 1 && hooks.gameStartCalls == 1,
               "each_hook_installed_once");
 
+        // 所有**可选**挂点都被端口拒绝：`GameStart` 同样是可选点（`kHookCatalog` 里
+        // `required == false`），所以这里也把它拒掉 —— 否则 `InstalledCount()` 会变成 2，
+        // 而这条检查要证明的正是"被跳过的不计入已安装数"。
         ScriptedHooks optionalMissing{};
         optionalMissing.render = Status{StatusCode::Rejected};
         optionalMissing.collectible = Status{StatusCode::Rejected};
         optionalMissing.present = Status{StatusCode::Rejected};
         optionalMissing.rebuild = Status{StatusCode::Rejected};
+        optionalMissing.gameStart = Status{StatusCode::Rejected};
         HookInstallService optionalService{optionalMissing};
         HookInstallReport optionalReport{};
         Check(optionalService.InstallProductionHooks(ValidModule(), &optionalReport).ok(),
@@ -314,7 +324,8 @@ DRIVER = textwrap.dedent(
                   optionalReport.OutcomeOf(HookId::ManagerRender) == HookOutcome::Skipped &&
                   optionalReport.OutcomeOf(HookId::PreGetCollectible) == HookOutcome::Skipped &&
                   optionalReport.OutcomeOf(HookId::ManagerPresent) == HookOutcome::Skipped &&
-                  optionalReport.OutcomeOf(HookId::RebuildMountPoints) == HookOutcome::Skipped,
+                  optionalReport.OutcomeOf(HookId::RebuildMountPoints) == HookOutcome::Skipped &&
+                  optionalReport.OutcomeOf(HookId::GameStart) == HookOutcome::Skipped,
               "optional_hooks_recorded_as_skipped");
         Check(optionalReport.productionReady(), "optional_failure_still_ready");
         Check(optionalReport.InstalledCount() == 1, "skipped_hooks_are_not_counted");

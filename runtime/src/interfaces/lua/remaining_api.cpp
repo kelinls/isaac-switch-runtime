@@ -38,6 +38,11 @@ using LuaRuntime::ValidateItemPoolGetCollectibleBinding;
 int LevelGetStage(lua_State* state);
 int LevelIsAscent(lua_State* state);
 int LevelGetCurses(lua_State* state);
+// 批次 8（2026-09-15）：`Level` 家族四个新成员（依据见各自实现处的长注释）。
+int LevelGetCurrentRoomIndex(lua_State* state);
+int LevelGetCurrentRoom(lua_State* state);
+int LevelGetAbsoluteStage(lua_State* state);
+int LevelIsNextStageAvailable(lua_State* state);
 int RoomGetType(lua_State* state);
 // 批次 7（2026-09-12）：EID 在**网格/寻路**路径上无条件调用的一批 `Room` 成员
 // （`features/eid_api.lua:3351` 的 `EID:EvaluateLocation`、`3371` 的 `HasPathToPosition`、
@@ -58,6 +63,10 @@ constexpr LuaHandlerBinding kLevelHandlers[] = {
     {0x03010001, &LevelGetStage},
     {0x03010002, &LevelIsAscent},
     {0x03010003, &LevelGetCurses},
+    {0x03010004, &LevelGetCurrentRoomIndex},
+    {0x03010005, &LevelGetCurrentRoom},
+    {0x03010006, &LevelGetAbsoluteStage},
+    {0x03010007, &LevelIsNextStageAvailable},
 };
 
 constexpr LuaHandlerBinding kRoomHandlers[] = {
@@ -295,6 +304,167 @@ int LevelGetCurses(lua_State* state) {
     }
     RecordGameCursesReadForProbe(curses);
     lua_pushinteger(state, static_cast<lua_Integer>(curses));
+    return 1;
+}
+
+// --- 批次 8（2026-09-15）：`Level` 家族另外四个成员 ------------------------------
+//
+// 缺口来源：`tools/eid_api_gap_report.py` 的高置信表（`missing_in_runtime`）。EID 在
+// **描述构建**路径上无条件调用它们，缺一个就是 "attempt to call a nil value" ⇒ 整条描述回调
+// 在报错处中断（`features/eid_modifiers.lua:197/200` 的潘多拉魔盒条目就是这一处）。
+//
+// 指针链与 `ReadGameCurses` 逐句相同：`GameOwnerSlot()` 是**指针变量**的地址，
+// `*(u64*)slot` 才是 `Game*`；而 `Level` 就内嵌在 `Game` 起始处（同一地址），所以
+// `Level*` 与 `Game*` 是同一个值 —— 这不是新假设，`Level:GetStage`/`GetCurses` 走的就是这条链。
+//
+// **引擎方法（两个）**：入口地址由安装期 16 字节守卫校验后发布（`...Thunk()`，0 = 不可用），
+// handler 调用前**再验一次**同一份守卫 —— 与 `CallGameCurseAccessor` 同一口径：
+// 宁可报"不可用"，也绝不调用一个没校验过的地址。
+bool ResolveCurrentLevel(std::uintptr_t* level) noexcept {
+    if (level == nullptr) {
+        return false;
+    }
+    const std::uintptr_t base = EngineModuleBase();
+    if (base == 0 || base > UINTPTR_MAX - kGameOwnerGlobalSlotOffset) {
+        return false;
+    }
+    if (!IsEngineMemoryReadable(base + kGameOwnerGlobalSlotOffset, sizeof(std::uintptr_t))) {
+        return false;
+    }
+    std::uintptr_t ownerSlot = 0;
+    std::memcpy(&ownerSlot, reinterpret_cast<const void*>(base + kGameOwnerGlobalSlotOffset),
+                sizeof(ownerSlot));
+    if (ownerSlot == 0 || !IsEngineMemoryReadable(ownerSlot, sizeof(std::uintptr_t))) {
+        return false;
+    }
+    std::uintptr_t game = 0;
+    std::memcpy(&game, reinterpret_cast<const void*>(ownerSlot), sizeof(game));
+    if (game == 0) {
+        return false;
+    }
+    *level = game;
+    return true;
+}
+
+// 调用一个"只吃 `this`、返回 int"的 `Level` 成员（当前只有 `GetAbsoluteStage`）。
+// 返回 false 表示"这次没有真的调用到引擎"，调用方必须据此报错而不是编一个值。
+bool CallLevelIntMethod(std::uintptr_t method, const std::array<u8, 16>& expected,
+                        std::int32_t* value) noexcept {
+    if (value == nullptr || method == 0 || (method & 3) != 0 ||
+        !IsEngineMemoryReadable(method, expected.size())) {
+        return false;
+    }
+    std::array<u8, 16> actual{};
+    std::memcpy(actual.data(), reinterpret_cast<const void*>(method), actual.size());
+    if (actual != expected) {
+        return false;
+    }
+    std::uintptr_t level = 0;
+    if (!ResolveCurrentLevel(&level)) {
+        return false;
+    }
+    using LevelIntMethod = std::int32_t (*)(const void*);
+    *value = reinterpret_cast<LevelIntMethod>(method)(reinterpret_cast<const void*>(level));
+    return true;
+}
+
+bool CallLevelBoolMethod(std::uintptr_t method, const std::array<u8, 16>& expected,
+                         bool* value) noexcept {
+    if (value == nullptr || method == 0 || (method & 3) != 0 ||
+        !IsEngineMemoryReadable(method, expected.size())) {
+        return false;
+    }
+    std::array<u8, 16> actual{};
+    std::memcpy(actual.data(), reinterpret_cast<const void*>(method), actual.size());
+    if (actual != expected) {
+        return false;
+    }
+    std::uintptr_t level = 0;
+    if (!ResolveCurrentLevel(&level)) {
+        return false;
+    }
+    using LevelBoolMethod = bool (*)(const void*);
+    *value = reinterpret_cast<LevelBoolMethod>(method)(reinterpret_cast<const void*>(level));
+    return true;
+}
+
+int LevelGetCurrentRoomIndex(lua_State* state) {
+    luaL_checkudata(state, 1, kLevelMetatable);
+    if (lua_gettop(state) != 1) {
+        return luaL_error(state, "Level:GetCurrentRoomIndex accepts no arguments");
+    }
+    if (!InManagedCallbackScope()) {
+        return luaL_error(state,
+                          "Level:GetCurrentRoomIndex is only available during a Runtime callback");
+    }
+    std::uintptr_t level = 0;
+    if (!ResolveCurrentLevel(&level) ||
+        !IsEngineMemoryReadable(level + kLevelCurrentRoomIndexOffset, sizeof(std::uint32_t))) {
+        return luaL_error(state, "Level:GetCurrentRoomIndex could not read the native Level state");
+    }
+    std::uint32_t index = 0;
+    std::memcpy(&index, reinterpret_cast<const void*>(level + kLevelCurrentRoomIndexOffset),
+                sizeof(index));
+    lua_pushinteger(state, static_cast<lua_Integer>(index));
+    return 1;
+}
+
+// `Level:GetCurrentRoom()` —— PC 语义是"当前房间对象"，与 `Game:GetRoom()` 返回同一个 `Room`。
+// 复用 `ReadCurrentGameRoom`（`Game + 0x21550`，已上机验证）与 `Game:GetRoom` 完全相同的句柄编组，
+// 所以这里不引入新的偏移假设。
+int LevelGetCurrentRoom(lua_State* state) {
+    luaL_checkudata(state, 1, kLevelMetatable);
+    if (lua_gettop(state) != 1) {
+        return luaL_error(state, "Level:GetCurrentRoom accepts no arguments");
+    }
+    if (!InManagedCallbackScope()) {
+        return luaL_error(state, "Level:GetCurrentRoom is only available during a Runtime callback");
+    }
+    void* room = nullptr;
+    if (ReadCurrentGameRoom(GameOwnerSlot(), &room) != GameRoomObservation::Success) {
+        return luaL_error(state, "Level:GetCurrentRoom could not read the native Room state");
+    }
+    auto* handle = static_cast<LuaRuntime::RoomHandle*>(
+        lua_newuserdata(state, sizeof(LuaRuntime::RoomHandle)));
+    handle->reserved = 0;
+    luaL_getmetatable(state, kRoomMetatable);
+    lua_setmetatable(state, -2);
+    return 1;
+}
+
+int LevelGetAbsoluteStage(lua_State* state) {
+    luaL_checkudata(state, 1, kLevelMetatable);
+    if (lua_gettop(state) != 1) {
+        return luaL_error(state, "Level:GetAbsoluteStage accepts no arguments");
+    }
+    if (!InManagedCallbackScope()) {
+        return luaL_error(state,
+                          "Level:GetAbsoluteStage is only available during a Runtime callback");
+    }
+    std::int32_t stage = 0;
+    if (!CallLevelIntMethod(LuaRuntime::LevelGetAbsoluteStageThunk(),
+                            kLevelGetAbsoluteStageExpectedBytes, &stage)) {
+        return luaL_error(state, "Level:GetAbsoluteStage is unavailable in this build");
+    }
+    lua_pushinteger(state, static_cast<lua_Integer>(stage));
+    return 1;
+}
+
+int LevelIsNextStageAvailable(lua_State* state) {
+    luaL_checkudata(state, 1, kLevelMetatable);
+    if (lua_gettop(state) != 1) {
+        return luaL_error(state, "Level:IsNextStageAvailable accepts no arguments");
+    }
+    if (!InManagedCallbackScope()) {
+        return luaL_error(state,
+                          "Level:IsNextStageAvailable is only available during a Runtime callback");
+    }
+    bool available = false;
+    if (!CallLevelBoolMethod(LuaRuntime::LevelIsNextStageAvailableThunk(),
+                             kLevelIsNextStageAvailableExpectedBytes, &available)) {
+        return luaL_error(state, "Level:IsNextStageAvailable is unavailable in this build");
+    }
+    lua_pushboolean(state, available ? 1 : 0);
     return 1;
 }
 

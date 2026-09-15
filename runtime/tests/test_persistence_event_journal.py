@@ -192,7 +192,13 @@ int main() {
         }
         g_mark_done.store(true, std::memory_order_release);
     });
-    for (int attempt = 0; attempt < 200 && !g_mark_done.load(std::memory_order_acquire); ++attempt) {
+    // 等"并发打标线程跑完"要按**时间**算，不能按 `yield()` 次数算：原来写的是
+    // `attempt < 200`，机器负载高的时候这 200 次让出可能在对方被调度之前就用完 ——
+    // 隔离用例把整套测试并发跑起来时实测到了这个假红（`assert(g_mark_done…)` 失败、进程 abort）。
+    // 改成 5 秒时间预算：真正的死锁/挂起仍旧会红，只是不再把"调度慢"当成失败。
+    const auto mark_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!g_mark_done.load(std::memory_order_acquire) &&
+           std::chrono::steady_clock::now() < mark_deadline) {
         std::this_thread::yield();
     }
     assert(g_mark_done.load(std::memory_order_acquire));

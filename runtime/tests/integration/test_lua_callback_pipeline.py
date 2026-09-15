@@ -97,9 +97,26 @@ class LuaCallbackPipelineTests(unittest.TestCase):
         source = LUA_RUNTIME.read_text(encoding="utf-8")
         self.assertIn("isaac::runtime::CallbackRegistry g_CallbackRegistry;", source)
         self.assertIn("isaac::runtime::CallbackDispatcher dispatcher{g_CallbackRegistry", source)
-        self.assertIn("g_CallbackRegistry.Remove(", source)
         self.assertIn("g_CallbackRegistry.CountOf(isaac::runtime::kCallbackPostUpdate)", source)
         self.assertIn("g_CallbackRegistry.CountOf(isaac::runtime::kCallbackPostRender)", source)
+
+    def test_registration_appends_instead_of_replacing(self):
+        """同一 Mod 对同一回调 id 的多次登记必须**追加**，不能被后一次替换掉。
+
+        原断言要求 `lua_runtime.cpp` 里出现 `g_CallbackRegistry.Remove(` —— 那是"先删旧登记
+        再登记"的替换语义留下的。替换语义是**错的**（真机报告 `01789203482`：注册表只数出 7 条，
+        即"种类的个数"而不是"登记的个数"）：PC 引擎按登记顺序调用同一 id 的**全部**回调，
+        而 EID 一次登记 5 个 `MC_POST_NEW_ROOM`、10 个 `MC_PRE_USE_ITEM`，替换会把它们吃掉。
+
+        现在登记只在 `interfaces/lua/mod_api.cpp` 里做，且是纯追加；`lua_runtime.cpp` 不再需要
+        删除路径。所以这条改为断言"追加语义"本身，并守住"核心 TU 里不得又冒出删除调用"。
+        """
+        source = LUA_RUNTIME.read_text(encoding="utf-8")
+        self.assertNotIn("g_CallbackRegistry.Remove(", source)
+        mod_api = (SRC / "interfaces" / "lua" / "mod_api.cpp").read_text(encoding="utf-8")
+        self.assertIn("registry.Register(descriptor)", mod_api)
+        # 追加语义：登记前不得调用 `Remove`（那正是被推翻的替换语义）。
+        self.assertNotIn("registry.Remove(", mod_api)
 
     def test_single_slot_limit_only_remains_for_non_layered_builds(self):
         source = LUA_RUNTIME.read_text(encoding="utf-8")

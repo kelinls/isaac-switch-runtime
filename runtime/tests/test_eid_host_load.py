@@ -71,6 +71,21 @@ REQUIRED_READS = (
 #: `IsAsciiModuleCharacter()` 少了 `+` 时，这四条 `require` 全都会被判成"不安全的模块名"。
 AB_ONLY_LANGUAGES = ("pt", "bul", "nl_nl", "el_gr")
 
+#: 加载/执行**成功**时允许出现在错误通道里的唯一一条文本 —— EID 自己声明为可选的那个模组。
+#:
+#: `features/eid_mcm.lua:20`（`eid_mcm_cn.lua:1` 同样）写的是
+#: `local MCMLoaded, MCM = pcall(require, "scripts.modconfig")`：`scripts.modconfig` 是
+#: **另一个模组**（Mod Config Menu，MCM）提供的模块，而本项目的部署树里
+#: `isaac_mods/mods/` 只有 EID 一个目录（发布包与老卡都是如此）⇒ 这条 `require` 必然失败，
+#: 且 EID 自己把它当"没装 MCM"处理（`EID.MCMLoaded = false`，功能降级但不报错）。
+#:
+#: 为什么它会出现在错误通道里：运行时用 `ReportAndRecordLuaError()` 替代 `luaL_error`，
+#: **在抛错之前**就把整段消息记进"最后一次 Lua 错误文本"。这是为了真机取证（早先正是靠
+#: 这条通道拿到 `features/eid_mcm.lua:81` 那个致命错误的完整文本），代价是被模组
+#: `pcall` 兜住的失败同样会留下记录。所以"加载成功 ⇒ errLen 必须为 0"这个口径已经不成立，
+#: 正确的是"加载成功 ⇒ 允许留下的错误只能是这条已知的可选模组缺失"。
+TOLERATED_OPTIONAL_MODULE = "scripts.modconfig"
+
 
 class EidHostLoadTests(unittest.TestCase):
     """真实 EID 夹具在真实 Runtime 源码上的加载行为（夹具缺失时整体 skip）。"""
@@ -202,11 +217,29 @@ class EidHostLoadTests(unittest.TestCase):
         self.assertTrue(position["message"])
         self.assertTrue(position["statement"], "失败行必须能贴出源码语句")
 
+    def assert_no_unexpected_lua_error(self, report):
+        """成功路径上只允许记录"缺可选模组 MCM"这一条错误（见 `TOLERATED_OPTIONAL_MODULE`）。
+
+        原口径是 `errorLength == 0`。它现在不成立，原因不是运行时变差，而是这条通道**刻意**
+        在抛错之前记录文本：EID 用 `pcall` 兜住的 `require("scripts.modconfig")`（MCM 是另一个
+        模组，我们没部署）也会留下一段文本。改成"要么没有记录，要么记录的必须是那一条"，
+        比"必须为 0"更贴合现实、对**新出现的**任何其它错误仍然一样严。
+        """
+        length = report["errorLength"]
+        if length == 0:
+            return
+        text = report.get("errorText", "")
+        self.assertIn(
+            TOLERATED_OPTIONAL_MODULE,
+            text,
+            f"成功路径上出现了非预期的 Lua 错误（{length} 字节）：{text!r}",
+        )
+
     def test_lua_error_text_is_reported_whole(self):
         """错误文本必须整段带出（真机探针那条 8 字节的通道只能认出"是哪份脚本"）。"""
         report = self.report
         if report["loadOk"]:
-            self.assertEqual(report["errorLength"], 0)
+            self.assert_no_unexpected_lua_error(report)
             return
         self.assertGreater(report["errorLength"], 8)
         self.assertGreater(len(report["errorText"]), 8)
@@ -256,7 +289,8 @@ class EidHostLoadTests(unittest.TestCase):
         真机报告 `01789203482`：诊断字 `[11] = 0`（"带脚本加载成功"）、没有 Lua 错误、
         已登记种类 `{5,10,15,18,19,23,38}`、**有派发点的登记 0 条**、无派发点 10 条、注册表 7 条 ——
         （2026-09-14 起"有派发点/无派发点"这两个数会与这份历史报告不同：`MC_POST_GAME_STARTED`(15)
-        被提升为常驻挂点、进了派发白名单，于是这条掩码里它从"无派发点"挪到"有派发点" ⇒ 1/9。
+        被提升为常驻挂点、进了派发白名单。15 在这一段路径上被登记了**两次**
+        （`liveCallbackCounts` 里 `15:2`，因为 EID 有两处注册它），两条都算"有派发点" ⇒ 2/8。
         种类掩码本身没变 —— 那才是"脚本死在字体块"的证据。）
         于是 `MC_POST_UPDATE`/`MC_POST_RENDER` 从未登记、屏幕空白。
 
@@ -268,16 +302,24 @@ class EidHostLoadTests(unittest.TestCase):
         report = self.font_fail
         self.assertTrue(report["loadOk"], "顶层 return 不是错误：加载必须报成功")
         self.assertEqual(report["scriptState"], "Executed")
-        self.assertEqual(report["errorLength"], 0, "没有任何 Lua 错误（真机 errLen=0）")
+        # 真机当时的 errLen 是 0；宿主机这条通道现在会留下 EID 用 `pcall` 兜住的
+        # `require("scripts.modconfig")`（MCM 是另一个模组，我们没部署），见
+        # `TOLERATED_OPTIONAL_MODULE`。除它以外任何错误都仍然算红。
+        self.assert_no_unexpected_lua_error(report)
         self.assertEqual(report["callbackKindMask"], "5,10,15,18,19,23,38",
                          "真机已登记种类掩码必须逐项一致")
-        # 15（`MC_POST_GAME_STARTED`）在 2026-09-14 之后有派发点，所以与历史报告相比差 1。
-        self.assertEqual(report["dispatchableRegistrations"], 1)
-        self.assertEqual(report["unhookedRegistrations"], 9)
+        # 逐种类存活数：它解释了下面 2/8 这个拆分（15 登记两次，其余各一次，共 10 条）。
+        self.assertEqual(report["liveCallbackCounts"], "5:1,10:1,15:2,18:1,19:1,23:3,38:1")
+        self.assertEqual(report["registryCount"], 10)
+        # 15（`MC_POST_GAME_STARTED`）在 2026-09-14 之后有派发点；它被登记两次 ⇒ 2 条。
+        self.assertEqual(report["dispatchableRegistrations"], 2)
+        self.assertEqual(report["unhookedRegistrations"], 8)
+        self.assertEqual(report["dispatchableRegistrations"] + report["unhookedRegistrations"],
+                         report["registryCount"], "两个计数必须覆盖注册表里的全部登记")
         # 2026-09-12：`CallbackRegistry::Register` 改成**追加**之后，font-fail 这一跑的
         # 10 次登记会全部留下（旧值 7 = 被覆盖掉 3 条时的读数，正是真机 01789203805 的现象）。
         # 种类掩码与"无派发点登记数"仍必须与真机逐项一致 —— 那两条才是"脚本死在字体块"的证据。
-        self.assertEqual(report["registryCount"], 10)
+        # （`registryCount` 上面已经断言过，这里不再重复。）
 
     def test_a_loaded_font_registers_the_two_dispatched_kinds(self):
         """字体加载成功时，`MC_POST_UPDATE`(1) 与 `MC_POST_RENDER`(2) 必须登记 —— 这就是分叉点。"""

@@ -137,6 +137,12 @@ class StartupDiagnosticBuildTest(unittest.TestCase):
                     "contents/010021C000B6A000/exefs/main.npdm",
                     "contents/010021C000B6A000/exefs/subsdk9",
                     "nro_patches/isaac-repentance-manager-update-relay/91C73FDD575061318D68886316AFEAC72388B2AB000000000000000000000000.ips",
+                    # 游戏开局（`Game::Start` / `StartFromSavedState` 的后置边界）是**常驻能力**：
+                    # `make` 里那一行 `all: $(DEPLOY_LIFECYCLE_RELAY_IPS)` 在**所有**诊断阶段之外，
+                    # 所以默认包与 stage14 包**都**带这条中继（模组的 `MC_POST_GAME_STARTED`
+                    # 依赖它；EID 的开局初始化——套装计数就是其中之一——全挂在上面）。
+                    # 旧断言只在默认包那一支里列它，是 2026-09-14 提升为常驻之前的写法。
+                    "nro_patches/isaac-repentance-lifecycle-relay/91C73FDD575061318D68886316AFEAC72388B2AB000000000000000000000000.ips",
                 ]
                 if stage is None:
                     expected.extend([
@@ -154,10 +160,6 @@ class StartupDiagnosticBuildTest(unittest.TestCase):
                         # 调用之前；这条 IPS 就是那个调用点上的中继，缺了它回调只能退回入口中继
                         # （下一帧、被实体与 HUD 盖住）。
                         "nro_patches/isaac-repentance-render-present-relay/91C73FDD575061318D68886316AFEAC72388B2AB000000000000000000000000.ips",
-                        # 游戏开局（`Game::Start` / `StartFromSavedState` 的后置边界）：
-                        # 模组的 `MC_POST_GAME_STARTED` 依赖这条中继（EID 的开局初始化——套装计数
-                        # 就是其中之一——全挂在它上面），所以默认包必须带上它。
-                        "nro_patches/isaac-repentance-lifecycle-relay/91C73FDD575061318D68886316AFEAC72388B2AB000000000000000000000000.ips",
                         # Mod 贴图 PNG 桥（`isaac-repentance-image-path-relay`）**已删除**：
                         # 真机两轮证明"把请求改回 `.png`"不足以让引擎用上它（Load 成功、画面空白），
                         # 改由打包阶段给 `gfx/` 下的 PNG 产出同名 `.pcx`（见 `tools/pc_mod_manifest.py`

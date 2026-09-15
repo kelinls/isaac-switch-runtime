@@ -526,14 +526,31 @@ class ApiCatalogContractTests(unittest.TestCase):
         # 158 + 2026-09-14 的 1 行 `EntityPlayer.AddCollectible`（真实现：底座
         # `Entity_Player::AddCollectible` @ `0x292A74`，调用点做入口 4 字节指纹核对，
         # 返回值用 `HasCollectible` 复核实际结果）。
-        self.assertEqual(checked, 159, "家族绑定行数应与已登记 API 数一致")
+        # 159 + 批次 8（2026-09-15）的 4 行 `Level` 成员：`GetCurrentRoomIndex`/`GetCurrentRoom`
+        # （字段读与"与 Game:GetRoom 同一个对象"）、`GetAbsoluteStage`/`IsNextStageAvailable`
+        # （各有 Switch 符号 @ `0x3E7F3C` / `0x3DBDBC`，入口 16 字节守卫校验后调用）。
+        # 缺口来自 `tools/eid_api_gap_report.py`：EID 的潘多拉魔盒条目
+        # （`features/eid_modifiers.lua:197/200`）在描述构建里无条件调用 `GetAbsoluteStage()`，
+        # 缺它就是 "attempt to call a nil value"、整条描述回调在那一行中断。
+        self.assertEqual(checked, 163, "家族绑定行数应与已登记 API 数一致")
 
     def test_options_fields_are_registered_as_values(self):
         """`Options` 的两个字段是**值**而不是方法：Catalog 里有条目、绑定表里没有绑定行。
 
         它们没有 `lua_CFunction`，所以 `test_family_binding_ids_match_the_catalog` 覆盖不到；
-        这里直接断言 `RegisterOptionsTable` 真的把两个字段写进了表，否则 Catalog 里就多出
+        这里直接断言 `RegisterOptionsTable` 真的让两个字段可读，否则 Catalog 里就多出
         两条幽灵 API。
+
+        **两个字段的取数方式刻意不同**（按 2026-09-14 的实现改写，原断言是"两个名字都必须以
+        `lua_setfield(state, -2, "<名字>")` 出现"，那是 `Language` 还被当静态值缓存时的写法）：
+
+        * `HUDOffset` 是**静态值**：建表时一次性 `lua_setfield` 写进去；
+        * `Language` 是**动态字段**：引擎中途换语言后必须能读到新值，所以不能在建表时缓存，
+          改由元表 `__index`（`OptionsIndex`）每次现读
+          （`ReadCurrentLanguageCode` → `Manager::GetLanguageCode()`，读不到时兜底 `"en"`）。
+
+        因此这里按两条路径分别断言，并**反过来断言 `Language` 不得被静态缓存** —— 那正是
+        这条动态设计要防的失效模式。
         """
         source = LUA_RUNTIME.read_text(encoding="utf-8")
         family = (SRC / "interfaces" / "lua" / "isaac_api.cpp").read_text(encoding="utf-8")
@@ -543,8 +560,15 @@ class ApiCatalogContractTests(unittest.TestCase):
         self.assertIn("Options", labels)
         for name in ("HUDOffset", "Language"):
             with self.subTest(field=name):
-                self.assertIn(f'lua_setfield(state, -2, "{name}")', family)
                 self.assertIn(name, catalog_api_names())
+
+        # ① 静态值：建表时直接写入。
+        self.assertIn('lua_setfield(state, -2, "HUDOffset")', family)
+        # ② 动态字段：元表 `__index` 指向 `OptionsIndex`，且它确实服务 `Language`。
+        self.assertIn("lua_pushcfunction(state, OptionsIndex)", family)
+        self.assertIn('lua_setfield(state, -2, "__index")', family)
+        self.assertIn('std::strcmp(key, "Language") == 0', family)
+        self.assertNotIn('lua_setfield(state, -2, "Language")', family)
 
     def test_every_registered_lua_name_is_in_the_catalog(self):
         known = catalog_api_names() | catalog_owner_labels()

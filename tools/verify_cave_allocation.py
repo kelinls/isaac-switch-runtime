@@ -126,6 +126,50 @@ EXCLUSIVE_GROUPS: tuple[ExclusiveGroup, ...] = (
             }
         ),
     ),
+    # 2026-09-15 登记：常驻的 GameStart（开局）中继与三个**观察类**中继抢同一段字节。
+    #
+    # 三处重叠（`verify_cave_allocation.py` 报出的原文）：
+    #   ① `GameObserverRelay` 槽 0x68CC70 落在 `GameStartNewRelay` 洞 [0x68CC70,0x68CC80) 里；
+    #   ② `GameStartLifecycleRelay` 槽 0x68CCC0 与 `GameState2ObserverRelay` 洞起点 0x68CCC0 重合；
+    #   ③ `ManagerLoadConfigsRelay` 洞 [0x68CC20,0x68CC38) 与 `GameStartSavedRelay` 洞起点 0x68CC20 重合。
+    #
+    # 为什么可以登记而不是必须挪洞 —— 三条可在源码里复核的事实：
+    #   * GameStart 中继是**常驻**的：`runtime/src/infrastructure/relayslot/relay_slot_hook_adapter.cpp`
+    #     的 `HookId::GameStart` 分支调用 `TryInstallGameStartRelay`；它在 `kHookCatalog` 里是
+    #     `required == false` 的可选点，但确实在生产安装路径上；
+    #   * 另外三个观察中继**没有生产调用者**：`TryInstallGameObserverRelay` 与
+    #     `TryInstallGameState2ObserverRelay` 在整个 `runtime/` 下只有"定义 + 头文件声明"两处引用
+    #     （其余引用都在 `runtime/tests/` 里按名字做文本断言）；`TryInstallManagerLoadConfigsDiagnostic`
+    #     只在 `EXL_DIAGNOSTIC_STAGE == 8` 分支里被调用；
+    #   * 观察类属于**已冻结**的诊断设施（用户裁定：不再新增、不再维护；删掉诊断分支另开一轮）。
+    #
+    # 因此同一轮只会装其中一个：跑诊断观察包时它临时顶掉常驻 GameStart，而不是两者共存。
+    # **同轮安装的后果要记住**：两份 IPS 往同一段字节写代码，后应用的那份覆盖前一份 ⇒
+    # 被覆盖的一方 `verify_bytes` 必然失败。若失败的是 GameStart，症状是
+    # `MC_POST_GAME_STARTED` 静默不派发（回调登记得下、永不触发），而不是崩溃。
+    #
+    # **长期修法**：把 GameStart 中继挪到与观察类不重叠的洞。本组只是把现状显式登记下来，
+    # 不改动任何字节；挪洞要重新挑洞并重做真机验证，属于独立一轮。
+    ExclusiveGroup(
+        reason=(
+            "常驻的 GameStart 中继（0x68CC20 / 0x68CC70 洞 + 0x68CCC0 槽）与三个观察类诊断中继"
+            "复用同一段字节：ManagerLoadConfigsRelay（stage8 的 loadconfigs-relay）、"
+            "GameObserverRelay（game-observer-relay）、GameState2ObserverRelay"
+            "（game-state2-observer-relay）。观察类只在对应诊断阶段单独发布，且在 runtime/ 里"
+            "没有生产调用者 ⇒ 一轮只装一个包，允许重叠；同轮安装会让后应用的那份 IPS 覆盖"
+            "前一份的字节，被覆盖的一方校验失败、其回调永不派发。"
+        ),
+        relays=frozenset(
+            {
+                "GameStartSavedRelay",
+                "GameStartNewRelay",
+                "GameStartLifecycleRelay",
+                "ManagerLoadConfigsRelay",
+                "GameObserverRelay",
+                "GameState2ObserverRelay",
+            }
+        ),
+    ),
 )
 
 

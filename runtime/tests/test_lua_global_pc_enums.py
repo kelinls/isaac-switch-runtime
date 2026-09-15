@@ -15,6 +15,17 @@ except ImportError:
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "runtime" / "source"
 
+#: 生成器读的**用户提供的** PC 游戏源码。它不在仓库里（PC 游戏本体），所以两条需要它的用例
+#: 在缺这份夹具时按仓库惯例**跳过**而不是报错 —— 生成物本身（`pc_lua_enum_data.*`）与
+#: 它记录的 SHA-256 仍在仓库里，装了夹具的机器上照旧逐字节核对。
+PC_ENUMS_SOURCE = ROOT / "The Binding of Isaac Rebirth pc" / "resources/scripts/enums.lua"
+
+
+def skip_without_pc_enums(test: unittest.TestCase, source: Path) -> None:
+    if not source.is_file():
+        test.skipTest(f"缺少用户提供的 PC 源码夹具：{source}")
+
+
 # The fixed PC contract: these globals must exist in Lua, in this order, and
 # `ModCallbacks` is registered last.
 GENERATED_TABLES = (
@@ -312,7 +323,8 @@ end
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_generated_tables_are_global_and_not_starterr_specific(self):
-        enum_source = ROOT / "The Binding of Isaac Rebirth pc" / "resources/scripts/enums.lua"
+        enum_source = PC_ENUMS_SOURCE
+        skip_without_pc_enums(self, enum_source)
         header = SOURCE / "program/pc_lua_enum_data.hpp"
         implementation = SOURCE / "program/pc_lua_enum_data.cpp"
         digest = hashlib.sha256(enum_source.read_bytes()).hexdigest()
@@ -453,7 +465,8 @@ end
 
     def test_generator_reads_the_frozen_source_bit_flag_tables(self):
         generator = load_generator()
-        enum_source = ROOT / "The Binding of Isaac Rebirth pc" / "resources/scripts/enums.lua"
+        enum_source = PC_ENUMS_SOURCE
+        skip_without_pc_enums(self, enum_source)
         source = enum_source.read_text(encoding="utf-8")
         values = generator._parse_values(source)
         self.assertEqual(

@@ -97,7 +97,16 @@ class EmbeddedLuaRuntimeBoundaryTests(unittest.TestCase):
             "lua_rawgeti(g_LuaState, LUA_REGISTRYINDEX, descriptor.modReference)",
             runtime,
         )
-        self.assertIn("lua_pcallk(g_LuaState, 1, 0, 0, 0, nullptr)", runtime)
+        # `POST_UPDATE` 仍然只收到 Mod 对象**一个**实参：`DispatchPostUpdate` 用
+        # `LuaCallbackInvoker invoker{0, false, true}`（无 manager、无第二个实参）构造调用者，
+        # 于是调用点的实参个数表达式落到 `hasSecondArgument ? 2 : 1` 的 1 那一支。
+        #
+        # 原断言写死了 `lua_pcallk(g_LuaState, 1, 0, 0, 0, nullptr)`。第二个实参是为
+        # `MC_POST_GAME_STARTED` 加的（EID 的处理函数签名是 `(mod, isSave)`），
+        # 调用点因而改成条件表达式，所以这里改为分别钉住"POST_UPDATE 那条调用者不带第二实参"
+        # 与"调用点的实参个数表达式"两件事，而不是放宽断言。
+        self.assertIn("LuaCallbackInvoker invoker{0, false, true};", runtime)
+        self.assertIn("lua_pcallk(g_LuaState, hasSecondArgument ? 2 : 1, 0, 0, 0, nullptr)", runtime)
 
     def test_lua_runtime_is_included_by_the_program_source_module(self):
         wrapper = SOURCE / "program" / "lua_runtime.cpp"

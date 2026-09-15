@@ -1,6 +1,11 @@
 import unittest
 from pathlib import Path
 
+try:
+    from .test_support import makefile_accepted_diagnostic_stages
+except ImportError:
+    from test_support import makefile_accepted_diagnostic_stages
+
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNTIME = ROOT / "runtime"
@@ -14,7 +19,8 @@ class Stage89RestartActionControllerDiagnosticTests(unittest.TestCase):
         entry = (SOURCE / "runtime_entry.cpp").read_text(encoding="utf-8")
         hook = (SOURCE / "hook_manager.cpp").read_text(encoding="utf-8")
 
-        self.assertIn("89,$(DIAGNOSTIC_STAGE)", makefile)
+        # 见 `makefile_accepted_diagnostic_stages` 的注释：按阶段号集合判成员。
+        self.assertIn(89, makefile_accepted_diagnostic_stages(makefile))
         self.assertIn("EXL_DIAGNOSTIC_STAGE != 89", selector)
         self.assertIn("EXL_DIAGNOSTIC_STAGE == 89", entry)
         self.assertIn("ReportStage89Failure", entry)

@@ -253,6 +253,9 @@ std::atomic<uintptr_t> g_GameOwnerSlot{0};
 std::atomic<uintptr_t> g_GameIsPausedThunk{0};
 std::atomic<uintptr_t> g_GameIsGreedMode{0};
 std::atomic<uintptr_t> g_LevelIsAscent{0};
+// 批次 8（2026-09-15）：`Level:GetAbsoluteStage()` / `Level:IsNextStageAvailable()` 的入口地址。
+std::atomic<uintptr_t> g_LevelGetAbsoluteStage{0};
+std::atomic<uintptr_t> g_LevelIsNextStageAvailable{0};
 std::atomic<uintptr_t> g_ItemPoolGetCollectible{0};
 std::atomic<uintptr_t> g_MusicGetCurrentMusicId{0};
 std::atomic<uintptr_t> g_MusicPause{0};
@@ -1790,6 +1793,14 @@ std::uintptr_t LevelIsAscentThunk() noexcept {
     return g_LevelIsAscent.load(std::memory_order_acquire);
 }
 
+std::uintptr_t LevelGetAbsoluteStageThunk() noexcept {
+    return g_LevelGetAbsoluteStage.load(std::memory_order_acquire);
+}
+
+std::uintptr_t LevelIsNextStageAvailableThunk() noexcept {
+    return g_LevelIsNextStageAvailable.load(std::memory_order_acquire);
+}
+
 std::uintptr_t ItemPoolGetCollectibleThunk() noexcept {
     return g_ItemPoolGetCollectible.load(std::memory_order_acquire);
 }
@@ -2085,6 +2096,16 @@ void SetGameIsGreedModeBinding(uintptr_t method) {
 
 void SetLevelIsAscentBinding(uintptr_t method) {
     g_LevelIsAscent.store(method, std::memory_order_release);
+}
+
+// 批次 8（2026-09-15）：两个新绑定的发布点。与 `SetLevelIsAscentBinding` 同一种形态：
+// 各自一条 release 存储，handler 各自一条 acquire 读 —— 不会出现"半个已校验记录"。
+void SetLevelGetAbsoluteStageBinding(uintptr_t method) {
+    g_LevelGetAbsoluteStage.store(method, std::memory_order_release);
+}
+
+void SetLevelIsNextStageAvailableBinding(uintptr_t method) {
+    g_LevelIsNextStageAvailable.store(method, std::memory_order_release);
 }
 
 void SetItemPoolGetCollectibleBinding(uintptr_t method) {

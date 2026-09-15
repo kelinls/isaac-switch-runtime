@@ -149,6 +149,26 @@ constexpr LuaApiDescriptor kDefaultApis[] = {
     // `curses | 永久诅咒 & ~禁用诅咒` 三步，那两次调用的函数地址本轮未定位，这里**只返回字段值**。
     {MakeId(ApiDomain::Level, 1, 0x0003), ApiDomain::Level, "Level", "GetCurses", kV1, 0,
      ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    // 批次 8（2026-09-15）：EID 在**描述构建**路径上无条件调用、此前整条缺失的四个 `Level` 成员。
+    // 缺口来自 `tools/eid_api_gap_report.py` 的高置信表（`missing_in_runtime`）；底座依据见
+    // `docs/PC-Lua-API-对照清单.md`（该表 §3.3 已证明 `file_offset` 等于运行时模块偏移）：
+    //   * `GetAbsoluteStage()` —— Switch 有符号 `_ZNK15IsaacRepentance5Level16GetAbsoluteStageEv`
+    //     @ `0x3E7F3C`，安装期按 16 字节守卫校验后直接调用；
+    //   * `IsNextStageAvailable()` —— 符号 @ `0x3DBDBC`，同上；
+    //   * `GetCurrentRoomIndex()` —— 字段读 `Level + 0x21558`，依据是固定 NRO 里
+    //     `Level::GetCurrentRoomDesc` 的反汇编：它把这个字段当 `Level::GetRoomByIdx(int,int)`
+    //     的第一个实参（`docs/PC-Mod-兼容矩阵.md` 的 Stage104 条目）；
+    //   * `GetCurrentRoom()` —— PC 语义就是"当前 `Room`"，与 `Game:GetRoom()` 是同一个对象
+    //     （都读 `Game + 0x21550`），所以直接复用那条**已上机验证**的读取链 ⇒ 成熟度与
+    //     `Game:GetRoom` 同级记 `HostVerified`，其余三条记为待真机确认的 `Experimental`。
+    {MakeId(ApiDomain::Level, 1, 0x0004), ApiDomain::Level, "Level", "GetCurrentRoomIndex", kV1, 0,
+     ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    {MakeId(ApiDomain::Level, 1, 0x0005), ApiDomain::Level, "Level", "GetCurrentRoom", kV1, 0,
+     ThreadAffinity::ManagedCallback, ApiMaturity::HostVerified},
+    {MakeId(ApiDomain::Level, 1, 0x0006), ApiDomain::Level, "Level", "GetAbsoluteStage", kV1, 0,
+     ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    {MakeId(ApiDomain::Level, 1, 0x0007), ApiDomain::Level, "Level", "IsNextStageAvailable", kV1, 0,
+     ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
     {MakeId(ApiDomain::Room, 1, 0x0001), ApiDomain::Room, "Room", "GetType", kV1, 0,
      ThreadAffinity::ManagedCallback, ApiMaturity::HostVerified},
     // 批次 7（2026-09-12）：EID 在网格/寻路路径上无条件调用的一批 `Room` 成员
