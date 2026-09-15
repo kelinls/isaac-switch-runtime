@@ -74,10 +74,20 @@ const char* PersistenceErrorMessage(ModPersistence::Result result) {
 // PC Mod 会在加载阶段一次性注册十几种回调，任何一种报错都会让整个 Mod 加载失败
 // （EID 就是这种），而“注册成功但收不到事件”只会让功能静默缺失。哪些种类挂了
 // 派发点、哪些只是登记，由 `IsaacModRuntime_GetHookDiagnostics` 报出去。
+//
+// ★ 这张名单**必须与代码里真实的派发调用逐项一致**（2026-09-15 更正）：
+//   * 走 `CallbackDispatcher` 的三条 —— `lua_runtime.cpp` 里的
+//     `Dispatch(kCallbackPostGameStarted / kCallbackPostUpdate / kCallbackPostRender, …)`；
+//   * 手工那一条 —— `DispatchPreGetCollectible()` 用
+//     `g_CallbackRegistry.At(kCallbackPreGetCollectible, 0)` 取登记。
+// 以前这里多写了 `kCallbackInputAction`（13）：全仓**没有任何地方**派发它，
+// 于是设备侧那份状态面会告诉操作者"这种回调有派发点"，而它一次都不会跑，
+// 每次读数里"有派发点 / 无派发点"这两个数都因此偏一项。
+// `runtime/tests/test_lua_callback_dispatch_sites.py` 现在按源码做一致性门禁：
+// 名单里多一项或漏一项都会红。
 bool HasDispatchSite(CallbackId id) {
     return id == kCallbackPostUpdate || id == kCallbackPostRender ||
-           id == kCallbackInputAction || id == kCallbackPreGetCollectible ||
-           id == kCallbackPostGameStarted;
+           id == kCallbackPreGetCollectible || id == kCallbackPostGameStarted;
 }
 
 bool ResolveCallbackId(lua_Integer callback, CallbackId* id) {

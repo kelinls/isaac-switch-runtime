@@ -46,7 +46,126 @@ def layered_lua_runtime_sources(source_root: Path) -> list[Path]:
         unit_root / "interfaces" / "lua" / "vector_api.cpp",
         unit_root / "interfaces" / "lua" / "sprite_api.cpp",
         unit_root / "interfaces" / "lua" / "json_api.cpp",
+        # 共享**弱默认桩**（`shared_lua_stubs.cpp`）：放进这份清单，任何 harness 都会自动带上。
+        # 它们是弱符号，所以老 harness 自己那份强定义照旧优先；而"运行时新增一个观测函数"
+        # 只需在那个文件里补一行默认，**不必再动任何测试文件**（见该文件头部说明）。
+        source_root.parent / "tests" / "shared_lua_stubs.cpp",
     ]
+
+
+# ---------------------------------------------------------------------------
+# 宿主 Lua harness 的共享脚手架（地基一期，2026-09-15）
+#
+# 问题：每个"某个 API 在宿主上怎么表现"的测试都自己抄一遍同样的三件事 ——
+#   * 伪造引擎内存那套 helpers；
+#   * **一批引擎观测函数的桩**（`game_observer.hpp` 的那些入口，宿主上没有实现）；
+#   * 编译 vendored Lua 5.3.3 的 7 个 .c。
+# 结果是 21 个测试文件各自抄一份桩；一旦运行时**新增**一个观测函数，
+# 21 个文件会同时链接失败（2026-09-15 实测：本可以给 `Level` 家族加一个观测函数，
+# 因为这件事只能绕开写，最后是在 handler 里自己走指针链）。
+#
+# 做法：桩只写一次，且写成**弱符号**（`__attribute__((weak))`）。
+# 测试自己的 TU 里再定义同名函数就是强符号，链接器会用它覆盖弱默认 ——
+# 于是"要自定义行为"不需要改契约，而"新增观测函数"也只需要在下面补一行默认桩，
+# 老测试照旧能编译、能跑。
+# ---------------------------------------------------------------------------
+
+#: Lua 源码相对 `runtime/source` 的位置。
+LUA_SOURCE_RELATIVE = "third_party/lua-5.3.3/src"
+
+#: 弱默认桩：签名与 `game_observer.hpp` / `game_file_reader.hpp` 的声明逐字一致。
+#: 默认行为一律是"读不到"（对应的降级分支），需要具体值的测试在自己的 TU 里覆盖。
+#: 宿主 harness 编译用的固定开关（与既有手写 harness 完全一致，避免行为漂移）。
+HARNESS_COMPILE_FLAGS = (
+    "-std=c++23", "-Wall", "-Wextra", "-Werror", "-DLUA_C89_NUMBERS",
+    "-DEXL_LAYERED_RUNTIME=1", "-DEXL_DIAGNOSTIC_STAGE=14",
+    "-DEXL_LOAD_KIND=Module", "-DEXL_LOAD_KIND_ENUM=2", "-DEXL_PROGRAM_ID=0",
+)
+
+#: 不参与编译的 Lua 源码（`lua.c` 等是独立可执行/可选库）。
+_LUA_EXCLUDED_SOURCES = frozenset(
+    {"lua.c", "luac.c", "liolib.c", "loslib.c", "loadlib.c", "ldblib.c", "linit.c"}
+)
+
+
+def prepare_harness_directory(workdir: Path) -> Path:
+    """建好 harness 需要的目录骨架（`compatibility/stdfloat` 是 vendored Lua 的头依赖）。"""
+    workdir = Path(workdir)
+    compatibility = workdir / "compatibility"
+    compatibility.mkdir(parents=True, exist_ok=True)
+    (compatibility / "stdfloat").write_text(
+        "#pragma once\nnamespace std { using float16_t = float; using float128_t = long double; }\n",
+        encoding="utf-8",
+    )
+    return workdir
+
+
+def lua_harness_objects(source_root: Path, workdir: Path) -> list[Path]:
+    """编译 vendored Lua 5.3.3 的全部目标文件（进程内按目录缓存一次）。
+
+    缓存只影响速度：同一进程里多个 harness 复用同一批 `.o`。键是（编译器版本 + Lua 源码目录），
+    命中条件是"7 个 `.o` 都存在且非空"，所以不会把一个半成品当缓存用。
+    """
+    import subprocess
+
+    source_root = Path(source_root)
+    lua_root = source_root / LUA_SOURCE_RELATIVE
+    workdir = Path(workdir)
+    cached = _LUA_OBJECT_CACHE.get(str(lua_root))
+    if cached is not None and all(path.is_file() and path.stat().st_size > 0 for path in cached):
+        return list(cached)
+
+    objects: list[Path] = []
+    for source in sorted(lua_root.glob("*.c")):
+        if source.name in _LUA_EXCLUDED_SOURCES:
+            continue
+        output = workdir / f"lua_{source.stem}.o"
+        build = subprocess.run(
+            ["cc", "-std=c99", "-w", "-DLUA_C89_NUMBERS", "-I", str(lua_root),
+             "-c", str(source), "-o", str(output)],
+            text=True, capture_output=True,
+        )
+        if build.returncode != 0:
+            raise AssertionError(build.stdout + build.stderr)
+        objects.append(output)
+    _LUA_OBJECT_CACHE[str(lua_root)] = list(objects)
+    return objects
+
+
+#: 进程内的 Lua 目标文件缓存（见 `lua_harness_objects`）。
+_LUA_OBJECT_CACHE: dict[str, list[Path]] = {}
+
+
+def build_lua_harness(*, source_root: Path, workdir: Path, harness_source: str,
+                      extra_sources: tuple[Path, ...] = ()) -> Path:
+    """编译一个宿主机 harness，返回可执行文件路径。
+
+    组成：`harness_source`（含 `main`，以及需要**覆盖**共享默认桩时自己定义的强符号）
+    + `shared_lua_stubs.cpp`（共享弱默认桩，已包含在源码清单里）+ vendored Lua。
+    """
+    import subprocess
+
+    source_root = Path(source_root)
+    workdir = prepare_harness_directory(Path(workdir))
+    lua_root = source_root / LUA_SOURCE_RELATIVE
+
+    harness = workdir / "harness.cpp"
+    harness.write_text(harness_source.lstrip(), encoding="utf-8")
+
+    objects = lua_harness_objects(source_root, workdir)
+    binary = workdir / "harness"
+    build = subprocess.run(
+        ["c++", *HARNESS_COMPILE_FLAGS,
+         "-I", str(workdir / "compatibility"), "-I", str(source_root),
+         "-I", str(source_root.parent / "src"), "-I", str(lua_root),
+         str(harness), *(str(path) for path in extra_sources),
+         *(str(path) for path in layered_lua_runtime_sources(source_root)),
+         *(str(path) for path in objects), "-lm", "-o", str(binary)],
+        text=True, capture_output=True,
+    )
+    if build.returncode != 0:
+        raise AssertionError(build.stdout + build.stderr)
+    return binary
 
 
 def target_address(base: int, offset: int) -> int:

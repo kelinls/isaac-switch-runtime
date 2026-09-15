@@ -64,6 +64,56 @@ def load_inventory() -> dict[str, str]:
     return status
 
 
+def load_catalog_entries() -> dict[str, dict[str, str]]:
+    """Catalog 里 `Owner:Name` → `{id, maturity}`（`kDefaultApis[]` 之内）。
+
+    需要 `id` 才能与"语义偏离表"（`api_deviation.cpp` 按 id 登记）对上。
+    """
+    text = (ROOT / 'runtime/src/interfaces/lua/api_catalog.cpp').read_text(encoding='utf-8', errors='replace')
+    start = text.find('kDefaultApis[]')
+    end = text.find('const ApiCatalog g_defaultCatalog', start)
+    body = text[start:end if end > start else len(text)]
+    domain_values = {
+        'Global': 0, 'Mod': 1, 'Game': 2, 'Level': 3, 'Room': 4, 'ItemPool': 5,
+        'Music': 6, 'Rng': 7, 'Persistence': 8, 'Input': 9, 'Diagnostic': 10,
+        'Font': 11, 'Vector': 12, 'Sprite': 13, 'Isaac': 14, 'Seed': 15,
+    }
+    entries: dict[str, dict[str, str]] = {}
+    pattern = re.compile(
+        r'MakeId\(ApiDomain::(\w+),\s*(\d+),\s*(0x[0-9A-Fa-f]+)\).*?'
+        r'"([A-Za-z_][A-Za-z0-9_]*)",\s*"([A-Za-z_][A-Za-z0-9_]*)"',
+        re.DOTALL,
+    )
+    for match in pattern.finditer(body):
+        domain, group, sequence, owner, name = match.groups()
+        if domain not in domain_values:
+            continue
+        identifier = (domain_values[domain] << 24) | (int(group) << 16) | int(sequence, 16)
+        entries[f'{owner}:{name}'] = {'id': f'0x{identifier:08X}'}
+    return entries
+
+
+def load_deviations() -> dict[str, dict[str, str]]:
+    """`api_deviation.cpp` 的 id → `{kind, text}`。
+
+    这是"② 语义不满足"的**标记来源**：有了它，报告才能区分"实现正确"与
+    "实现但有已知偏离"，而不是靠人去读实现处的注释。
+    """
+    path = ROOT / 'runtime/src/interfaces/lua/api_deviation.cpp'
+    if not path.is_file():
+        return {}
+    text = path.read_text(encoding='utf-8', errors='replace')
+    deviations: dict[str, dict[str, str]] = {}
+    pattern = re.compile(
+        r'\{\s*(0x[0-9A-Fa-f]{8})\s*,\s*ApiDeviationKind::(\w+)\s*,\s*((?:\s*"(?:[^"\\]|\\.)*"\s*)+)\}'
+    )
+    for match in pattern.finditer(text):
+        identifier, kind, raw = match.groups()
+        pieces = re.findall(r'"((?:[^"\\]|\\.)*)"', raw)
+        deviations[f'0x{int(identifier, 16):08X}'] = {'kind': kind, 'text': ''.join(pieces)}
+    return deviations
+
+
 def load_runtime_apis() -> set[str]:
     """**权威口径**：API Catalog 的 `kDefaultApis[]` 里登记过的 `Owner:Name`。
 
@@ -114,6 +164,8 @@ def main() -> int:
 
     inventory = load_inventory()
     runtime_apis = load_runtime_apis()
+    catalog_entries = load_catalog_entries()
+    deviations = load_deviations()
     defined = load_mod_definitions(mod)
     usage = load_mod_usage(mod)
 
@@ -135,12 +187,17 @@ def main() -> int:
             continue                    # 方法名不在 PC 目录里 ⇒ 不是游戏 API
         for candidate_owner in owners_of[name]:
             api = f'{candidate_owner}:{name}'
+            identifier = catalog_entries.get(api, {}).get('id', '')
+            deviation = deviations.get(identifier) if identifier else None
             rows.append({
                 'api': api,
                 'called_as': key,
                 'calls': count,
                 'pc_status': inventory.get(api, 'unknown'),
                 'in_runtime': api in runtime_apis,
+                # ② 语义维的标记：有实现、但**已知与 PC 语义不同**（差在哪见 `text`）。
+                'deviation_kind': deviation['kind'] if deviation else '',
+                'deviation': deviation['text'] if deviation else '',
                 # `Get`/`Set` 这类通用方法名会在目录里属于很多 owner，凭方法名对不上真实类型，
                 # 只能算"低置信参考"，不进主清单。
                 'confident': len(owners_of[name]) == 1,
@@ -150,12 +207,17 @@ def main() -> int:
     missing_lowconf = [r for r in rows if not r['in_runtime'] and not r['confident']]
     weak = [r for r in rows if r['in_runtime'] and r['pc_status'] in ('weak', 'missing')]
     unknown = [r for r in rows if r['in_runtime'] and r['pc_status'] == 'unknown']
+    # ④：**EID 确实用到、且我们已知语义有偏离**的条目（每条都带"差在哪"）。
+    # 与 ② 的区别：② 是"PC 清单里标 weak/unknown"（外部证据弱），
+    # ④ 是"我们自己明确知道返回值与 PC 不同"（内部已承认的偏离）——后者才是必须标记的不满足。
+    deviating = [r for r in rows if r['deviation'] and r['confident']]
 
     print(f'EID 用到的游戏 API：{len(rows)} 条（去掉了模组自建方法 {len(defined)} 条、非游戏 owner）')
     print(f'  ① 运行时里找不到（高置信）：{len(missing)} 条  ← 调用会直接报错，落在条件回调里会让整条描述消失')
     print(f'  ①b 同名方法多 owner、无法凭名字定类型（低置信参考）：{len(missing_lowconf)} 条')
     print(f'  ② 有实现但 PC 状态偏弱（Experimental/—）：{len(weak)} 条')
     print(f'  ③ 状态未知（清单里没查到）：{len(unknown)} 条')
+    print(f'  ④ 有实现、但**已知与 PC 语义偏离**（② 维的不满足标记）：{len(deviating)} 条')
     print()
     print('== ① 运行时里找不到的（按调用次数）==')
     for r in sorted(missing, key=lambda x: -x['calls'])[:args.top]:
@@ -164,12 +226,18 @@ def main() -> int:
         print('\n== ② 有实现但没底的 ==')
         for r in sorted(weak, key=lambda x: -x['calls'])[:args.top]:
             print(f"   {r['api']:34} 调用 {r['calls']:4} 次   PC 状态={r['pc_status']}")
+    if deviating:
+        print('\n== ④ 已知语义偏离（差在哪、后果是什么）==')
+        for r in sorted(deviating, key=lambda x: -x['calls'])[:args.top]:
+            print(f"   {r['api']:34} 调用 {r['calls']:4} 次  [{r['deviation_kind']}]")
+            print(f"      {r['deviation']}")
 
     out = ROOT / args.json
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({'mod': args.mod, 'used': rows, 'missing_in_runtime': missing,
                                'missing_low_confidence': missing_lowconf,
-                               'weak_status': weak, 'unknown_status': unknown},
+                               'weak_status': weak, 'unknown_status': unknown,
+                               'semantic_deviations': deviating},
                               ensure_ascii=False, indent=1), encoding='utf-8')
     print(f'\n报告已写：{out}')
     return 0

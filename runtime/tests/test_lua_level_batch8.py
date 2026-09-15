@@ -34,16 +34,15 @@
 4. **作用域约束**：不在受管回调作用域内（Mod 脚本顶层）调用这四个 API 必须报错。
 """
 
-import struct
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 try:
-    from .test_support import layered_lua_runtime_sources
+    from .test_support import build_lua_harness
 except ImportError:
-    from test_support import layered_lua_runtime_sources
+    from test_support import build_lua_harness
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -101,27 +100,10 @@ void PublishFakeEngine() {
 
 }  // namespace
 
-// --- 引擎观测桩（宿主机没有 game_observer.cpp）------------------------------
+// --- 本场景**覆盖**的默认桩 -------------------------------------------------
 //
-// 必须在**匿名命名空间之外**：这些函数是"替身"，本 TU 里没有调用它们（调用方是 Runtime 的
-// 其它 TU），放进匿名命名空间会被 `-Werror,-Wunused-function` 判成编译错误。
-GameIsPausedObservation ObserveGameIsPaused(uintptr_t, uintptr_t) {
-    return GameIsPausedObservation::OwnerUnreadable;
-}
-GameLevelStageObservation ReadCurrentGameLevelStage(uintptr_t, std::uint32_t*) {
-    return GameLevelStageObservation::GameUnreadable;
-}
-GameIsGreedModeObservation ObserveGameIsGreedMode(uintptr_t, uintptr_t) {
-    return GameIsGreedModeObservation::MethodUnavailable;
-}
-GameIsAscentObservation ObserveLevelIsAscent(uintptr_t, uintptr_t) {
-    return GameIsAscentObservation::MethodUnavailable;
-}
-GameItemPoolObservation ReadCurrentGameItemPool(uintptr_t, void**) {
-    return GameItemPoolObservation::GameUnreadable;
-}
-// 这两个**不返回失败**：`Level:GetCurrentRoom()` 复用 `Game:GetRoom` 的读取链，
-// 所以桩要像真机那样把伪造的 `Room*` 交回。
+// 其余观测函数（暂停、阶段、贪婪模式、IsAscent、道具池…）用共享脚手架里的弱默认桩，
+// 默认一律"读不到"；这里只覆盖这个场景需要的两个，而且**不写 weak**：强符号优先。
 GameRoomObservation ReadCurrentGameRoom(uintptr_t, void** room) {
     if (room == nullptr) return GameRoomObservation::RoomNull;
     *room = reinterpret_cast<void*>(AddressOf(g_RoomBytes));
@@ -210,40 +192,14 @@ INDEX_PATTERN = "INDEX="
 class LuaLevelBatch8Tests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        # 地基一期起：桩与 Lua 目标文件走 `test_support.build_lua_harness`（共享脚手架），
+        # 本文件只保留"这个场景特有的东西"——伪造引擎内存的铺法与需要覆盖的桩。
         cls.temporary = tempfile.TemporaryDirectory(prefix="isaac-lua-level8-")
-        temporary = Path(cls.temporary.name)
-        compatibility = temporary / "compatibility"
-        compatibility.mkdir()
-        (compatibility / "stdfloat").write_text(
-            "#pragma once\nnamespace std { using float16_t = float; using float128_t = long double; }\n"
+        cls.binary = build_lua_harness(
+            source_root=SOURCE,
+            workdir=Path(cls.temporary.name) / "harness",
+            harness_source=HARNESS,
         )
-        harness = temporary / "level8_harness.cpp"
-        harness.write_text(HARNESS.lstrip(), encoding="utf-8")
-        lua_root = SOURCE / "third_party/lua-5.3.3/src"
-        excluded = {"lua.c", "luac.c", "liolib.c", "loslib.c", "loadlib.c", "ldblib.c", "linit.c"}
-        objects = []
-        for source in sorted(lua_root.glob("*.c")):
-            if source.name in excluded:
-                continue
-            output = temporary / f"{source.stem}.o"
-            build = subprocess.run(["cc", "-std=c99", "-w", "-DLUA_C89_NUMBERS", "-I", str(lua_root),
-                                    "-c", str(source), "-o", str(output)],
-                                   text=True, capture_output=True)
-            if build.returncode != 0:
-                raise AssertionError(build.stdout + build.stderr)
-            objects.append(output)
-        cls.binary = temporary / "level8_harness"
-        build = subprocess.run(
-            ["c++", "-std=c++23", "-Wall", "-Wextra", "-Werror", "-DLUA_C89_NUMBERS",
-             "-DEXL_LAYERED_RUNTIME=1", "-DEXL_DIAGNOSTIC_STAGE=14",
-             "-DEXL_LOAD_KIND=Module", "-DEXL_LOAD_KIND_ENUM=2", "-DEXL_PROGRAM_ID=0",
-             "-I", str(compatibility), "-I", str(SOURCE), "-I", str(SOURCE.parent / "src"),
-             "-I", str(lua_root), str(harness),
-             *(str(path) for path in layered_lua_runtime_sources(SOURCE)),
-             *(str(path) for path in objects), "-lm", "-o", str(cls.binary)],
-            text=True, capture_output=True)
-        if build.returncode != 0:
-            raise AssertionError(build.stdout + build.stderr)
 
     @classmethod
     def tearDownClass(cls):

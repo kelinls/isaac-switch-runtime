@@ -4,28 +4,17 @@ import unittest
 from pathlib import Path
 
 try:
-    from .test_support import layered_lua_runtime_sources
+    from .test_support import build_lua_harness
 except ImportError:
-    from test_support import layered_lua_runtime_sources
+    from test_support import build_lua_harness
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "runtime" / "source"
 
-
-class LuaLevelIsAscentTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.temporary = tempfile.TemporaryDirectory(prefix="isaac-lua-isascent-")
-        temporary = Path(cls.temporary.name)
-        compatibility = temporary / "compatibility"
-        compatibility.mkdir()
-        (compatibility / "stdfloat").write_text(
-            "#pragma once\nnamespace std { using float16_t = float; using float128_t = long double; }\n"
-        )
-        harness = temporary / "isascent_harness.cpp"
-        harness.write_text(
-            r'''
+#: 本文件特有的那部分 harness：只覆盖 `Level:IsAscent` 的观测函数（行为由场景决定），
+#: 其余观测函数与文件读取走 `test_support` 里的共享弱默认桩。
+HARNESS = r'''
 #include "lua_runtime.hpp"
 #include "game_observer.hpp"
 
@@ -36,15 +25,10 @@ namespace {
 GameIsAscentObservation g_Observation = GameIsAscentObservation::AscentFalse;
 }
 
-GameIsPausedObservation ObserveGameIsPaused(uintptr_t, uintptr_t) { return GameIsPausedObservation::OwnerUnreadable; }
-GameLevelStageObservation ReadCurrentGameLevelStage(uintptr_t, std::uint32_t*) { return GameLevelStageObservation::GameUnreadable; }
-GameIsGreedModeObservation ObserveGameIsGreedMode(uintptr_t, uintptr_t) { return GameIsGreedModeObservation::MethodUnavailable; }
+// 覆盖共享默认桩（强符号优先）：`Level:IsAscent` 的行为由场景决定。
 GameIsAscentObservation ObserveLevelIsAscent(uintptr_t ownerSlot, uintptr_t method) {
     return ownerSlot == 0x1111 && method == 0x4444 ? g_Observation : GameIsAscentObservation::MethodUnavailable;
 }
-GameItemPoolObservation ReadCurrentGameItemPool(uintptr_t, void**) { return GameItemPoolObservation::GameUnreadable; }
-GameRoomObservation ReadCurrentGameRoom(uintptr_t, void**) { return GameRoomObservation::RoomUnreadable; }
-GameRoomObservation ReadCurrentGameRoomType(uintptr_t, std::uint32_t*) { return GameRoomObservation::RoomUnreadable; }
 
 int main(int argc, char** argv) {
     if (argc != 2) return 90;
@@ -64,31 +48,18 @@ int main(int argc, char** argv) {
     return std::strcmp(scenario, "unreadable") == 0 ? (LuaRuntime::TakeCallbackError() ? 0 : 3) :
            (LuaRuntime::TakeCallbackError() ? 4 : 0);
 }
-'''.lstrip(), encoding="utf-8")
-        lua_root = SOURCE / "third_party/lua-5.3.3/src"
-        excluded = {"lua.c", "luac.c", "liolib.c", "loslib.c", "loadlib.c", "ldblib.c", "linit.c"}
-        objects = []
-        for source in sorted(lua_root.glob("*.c")):
-            if source.name in excluded:
-                continue
-            output = temporary / f"{source.stem}.o"
-            build = subprocess.run(["cc", "-std=c99", "-w", "-DLUA_C89_NUMBERS", "-I", str(lua_root),
-                                    "-c", str(source), "-o", str(output)], text=True, capture_output=True)
-            if build.returncode != 0:
-                raise AssertionError(build.stdout + build.stderr)
-            objects.append(output)
-        cls.binary = temporary / "isascent_harness"
-        build = subprocess.run(
-            ["c++", "-std=c++23", "-Wall", "-Wextra", "-Werror", "-DLUA_C89_NUMBERS",
-             "-DEXL_LAYERED_RUNTIME=1", "-DEXL_DIAGNOSTIC_STAGE=14",
-             "-DEXL_LOAD_KIND=Module", "-DEXL_LOAD_KIND_ENUM=2", "-DEXL_PROGRAM_ID=0",
-             "-I", str(compatibility), "-I", str(SOURCE), "-I", str(SOURCE.parent / "src"),
-             "-I", str(lua_root), str(harness),
-             *(str(path) for path in layered_lua_runtime_sources(SOURCE)),
-             *(str(path) for path in objects), "-lm", "-o", str(cls.binary)],
-            text=True, capture_output=True)
-        if build.returncode != 0:
-            raise AssertionError(build.stdout + build.stderr)
+'''
+
+
+class LuaLevelIsAscentTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temporary = tempfile.TemporaryDirectory(prefix="isaac-lua-isascent-")
+        cls.binary = build_lua_harness(
+            source_root=SOURCE,
+            workdir=Path(cls.temporary.name) / "harness",
+            harness_source=HARNESS,
+        )
 
     @classmethod
     def tearDownClass(cls):
