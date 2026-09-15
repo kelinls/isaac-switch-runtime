@@ -1,0 +1,2 @@
+EXL_STARTUP_PROBE_COMPAT_LAYOUT = 1;
+INCLUDE ../misc/link.ld

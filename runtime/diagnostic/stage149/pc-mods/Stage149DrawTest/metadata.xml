@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+    <name>Stage149 Draw Test</name>
+    <directory>stage149_draw_test</directory>
+    <id>149149149</id>
+    <description>渲染胶水验收：在 MC_POST_RENDER 里用自带 resources/ 的字体每帧画三行文字；屏幕上出现文字即通过。</description>
+    <version>1.0</version>
+    <visibility>Private</visibility>
+    <tag id="Lua"/>
+</metadata>

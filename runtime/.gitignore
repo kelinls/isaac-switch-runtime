@@ -1,0 +1,5 @@
+build/
+deploy/
+*.elf
+*.nso
+*.npdm

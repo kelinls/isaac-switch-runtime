@@ -1,0 +1,8 @@
+.DS_Store
+__pycache__/
+The Binding of Isaac_ Afterbirth+ 1.7.9b \[010021C000B6A800\]\[v524288\]\[UPD\].zip
+The Binding of Isaac_ Afterbirth+ 1.7.9b \[010021C000B6A800\]\[v524288\]\[UPD\]/
+analysis/
+
+# 设备私有凭据（绝不进仓库）
+tools/device.local.json
