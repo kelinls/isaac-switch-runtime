@@ -57,6 +57,32 @@ else
 fi
 
 echo "== 2/4 把白名单路径同步到公开分支 $BRANCH =="
+# ★ 切分支之后**一定要切回 master**，哪怕是中途失败退出。
+# 2026-09-15 实测：推送时撞上网络错误（`Error in the HTTP2 framing layer`）直接退出，
+# 脚本没走到最后那句 `git checkout -f master` ⇒ **工作区停在 public 分支上**，
+# 而 public 上既没有 `AGENTS.md` 也没有 `docs/`（它们是私有文件），
+# 下一次操作会像是在"文件全没了"的状态下进行。下面的 trap 把这件事兜住。
+restore_branch() {
+  local code=$?
+  if [ "$(git rev-parse --abbrev-ref HEAD)" != "master" ]; then
+    # 工作区里被排除的公开路径（如 runtime/pc-mods/MuteOnPause）在 public 上是未跟踪状态，
+    # 会挡住切分支；它们的内容与 master 上的跟踪副本一致，先移开再切。
+    local stash_dir
+    stash_dir="$(mktemp -d)"
+    for path in "${PUBLIC_EXCLUDES[@]}"; do
+      [ -e "$path" ] || continue
+      if ! git ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+        mkdir -p "$stash_dir/$(dirname "$path")"
+        mv "$path" "$stash_dir/$path"
+      fi
+    done
+    git checkout -f master >/dev/null 2>&1 || echo "⚠ 切回 master 失败，请手动执行：git checkout -f master"
+    echo "（中断时移开的文件在 $stash_dir，切回 master 后已由 git 恢复，该目录可删）"
+  fi
+  exit $code
+}
+trap restore_branch EXIT
+
 git checkout "$BRANCH" >/dev/null
 # ⚠️ 只同步白名单路径，**绝不用裸 `git add -A`**：工作区里躺着大量未跟踪的杂项
 # （设备备份、日志、`runtime/x/**` 之类），一条 `-A` 就会把它们一起推上公开仓库（踩过）。
@@ -78,6 +104,13 @@ echo "== 3/4 提交 =="
 git commit -m "$TITLE" -m "$DETAIL"
 
 echo "== 4/4 推送到 $REMOTE =="
-git push "$REMOTE" "$BRANCH:main"
+# ★ 强制 HTTP/1.1，并在失败后单次重试。
+# 2026-09-15 实测：走 HTTP/2 时反复报 `Error in the HTTP2 framing layer`（中间环节的问题，
+# 同一时刻 `git -c http.version=HTTP/1.1 push` 一次就过）。这一层不该拦住"记录进展"这件事。
+if ! git -c http.version=HTTP/1.1 push "$REMOTE" "$BRANCH:main"; then
+  echo "推送失败（已按 HTTP/1.1 试过一次），等 5 秒单次重试……"
+  sleep 5
+  git -c http.version=HTTP/1.1 push "$REMOTE" "$BRANCH:main"
+fi
 git checkout -f master >/dev/null
 echo "完成：$TITLE"
