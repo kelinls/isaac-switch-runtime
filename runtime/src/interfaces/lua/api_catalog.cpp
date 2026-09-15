@@ -169,6 +169,17 @@ constexpr LuaApiDescriptor kDefaultApis[] = {
      ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
     {MakeId(ApiDomain::Level, 1, 0x0007), ApiDomain::Level, "Level", "IsNextStageAvailable", kV1, 0,
      ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    // 地基二期（2026-09-15）：EID 的物品预测与背包合成要用房间描述符。
+    // 描述符字段偏移**不是从 PC 抄的**，而是"布局表 + 真机行为验证"（`tools/layout_tables/room_descriptor` 那张布局表里每条都带可复核证据）：数组内联在 `Level` 里（基址 +0x18、步长 0x100、
+    // 个数在 +0x21510），字段 `+0x00` GridIndex、`+0x04` SafeGridIndex、`+0x08` ListIndex、
+    // `+0x10` Data（`Data+0x8` = Type）、`+0x4c` VisitedCount、`+0x50` Clear（清房瞬间 0→1，真机实测）。
+    // 成熟度按规矩记 `Experimental`：偏移已上机验证，但**这三条 API 的返回路径本身**还没上机。
+    {MakeId(ApiDomain::Level, 1, 0x0008), ApiDomain::Level, "Level", "GetCurrentRoomDesc", kV1, 0,
+     ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    {MakeId(ApiDomain::Level, 1, 0x0009), ApiDomain::Level, "Level", "GetRoomByIdx", kV1, 0,
+     ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    {MakeId(ApiDomain::Level, 1, 0x000A), ApiDomain::Level, "Level", "GetRooms", kV1, 0,
+     ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
     {MakeId(ApiDomain::Room, 1, 0x0001), ApiDomain::Room, "Room", "GetType", kV1, 0,
      ThreadAffinity::ManagedCallback, ApiMaturity::HostVerified},
     // 批次 7（2026-09-12）：EID 在网格/寻路路径上无条件调用的一批 `Room` 成员

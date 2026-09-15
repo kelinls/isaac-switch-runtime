@@ -160,15 +160,18 @@ class GameFileReaderStage11Tests(unittest.TestCase):
             environment["ISAAC_ARTIFACT_ISOLATION_PROBE"] = "1"
 
             def run_suite():
+                # 内层这两遍跑的是**整套门禁**，判据只是"两次的用例数与 OK/FAILED 摘要一致"
+                # （见 `unittest_summary`），跟"谁跑、跑多快"无关。
+                # 2026-09-15 改成走并行脚本：原来用 `unittest discover` 串行跑，
+                # 光这一条用例就吃掉整套门禁 46% 的时间（实测 141 s + 131 s）。
+                # 并发数给 4 而不是默认 8：外层门禁本身已经在并行跑模块，
+                # 内外都拉满会互相抢 CPU，反而更慢。
                 return subprocess.run(
                     [
                         os.sys.executable,
-                        "-m",
-                        "unittest",
-                        "discover",
-                        "-s",
-                        "runtime/tests",
-                        "-v",
+                        "tools/run_tests.py",
+                        "-j",
+                        "4",
                     ],
                     cwd=project,
                     env=environment,

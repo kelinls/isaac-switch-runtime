@@ -1031,6 +1031,21 @@ void RegisterGameApi(lua_State* state) {
     lua_setfield(state, -2, "__index");
     lua_pop(state, 1);
 
+    // 地基二期：`RoomDescriptor` 与它的列表。两者的 `__index` 都是**函数**（同时服务字段与方法），
+    // 方法表挂在元表的 `__methods` 上（与 `Sprite`/`Vector` 同一形态）。
+    luaL_newmetatable(state, kRoomDescriptorMetatable);
+    lua_pushcfunction(state, isaac::runtime::RoomDescriptorIndex);
+    lua_setfield(state, -2, "__index");
+    lua_pop(state, 1);
+
+    luaL_newmetatable(state, kRoomDescriptorListMetatable);
+    lua_pushcfunction(state, isaac::runtime::RoomDescriptorListIndex);
+    lua_setfield(state, -2, "__index");
+    lua_newtable(state);
+    static_cast<void>(isaac::runtime::AttachRoomDescriptorListMethods(state));
+    lua_setfield(state, -2, "__methods");
+    lua_pop(state, 1);
+
     luaL_newmetatable(state, kItemPoolMetatable);
     lua_newtable(state);
     static_cast<void>(isaac::runtime::AttachItemPoolMethods(state));

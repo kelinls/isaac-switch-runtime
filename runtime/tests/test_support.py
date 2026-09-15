@@ -100,40 +100,184 @@ def prepare_harness_directory(workdir: Path) -> Path:
     return workdir
 
 
-def lua_harness_objects(source_root: Path, workdir: Path) -> list[Path]:
-    """编译 vendored Lua 5.3.3 的全部目标文件（进程内按目录缓存一次）。
+#: `compatibility/stdfloat` 的内容（上面那个常量）。它会被算进缓存键，所以改它 ⇒ 缓存失效。
+_COMPATIBILITY_STDFLOAT = (
+    "#pragma once\nnamespace std { using float16_t = float; using float128_t = long double; }\n"
+)
 
-    缓存只影响速度：同一进程里多个 harness 复用同一批 `.o`。键是（编译器版本 + Lua 源码目录），
-    命中条件是"7 个 `.o` 都存在且非空"，所以不会把一个半成品当缓存用。
+
+# ---------------------------------------------------------------------------
+# 磁盘级目标文件缓存（门禁提速，2026-09-15）
+#
+# **问题**：`build_lua_harness()` 每次都要把同一批运行时翻译单元（18 个 `.cpp`）从零编译，
+# 而 `runtime/tests/` 下有 35 个模块各自建夹具 ⇒ 同一批编译被重复上百次。
+# 实测：单次夹具构建 **1.9 s**（Lua 的 `.o` 已在进程内缓存时），其中绝大部分就是这批 `.cpp`；
+# vendored Lua 的 7 个 `.c` 还要再花 ~1.2 s（原来只做了"进程内"缓存，
+# 于是**每个模块进程**都要重编一遍）。
+#
+# **做法**：把每个翻译单元编成 `.o` 放进磁盘缓存，键必须覆盖**全部输入**，
+# 否则就会"拿旧 `.o` 跑新代码"⇒ 门禁给出**假绿**。键的组成：
+#   * 编译器自身的版本串（换了 clang 不能复用）
+#   * 完整编译旗标 + 完整 `-I` 列表
+#   * 该源文件内容的 sha256
+#   * **头文件树的内容指纹**（`runtime/source`、`runtime/src`、vendored Lua 下所有 `.h/.hpp`）
+#     —— 我们几乎天天只改头文件，这一项漏了缓存就会骗人；代价是"改任何头 ⇒ 整批失效"，
+#     保守但绝不会漏。
+#
+# 缓存目录默认在系统临时目录（**不放仓库里**：既避免被发布脚本当成未跟踪产物，
+# 也避免把 `.o` 混进 git）。可用环境变量 `ISAAC_HOST_OBJECT_CACHE` 指定。
+# ---------------------------------------------------------------------------
+
+#: 头文件指纹的进程内缓存（同进程内头文件树不会变；跨进程每次重算，几毫秒）。
+_HEADER_FINGERPRINT_CACHE: dict[str, str] = {}
+#: 编译器版本串的进程内缓存。
+_COMPILER_VERSION_CACHE: dict[str, str] = {}
+
+
+def host_object_cache_root() -> Path:
+    """磁盘缓存根目录（可用 `ISAAC_HOST_OBJECT_CACHE` 覆盖）。"""
+    import os
+    import tempfile
+
+    override = os.environ.get("ISAAC_HOST_OBJECT_CACHE")
+    if override:
+        return Path(override)
+    return Path(tempfile.gettempdir()) / "isaac-runtime-host-objects"
+
+
+def runtime_header_fingerprint(source_root: Path) -> str:
+    """`runtime/source` / `runtime/src` / vendored Lua 下所有头文件的内容指纹。
+
+    为什么连无关的头文件也算进来：**宁可贵一点、也不许漏**。改一个头文件就可能改变
+    某个 `.cpp` 的编译结果，而"哪些 `.cpp` 依赖哪些头"要靠编译器才能算准；
+    全量指纹的做法是"任何头一动，整批 `.o` 全部重编"，逻辑上不会出错。
+    头文件都是几百字节到几 KB 的小文件，实测几毫秒。
     """
-    import subprocess
+    import hashlib
 
     source_root = Path(source_root)
-    lua_root = source_root / LUA_SOURCE_RELATIVE
-    workdir = Path(workdir)
-    cached = _LUA_OBJECT_CACHE.get(str(lua_root))
-    if cached is not None and all(path.is_file() and path.stat().st_size > 0 for path in cached):
-        return list(cached)
+    key = str(source_root)
+    cached = _HEADER_FINGERPRINT_CACHE.get(key)
+    if cached is not None:
+        return cached
 
+    roots = [source_root, source_root.parent / "src", source_root / LUA_SOURCE_RELATIVE]
+    digest = hashlib.sha256()
+    digest.update(_COMPATIBILITY_STDFLOAT.encode())       # 合成输入：它也是编译输入
+    entries: list[tuple[str, str]] = []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            if path.suffix not in (".h", ".hpp") or not path.is_file():
+                continue
+            # 名字取**相对路径**：指纹要表达"这棵头文件树的内容"，而不是"它在磁盘哪个位置"。
+            entries.append((str(path.relative_to(source_root.parent)), 
+                            hashlib.sha256(path.read_bytes()).hexdigest()))
+    for name, file_digest in sorted(entries):
+        digest.update(name.encode())
+        digest.update(file_digest.encode())
+    result = digest.hexdigest()
+    _HEADER_FINGERPRINT_CACHE[key] = result
+    return result
+
+
+def compiler_version(tool: str) -> str:
+    """编译器版本串（把它算进缓存键：换编译器/换版本时旧 `.o` 不许复用）。"""
+    import subprocess
+
+    cached = _COMPILER_VERSION_CACHE.get(tool)
+    if cached is not None:
+        return cached
+    try:
+        probe = subprocess.run([tool, "--version"], text=True, capture_output=True, timeout=60)
+        version = (probe.stdout or probe.stderr or "").strip().splitlines()[0]
+    except (OSError, subprocess.SubprocessError, IndexError):
+        version = "unknown"
+    _COMPILER_VERSION_CACHE[tool] = version
+    return version
+
+
+def object_cache_key(*, source: Path, tool: str, flags: tuple[str, ...],
+                     includes: tuple[str, ...], header_fingerprint: str) -> str:
+    """一个翻译单元的缓存键（纯函数，便于门禁用"注入不同的指纹"来验证失效）。"""
+    import hashlib
+
+    digest = hashlib.sha256()
+    digest.update(tool.encode())                 # 工具名本身：`cc` 与 `c++` 的 --version 可能一模一样
+    digest.update(compiler_version(tool).encode())
+    digest.update("\0".join(flags).encode())
+    digest.update("\0".join(includes).encode())
+    digest.update(header_fingerprint.encode())
+    digest.update(Path(source).name.encode())
+    digest.update(Path(source).read_bytes())
+    return digest.hexdigest()
+
+
+def cached_compile(source: Path, *, tool: str, flags: tuple[str, ...], includes: tuple[str, ...],
+                   header_fingerprint: str | None = None,
+                   cache_root: Path | None = None) -> Path:
+    """把一个源文件编成 `.o`（命中缓存则直接复用），返回 `.o` 路径。
+
+    并发安全：先编到本进程私有的临时文件，再 `os.replace` 进缓存 —— 多个进程同时编同一个
+    翻译单元时，各自算出的内容一致，最后落地的都是完整文件，不会留下半个 `.o`。
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    source = Path(source)
+    flags = tuple(flags)
+    includes = tuple(includes)
+    fingerprint = header_fingerprint or runtime_header_fingerprint(
+        _infer_source_root(source))
+    root = Path(cache_root) if cache_root else host_object_cache_root()
+    key = object_cache_key(source=source, tool=tool, flags=flags, includes=includes,
+                           header_fingerprint=fingerprint)
+    target = root / key[:2] / f"{key}.o"
+    if target.is_file() and target.stat().st_size > 0:
+        return target
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="isaac-host-obj-") as staging:
+        staged = Path(staging) / "unit.o"
+        command = [tool, *flags, *[f"-I{item}" for item in includes],
+                   "-c", str(source), "-o", str(staged)]
+        build = subprocess.run(command, text=True, capture_output=True)
+        if build.returncode != 0:
+            raise AssertionError(build.stdout + build.stderr)
+        os.replace(staged, target)
+    return target
+
+
+def _infer_source_root(source: Path) -> Path:
+    """从某个源文件反推 `runtime/source`（只为默认指纹用；调用方通常显式传指纹）。"""
+    source = Path(source).resolve()
+    for parent in source.parents:
+        if parent.name == "source" and (parent / "lua_runtime.cpp").is_file():
+            return parent
+    return source.parent
+
+
+def lua_harness_objects(source_root: Path, workdir: Path) -> list[Path]:
+    """vendored Lua 5.3.3 的目标文件（**磁盘缓存**，见本节开头的说明）。
+
+    原来只做进程内缓存 ⇒ 每个模块进程都要重编这 7 个 `.c`（实测 ~1.2 s）；
+    改成磁盘缓存后，跨进程也只剩"算哈希 + 命中"。
+    返回的路径可能不在 `workdir` 里（缓存在别处），调用方只当作链接输入即可。
+    """
+    source_root = Path(source_root)
+    lua_root = source_root / LUA_SOURCE_RELATIVE
+    fingerprint = runtime_header_fingerprint(source_root)
     objects: list[Path] = []
     for source in sorted(lua_root.glob("*.c")):
         if source.name in _LUA_EXCLUDED_SOURCES:
             continue
-        output = workdir / f"lua_{source.stem}.o"
-        build = subprocess.run(
-            ["cc", "-std=c99", "-w", "-DLUA_C89_NUMBERS", "-I", str(lua_root),
-             "-c", str(source), "-o", str(output)],
-            text=True, capture_output=True,
-        )
-        if build.returncode != 0:
-            raise AssertionError(build.stdout + build.stderr)
-        objects.append(output)
-    _LUA_OBJECT_CACHE[str(lua_root)] = list(objects)
+        objects.append(cached_compile(
+            source, tool="cc", flags=("-std=c99", "-w", "-DLUA_C89_NUMBERS"),
+            includes=(str(lua_root),), header_fingerprint=fingerprint,
+        ))
     return objects
-
-
-#: 进程内的 Lua 目标文件缓存（见 `lua_harness_objects`）。
-_LUA_OBJECT_CACHE: dict[str, list[Path]] = {}
 
 
 def build_lua_harness(*, source_root: Path, workdir: Path, harness_source: str,
@@ -152,15 +296,19 @@ def build_lua_harness(*, source_root: Path, workdir: Path, harness_source: str,
     harness = workdir / "harness.cpp"
     harness.write_text(harness_source.lstrip(), encoding="utf-8")
 
-    objects = lua_harness_objects(source_root, workdir)
+    includes = (str(workdir / "compatibility"), str(source_root),
+                str(source_root.parent / "src"), str(lua_root))
+    fingerprint = runtime_header_fingerprint(source_root)
+    flags = HARNESS_COMPILE_FLAGS
+
+    objects = [cached_compile(path, tool="c++", flags=flags, includes=includes,
+                              header_fingerprint=fingerprint)
+               for path in (harness, *extra_sources, *layered_lua_runtime_sources(source_root))]
+    objects += lua_harness_objects(source_root, workdir)
+
     binary = workdir / "harness"
     build = subprocess.run(
-        ["c++", *HARNESS_COMPILE_FLAGS,
-         "-I", str(workdir / "compatibility"), "-I", str(source_root),
-         "-I", str(source_root.parent / "src"), "-I", str(lua_root),
-         str(harness), *(str(path) for path in extra_sources),
-         *(str(path) for path in layered_lua_runtime_sources(source_root)),
-         *(str(path) for path in objects), "-lm", "-o", str(binary)],
+        ["c++", *flags, *(str(path) for path in objects), "-lm", "-o", str(binary)],
         text=True, capture_output=True,
     )
     if build.returncode != 0:

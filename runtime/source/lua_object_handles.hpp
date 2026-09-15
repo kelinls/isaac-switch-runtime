@@ -15,6 +15,9 @@ inline constexpr char kGameMetatable[] = "IsaacRuntime.Game";
 inline constexpr char kLevelMetatable[] = "IsaacRuntime.Level";
 inline constexpr char kItemPoolMetatable[] = "IsaacRuntime.ItemPool";
 inline constexpr char kRoomMetatable[] = "IsaacRuntime.Room";
+// 地基二期新增（`Level` 的三个房间描述符 API 的返回值）。
+inline constexpr char kRoomDescriptorMetatable[] = "IsaacRuntime.RoomDescriptor";
+inline constexpr char kRoomDescriptorListMetatable[] = "IsaacRuntime.RoomDescriptorList";
 inline constexpr char kSeedsMetatable[] = "IsaacRuntime.Seeds";
 inline constexpr char kMusicMetatable[] = "IsaacRuntime.Music";
 inline constexpr char kRngMetatable[] = "IsaacRuntime.RNG";
@@ -135,6 +138,30 @@ struct VectorHandle {
 // 引擎对象随时可能随实体消失，所以 `owner`（来源实体指针）也要存下来，每次访问都
 // **重新校验**实体仍然活着，再重新算出 `owner + kEntitySpriteOffset`（句柄里的 `sprite`
 // 只当身份缓存，不作为解引用依据，避免句柄跨帧后指向已释放的实体）。
+// ---- `RoomDescriptor` / `RoomDescriptorList`（地基二期，2026-09-15）--------------
+//
+// PC 的 `Level:GetCurrentRoomDesc()` / `GetRoomByIdx()` 返回 `RoomDescriptor`，
+// `Level:GetRooms()` 返回 `RoomDescriptorList`（有 `.Size` 与 `:Get(i)`）。
+//
+// **字段偏移不是猜的**：来自布局表 + 真机行为验证（`tools/layout_tables/room_descriptor.json`，
+// 每条都带可复核证据）：`+0x00` GridIndex、`+0x04` SafeGridIndex、`+0x08` ListIndex、
+// `+0x10` Data（指向房间配置，其中 `Data+0x08` 是 Type）、`+0x4c` VisitedCount、`+0x50` Clear。
+// 描述符数组**内联在 Level 对象里**：基址 `Level + 0x18`、步长 `0x100`、
+// 元素个数在 `Level + 0x21510`（真机实测：11 个已分配槽位的 ListIndex 恰好是 0..10）。
+//
+// 句柄只存**描述符地址**（引擎拥有的内存，按 `SpriteHandle` 的先例用 `void*`），
+// 不存字段快照 —— 这样 `Clear` 之类的状态变化
+// 能被后续读取看到，而不是拿到一份过期拷贝。
+struct RoomDescriptorHandle {
+    void* descriptor;
+};
+
+// `Level:GetRooms()` 的返回值。句柄存 **Level(=Game) 地址**：`Size` 每次现读
+// （房间会随探索增加），`:Get(i)` 再去数组里定位 —— 避免缓存出一个会过期的列表。
+struct RoomDescriptorListHandle {
+    void* level;
+};
+
 struct SpriteHandle {
     void* sprite;
     // 仅 `kSpriteSourceEngineEntity` 非空：借出这个 sprite 的引擎实体地址。

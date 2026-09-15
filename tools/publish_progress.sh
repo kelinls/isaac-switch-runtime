@@ -51,7 +51,9 @@ echo "== 1/4 门禁测试 =="
 if [ "${SKIP_TESTS:-0}" = "1" ]; then
   echo "（SKIP_TESTS=1，跳过）"
 else
-  python3 -m unittest discover -s runtime/tests -t . 2>&1 | tail -3
+  python3 tools/run_tests.py 2>&1 | tail -12
+  # 管道会让 `$?` 变成 `tail` 的退出码，所以显式看第一个命令的：
+  test "${PIPESTATUS[0]}" = "0" || { echo "门禁未通过，停止发布"; exit 1; }
 fi
 
 echo "== 2/4 把白名单路径同步到公开分支 $BRANCH =="

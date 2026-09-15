@@ -1,0 +1,308 @@
+{
+  "schema": "isaac-layout-table/1",
+  "build_id": "91C73FDD575061318D68886316AFEAC72388B2AB",
+  "struct": "RoomDescriptor",
+  "note": [
+    "这张表是**数据**：C++ 常量由 tools/build_layout_table.py 从它生成，避免两处漂移。",
+    "每一行都必须能追到一处可复现证据（函数符号 + 指令地址 + 该指令做了什么），",
+    "生成器会**重新反汇编**那些函数来核对，对不上就直接失败 —— 这样表格本身是可复核的。",
+    "confidence 的取值与含义：",
+    "  confirmed —— 语义有独立锚点（例如函数名就说明了它要判断什么），且指令形态吻合；",
+    "  candidate —— 偏移与形态确定，但**名字**只有间接依据（不可用于对外 API，只作登记）；",
+    "  structural —— 只说明结构（哪里是指针/容器、标量区到哪里为止），不声称字段名。",
+    "真机读数（dist/room-probe-*.json）也是证据：生成器的 --verify 会把表里引用的观察到的那几个值重新读一遍（离线，不需要设备）。"
+  ],
+  "rows": [
+    {
+      "name": "Data",
+      "kind": "pointer",
+      "offset": 16,
+      "width": 8,
+      "confidence": "confirmed",
+      "semantic": "指向该房间的配置对象 RoomConfig::Room（PC 侧 RoomDescriptor.Data）",
+      "evidence": [
+        {
+          "function": "_ZN15IsaacRepentance5Level32can_convert_to_red_treasure_roomERKNS_14RoomDescriptorE",
+          "address": "0x003d0e78",
+          "offset": 16,
+          "width": 8,
+          "why": "该函数只有一条字段访问：把 desc+0x10 当指针解引用（紧随其后就按 Data 内部字段做判断）"
+        },
+        {
+          "function": "_ZN15IsaacRepentance5Level21precalc_allowed_doorsERNS_14RoomDescriptorE",
+          "address": "0x003d669c",
+          "offset": 16,
+          "width": 8,
+          "why": "预计算可用门位时两次读取该指针（门的种类来自房间配置）"
+        },
+        {
+          "kind": "semantic",
+          "function": "_ZN15IsaacRepentance5Level32can_convert_to_red_treasure_roomERKNS_14RoomDescriptorE",
+          "address": "0x003d0e80",
+          "immediate": 4,
+          "why": "顺着 desc+0x10 这个指针读出的内部字段，立刻被拿去与常量 4（本项目 RoomType 表的 ROOM_TREASURE）比较 ⇒ 该指针指向的是房间配置对象（PC 侧 RoomDescriptor.Data），而不是普通计数"
+        }
+      ]
+    },
+    {
+      "name": "Data.Type",
+      "kind": "nested_u32",
+      "offset": 8,
+      "width": 4,
+      "nested_in": "Data",
+      "confidence": "confirmed",
+      "semantic": "房间类型（PC 侧 RoomDescriptor.Data.Type，枚举 RoomType）",
+      "evidence": [
+        {
+          "kind": "access",
+          "function": "_ZN15IsaacRepentance5Level32can_convert_to_red_treasure_roomERKNS_14RoomDescriptorE",
+          "address": "0x003d0e7c",
+          "offset": 8,
+          "width": 4,
+          "why": "解引用 Data 之后按 4 字节读 Data+0x8"
+        },
+        {
+          "kind": "semantic",
+          "function": "_ZN15IsaacRepentance5Level32can_convert_to_red_treasure_roomERKNS_14RoomDescriptorE",
+          "address": "0x003d0e80",
+          "immediate": 4,
+          "why": "紧接着与常量 4 比较；本项目自己的 RoomType 表里 ROOM_TREASURE = 4，而函数语义正是『能否转成红宝藏房』⇒ 该字段是房间类型"
+        }
+      ]
+    },
+    {
+      "name": "Data.second_condition",
+      "kind": "nested_u32",
+      "offset": 16,
+      "width": 4,
+      "nested_in": "Data",
+      "confidence": "candidate",
+      "semantic": "同上函数的第二个条件（值 == 0x22），字段名未定（候选 Variant/Difficulty）；**不进对外 API**",
+      "evidence": [
+        {
+          "kind": "access",
+          "function": "_ZN15IsaacRepentance5Level32can_convert_to_red_treasure_roomERKNS_14RoomDescriptorE",
+          "address": "0x003d0e88",
+          "offset": 16,
+          "width": 4,
+          "why": "解引用 Data 之后按 4 字节读 Data+0x10"
+        },
+        {
+          "kind": "semantic",
+          "function": "_ZN15IsaacRepentance5Level32can_convert_to_red_treasure_roomERKNS_14RoomDescriptorE",
+          "address": "0x003d0e8c",
+          "immediate": 34,
+          "why": "与常量 0x22 比较；字段名未定 ⇒ 只登记、不进 API"
+        }
+      ]
+    },
+    {
+      "name": "AllowedDoors",
+      "kind": "bitset",
+      "offset": 32,
+      "width": 8,
+      "confidence": "candidate",
+      "semantic": "允许的门（PC 侧 RoomDescriptor.AllowedDoors）；候选依据是『预计算可用门』函数唯一一次字段写就落在这里",
+      "evidence": [
+        {
+          "function": "_ZN15IsaacRepentance5Level21precalc_allowed_doorsERNS_14RoomDescriptorE",
+          "address": "0x003d6818",
+          "offset": 32,
+          "width": 8,
+          "why": "该函数（语义就是预先算允许的门）唯一一次字段写：str x8, [x20, #0x20]"
+        }
+      ]
+    },
+    {
+      "name": "scalar_prefix_end",
+      "kind": "structural",
+      "offset": 116,
+      "width": 0,
+      "confidence": "structural",
+      "semantic": "标量前缀到此为止（0x74 起是容器区）；最后一个标量字段在 0x70（4 字节）",
+      "evidence": [
+        {
+          "function": "_ZN15IsaacRepentance14RoomDescriptorC2ERKS0_",
+          "address": "0x003e76f4",
+          "offset": 112,
+          "width": 4,
+          "why": "拷贝构造用 8 字节 ldp/stp 成对搬标量前缀，最后一处是 4 字节的 0x70"
+        }
+      ]
+    },
+    {
+      "name": "container_vector_a",
+      "kind": "structural",
+      "offset": 144,
+      "width": 16,
+      "confidence": "structural",
+      "semantic": "一组 vector 的 begin/end（0x90 / 0x98）",
+      "evidence": [
+        {
+          "function": "_ZN15IsaacRepentance14RoomDescriptor5ResetEv",
+          "address": "0x0035e45c",
+          "offset": 144,
+          "width": 8,
+          "why": "ldr x23, [x20, #0x90]! 之后用 [x20, #0x8] 比较 begin/end"
+        }
+      ]
+    },
+    {
+      "name": "container_string",
+      "kind": "structural",
+      "offset": 168,
+      "width": 24,
+      "confidence": "structural",
+      "semantic": "一个 libc++ string（data 0xa8 / size 0xb0 / capacity 0xb8）",
+      "evidence": [
+        {
+          "function": "_ZN15IsaacRepentance14RoomDescriptor5ResetEv",
+          "address": "0x0035e4b8",
+          "offset": 176,
+          "width": 8,
+          "why": "ldr x1, [x20, #0xb0]! 之后 sub x0, x20, #0x8（对 0xa8 处的对象做析构/清空）"
+        }
+      ]
+    },
+    {
+      "name": "container_vector_b",
+      "kind": "structural",
+      "offset": 192,
+      "width": 16,
+      "confidence": "structural",
+      "semantic": "另一组 vector 的 begin/end（0xc0 / 0xc8）",
+      "evidence": [
+        {
+          "function": "_ZN15IsaacRepentance14RoomDescriptor5ResetEv",
+          "address": "0x0035e494",
+          "offset": 192,
+          "width": 8,
+          "why": "ldr x23, [x20, #0xc0]! 之后用 [x20, #0x8] 比较 begin/end"
+        }
+      ]
+    },
+    {
+      "name": "GridIndex",
+      "kind": "u32",
+      "offset": 0,
+      "width": 4,
+      "confidence": "confirmed",
+      "semantic": "房间在 13×13 网格里的下标（PC 侧 RoomDescriptor.GridIndex）",
+      "evidence": [
+        {
+          "kind": "device",
+          "observation": "dist/room-probe-A3.json",
+          "slot": "slot7",
+          "offset": 0,
+          "value": 84,
+          "why": "起始房间：用户站在网格正中，Level+0x21558 读到 84，该槽位 +0x00 也是 84（Type=1）"
+        },
+        {
+          "kind": "device",
+          "observation": "dist/room-probe-B.json",
+          "slot": "slot3",
+          "offset": 0,
+          "value": 97,
+          "why": "走进宝箱房后索引变 97，该槽位 +0x00 也是 97（Type=4 宝箱房）"
+        }
+      ]
+    },
+    {
+      "name": "SafeGridIndex",
+      "kind": "u32",
+      "offset": 4,
+      "width": 4,
+      "confidence": "confirmed",
+      "semantic": "同上，但按 PC 语义是「在网格里就给下标、不在网格里给 -1」；**普通房间里与 GridIndex 相等**",
+      "evidence": [
+        {
+          "kind": "device",
+          "observation": "dist/room-probe-A3.json",
+          "slot": "slot7",
+          "offset": 4,
+          "value": 84,
+          "why": "起始房间：与 GridIndex 相等"
+        },
+        {
+          "kind": "device",
+          "observation": "dist/room-probe-B.json",
+          "slot": "slot3",
+          "offset": 4,
+          "value": 97,
+          "why": "宝箱房：与 GridIndex 相等"
+        }
+      ]
+    },
+    {
+      "name": "VisitedCount",
+      "kind": "u32",
+      "offset": 76,
+      "width": 4,
+      "confidence": "confirmed",
+      "semantic": "该房间被访问的次数（PC 侧 RoomDescriptor.VisitedCount）",
+      "evidence": [
+        {
+          "kind": "device",
+          "observation": "dist/room-probe-C.json",
+          "slot": "slot8",
+          "offset": 76,
+          "value": 1,
+          "why": "第一次进入房间 71 ⇒ 0→1"
+        },
+        {
+          "kind": "device",
+          "observation": "dist/room-probe-D.json",
+          "slot": "slot7",
+          "offset": 76,
+          "value": 2,
+          "why": "回到起始房间 ⇒ 1→2（计数递增，不是布尔）"
+        }
+      ]
+    },
+    {
+      "name": "Clear",
+      "kind": "u32",
+      "offset": 80,
+      "width": 4,
+      "confidence": "confirmed",
+      "semantic": "房间是否已清（PC 侧 RoomDescriptor.Clear）",
+      "evidence": [
+        {
+          "kind": "device",
+          "observation": "dist/room-probe-C.json",
+          "slot": "slot8",
+          "offset": 80,
+          "value": 0,
+          "why": "有敌人的房间、未清时是 0"
+        },
+        {
+          "kind": "device",
+          "observation": "dist/room-probe-D.json",
+          "slot": "slot8",
+          "offset": 80,
+          "value": 1,
+          "why": "清掉敌人后同一槽位同一偏移变成 1（其它字段都没动）"
+        }
+      ]
+    },
+    {
+      "name": "DisplayFlags",
+      "kind": "u32",
+      "offset": 72,
+      "width": 4,
+      "confidence": "candidate",
+      "semantic": "显示/可见性标志候选（PC 侧 RoomDescriptor.DisplayFlags 或 Flags）；名字未定 ⇒ 不进 API",
+      "evidence": [
+        {
+          "kind": "device",
+          "observation": "dist/room-probe-C.json",
+          "slot": "slot9",
+          "offset": 72,
+          "value": 5,
+          "why": "相邻房间在地图上变得可见时 0→5（位 0 与位 2 置起），而清房不改它"
+        }
+      ]
+    }
+  ],
+  "source_table": "room_descriptor"
+}

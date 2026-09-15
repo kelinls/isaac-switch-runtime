@@ -17,6 +17,46 @@ import struct
 import sys
 
 
+def load_symbols(blob: bytes) -> dict[str, tuple[int, int]]:
+    """解析 `.symtab`，返回 `名字 → (地址, 大小)`。
+
+    为什么要"按名字取偏移"而不是在读数工具里抄一张表：**任何一次重建都会让 bss/data 整体挪位**
+    （项目已两次因过期偏移得出错误读数）。抄表就一定会过期，直接问 ELF 就不会。
+    """
+    sections = load_sections(blob)
+    by_name = {s["name"]: s for s in sections}
+    symtab = by_name.get(".symtab")
+    if symtab is None:
+        return {}
+    strtab = sections[symtab["link"]]
+    out: dict[str, tuple[int, int]] = {}
+    for i in range(symtab["size"] // symtab["entsize"]):
+        off = symtab["offset"] + i * symtab["entsize"]
+        name_off, _info, _other, _shndx, value, size = struct.unpack_from("<IBBHQQ", blob, off)
+        start = strtab["offset"] + name_off
+        end = blob.index(b"\0", start)
+        name = blob[start:end].decode("utf-8", "replace")
+        if name:
+            out.setdefault(name, (value, size))
+    return out
+
+
+def read_vaddr(blob: bytes, vaddr: int, count: int) -> bytes | None:
+    """把"模块内偏移"换算成文件偏移再读字节（读数工具的自校验指纹要用）。"""
+    e_phoff, = struct.unpack_from("<Q", blob, 0x20)
+    e_phentsize, e_phnum = struct.unpack_from("<HH", blob, 0x36)
+    for i in range(e_phnum):
+        off = e_phoff + i * e_phentsize
+        p_type, = struct.unpack_from("<I", blob, off)
+        if p_type != 1:            # PT_LOAD
+            continue
+        p_offset, p_vaddr, _p_paddr, p_filesz = struct.unpack_from("<QQQQ", blob, off + 8)
+        if p_vaddr <= vaddr < p_vaddr + p_filesz:
+            start = p_offset + (vaddr - p_vaddr)
+            return blob[start:start + count]
+    return None
+
+
 def load_sections(blob: bytes):
     (e_shoff,) = struct.unpack_from("<Q", blob, 0x28)
     (e_shentsize,) = struct.unpack_from("<H", blob, 0x3A)

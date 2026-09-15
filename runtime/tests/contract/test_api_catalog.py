@@ -532,7 +532,10 @@ class ApiCatalogContractTests(unittest.TestCase):
         # 缺口来自 `tools/eid_api_gap_report.py`：EID 的潘多拉魔盒条目
         # （`features/eid_modifiers.lua:197/200`）在描述构建里无条件调用 `GetAbsoluteStage()`，
         # 缺它就是 "attempt to call a nil value"、整条描述回调在那一行中断。
-        self.assertEqual(checked, 163, "家族绑定行数应与已登记 API 数一致")
+        # 163 + 地基二期（2026-09-15）的 3 行 `Level` 房间描述符成员：
+        # `GetCurrentRoomDesc`/`GetRoomByIdx`/`GetRooms`。它们背后是一整条新的读取链
+        # （内联描述符数组 + 八个已真机验证的字段偏移），不是单个字段读。
+        self.assertEqual(checked, 166, "家族绑定行数应与已登记 API 数一致")
 
     def test_options_fields_are_registered_as_values(self):
         """`Options` 的两个字段是**值**而不是方法：Catalog 里有条目、绑定表里没有绑定行。

@@ -92,6 +92,59 @@ SYMS = {
     'present_got_slot': 0xA9E488,      # Present 的 GOT 槽（应等于 运行时基址 + present_got_intercept）
     'present_target': 0x4F3014,        # `Present` 本体（期望值比对用）
 }
+#: 上表里"属于**我们运行时模块**"的那些键 → 它们在本地 ELF 里的**精确符号名**。
+#: 有这张表，偏移就不必再靠人手抄：`sync_syms_from_elf()` 每次读数前直接问 ELF。
+#: 不在表里的键（`manager_update_entry` 那几条）是**游戏模块**的常量，与我们的重建无关，保持原值。
+SYM_ELF_NAMES = {
+    'identity': 'IsaacModRuntime_GetRuntimeIdentity',
+    'exl_main': 'exl_main',
+    'manifest_install': '_Z28TryInstallDefaultManifestModRK12TargetModule',
+    'entry_relay_update': 'EntryRelayManagerUpdateCallback',
+    'entry_relay_render': 'EntryRelayManagerRenderCallback',
+    'entry_relay_collectible': 'EntryRelayPreGetCollectibleCallback',
+    'entry_relay_rebuild': 'EntryRelayRebuildMountPointsCallback',
+    'present_got_intercept': 'IsaacModRuntime_PresentGotSlotIntercept',
+    'g_runtimeSelfAddress': 'g_runtimeSelfAddress',
+    'g_sequence': '_ZN12_GLOBAL__N_1L10g_sequenceE',
+    'g_stateDetail': '_ZN12_GLOBAL__N_1L13g_stateDetailE',
+    'g_diagnosticFileApi': '_ZN12_GLOBAL__N_1L19g_diagnosticFileApiE',
+    'g_hookCallbacks': '_ZN5isaac7runtime12_GLOBAL__N_1L15g_hookCallbacksE',
+    'g_HookInstallResults': '_ZN12_GLOBAL__N_1L20g_HookInstallResultsE',
+    'g_HookEnabled': '_ZN12_GLOBAL__N_1L13g_HookEnabledE',
+    'g_RenderPresentRelayState': '_ZN12_GLOBAL__N_1L25g_RenderPresentRelayStateE',
+    'g_PresentGotSlotTarget': 'g_PresentGotSlotTarget',
+    'g_DefaultManifestFailureWord': '_ZN12_GLOBAL__N_1L28g_DefaultManifestFailureWordE',
+    'g_DefaultManifestFailureDetail': '_ZN12_GLOBAL__N_1L30g_DefaultManifestFailureDetailE',
+    'g_DefaultManifestState': '_ZN12_GLOBAL__N_1L22g_DefaultManifestStateE',
+    'g_HookInstallFailureCode': '_ZZN5isaac7runtime22HookInstallFailureCodeEvE5value',
+    'g_HookInstallFailureSlot': '_ZZN5isaac7runtime22HookInstallFailureSlotEvE5value',
+    'g_PendingGameStarted': '_ZN10LuaRuntime12_GLOBAL__N_1L20g_PendingGameStartedE',
+    'g_ModRegistered': '_ZN10LuaRuntime12_GLOBAL__N_1L15g_ModRegisteredE',
+    'g_LastLuaErrorLength': '_ZN10LuaRuntime12_GLOBAL__N_1L20g_LastLuaErrorLengthE',
+    'g_LastLuaErrorText': '_ZN10LuaRuntime12_GLOBAL__N_1L18g_LastLuaErrorTextE',
+    'g_PostUpdateCount': '_ZN10LuaRuntime12_GLOBAL__N_1L17g_PostUpdateCountE',
+    'g_CallbackRegistry': '_ZN10LuaRuntime12_GLOBAL__N_1L18g_CallbackRegistryE',
+    'g_DefaultManifest': '_ZN12_GLOBAL__N_1L17g_DefaultManifestE',
+    'g_DefaultEntry': '_ZN12_GLOBAL__N_1L14g_DefaultEntryE',
+    # ---- 错误通道探针（`tools/probe_lua_error_channel.py`）也用这张表 ----
+    'g_CallbackError': '_ZN10LuaRuntime12_GLOBAL__N_1L15g_CallbackErrorE',
+    'g_RequireFailureTotal': '_ZN10LuaRuntime12_GLOBAL__N_1L21g_RequireFailureTotalE',
+    'g_RequireLastFailureName': '_ZN10LuaRuntime12_GLOBAL__N_1L24g_RequireLastFailureNameE',
+    'g_RequireLastFailureCode': '_ZN10LuaRuntime12_GLOBAL__N_1L24g_RequireLastFailureCodeE',
+    'g_RequireFirstFailureName': '_ZN10LuaRuntime12_GLOBAL__N_1L25g_RequireFirstFailureNameE',
+    'g_RequireFirstFailureCode': '_ZN10LuaRuntime12_GLOBAL__N_1L25g_RequireFirstFailureCodeE',
+    'g_RequireErrorTail': '_ZN10LuaRuntime12_GLOBAL__N_1L18g_RequireErrorTailE',
+    'g_RequireFailureDetail': '_ZN10LuaRuntime12_GLOBAL__N_1L22g_RequireFailureDetailE',
+    'g_Dispatchable': '_ZN10LuaRuntime12_GLOBAL__N_1L14g_DispatchableE',
+    'g_Unhooked': '_ZN10LuaRuntime12_GLOBAL__N_1L10g_UnhookedE',
+}
+#: 表里有、但**这次构建的 ELF 里已经找不到**的符号：不能沿用过期的偏移（那是"看起来有值、
+#: 其实是别人的变量"），只能在读数时报"读不到"。这里只记账，方便汇报时说明缺了什么。
+SYM_MISSING: dict[str, str] = {}
+#: 已经不再存在的全局量（2026-09-15：装好的挂点数改为从 `g_HookInstallResults` 现算，没有独立变量）。
+SYM_UNRESOLVABLE = ('g_HookInstallInstalledCount',)
+_syms_synced = False
+
 HOOK_NAMES = ['ManagerUpdate', 'ManagerRender', 'PreGetCollectible',
               'ManagerPresent', 'RebuildMountPoints', 'GameStart']
 # 只用来做比对、本身不是"要读的内存变量"的符号（读数请求要跳过它们）。
@@ -330,6 +383,56 @@ def locate_by_scan(session: 'GdbSession', elf: Path) -> tuple[int | None, int | 
             if word in (0x58000050, 0xFF4301D1):
                 game = start
     return module, game
+
+
+def sync_syms_from_elf(elf: Path, *, verbose: bool = False) -> dict[str, str]:
+    """用**本地这份 ELF**的符号表刷新"模块内偏移"，返回没解析到的符号。
+
+    为什么要有这一步：偏移表是手抄的，而**改任何一个编译单元都会让 bss/data 整体挪位**
+    （项目已经因此误读过两次）。手抄表一定会过期，唯一不会过期的来源就是 ELF 自己。
+    解析不到的符号**直接从表里删掉**——沿用过期的偏移比读不到更糟：它会把别人的变量
+    当成我们要的那个，读数"看起来有值"却是错的。
+    """
+    global _syms_synced
+    tools_dir = str(Path(__file__).resolve().parent)
+    if tools_dir not in sys.path:
+        sys.path.insert(0, tools_dir)
+    import elf_syms  # 同目录的极简 ELF 解析器（只依赖标准库）
+
+    if not elf.exists():
+        _syms_synced = False
+        print(f'  ⚠ 找不到本地 ELF（{elf}），沿用表内偏移 —— 读数可能与当前构建不符')
+        return {'(整个 ELF)': '文件不存在'}
+    symbols = elf_syms.load_symbols(elf.read_bytes())
+    if not symbols:
+        _syms_synced = False
+        print(f'  ⚠ {elf} 里没有 .symtab（被 strip 过？），沿用表内偏移')
+        return {'(整个 ELF)': '没有符号表'}
+
+    missing: dict[str, str] = {}
+    for key, name in SYM_ELF_NAMES.items():
+        hit = symbols.get(name)
+        if hit is None:
+            missing[key] = name
+            SYMS.pop(key, None)
+        else:
+            SYMS[key] = hit[0]
+    for key in SYM_UNRESOLVABLE:            # 这次构建里已经不存在的全局量
+        SYMS.pop(key, None)
+        missing[key] = '（本构建已无此全局量）'
+    SYM_MISSING.clear()
+    SYM_MISSING.update(missing)
+    _syms_synced = True
+    if verbose:
+        print(f'  偏移已按 {elf.name} 的符号表刷新（{len(SYM_ELF_NAMES)} 项）')
+        if missing:
+            print(f'  ⚠ 未解析到（读数会显示"读不到"）：{", ".join(sorted(missing))}')
+    return missing
+
+
+def locator_session():
+    """读数前的公共准备：刷新偏移表。所有对外入口都该走它，避免漏刷新。"""
+    sync_syms_from_elf(ROOT / DEFAULT_ELF)
 
 
 def local_bytes(elf: Path, vaddr: int, count: int) -> bytes | None:
@@ -796,6 +899,9 @@ def main() -> int:
         print('     PROBE_BREAK=0 OUT=.gdbsym-artifacts/deploy BUILD=.gdbsym-build \\')
         print('     EXL_ARTIFACT_DIR=.gdbsym-artifacts all"')
         return 2
+
+    # 偏移表以**本地这份构建**为准：手抄表会随任何一次重建过期（项目已因此误读过两次）。
+    sync_syms_from_elf(elf, verbose=True)
 
     if args.dry_run:
         session = GdbSession(timeout=60)

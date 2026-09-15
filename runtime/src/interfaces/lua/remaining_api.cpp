@@ -22,6 +22,11 @@ extern "C" {
 }
 
 namespace isaac::runtime {
+// 供 `lua_runtime.cpp` 注册元表时调用（必须在这个 TU 之外可见，所以不能放在匿名命名空间里）。
+int RoomDescriptorIndex(lua_State* state);
+int RoomDescriptorListIndex(lua_State* state);
+[[nodiscard]] std::size_t AttachRoomDescriptorListMethods(lua_State* state) noexcept;
+
 namespace {
 
 using LuaRuntime::GameOwnerSlot;
@@ -43,6 +48,13 @@ int LevelGetCurrentRoomIndex(lua_State* state);
 int LevelGetCurrentRoom(lua_State* state);
 int LevelGetAbsoluteStage(lua_State* state);
 int LevelIsNextStageAvailable(lua_State* state);
+// 地基二期（2026-09-15）：房间描述符三件套。字段偏移全部来自布局表 + 真机行为验证，
+// 见 `lua_object_handles.hpp` 里 `RoomDescriptorHandle` 上方那段说明。
+int LevelGetCurrentRoomDesc(lua_State* state);
+int LevelGetRoomByIdx(lua_State* state);
+int LevelGetRooms(lua_State* state);
+// `RoomDescriptorList.__index` / 方法（`Size` 与 `:Get(i)`）。
+int RoomDescriptorListGet(lua_State* state);
 int RoomGetType(lua_State* state);
 // 批次 7（2026-09-12）：EID 在**网格/寻路**路径上无条件调用的一批 `Room` 成员
 // （`features/eid_api.lua:3351` 的 `EID:EvaluateLocation`、`3371` 的 `HasPathToPosition`、
@@ -67,6 +79,9 @@ constexpr LuaHandlerBinding kLevelHandlers[] = {
     {0x03010005, &LevelGetCurrentRoom},
     {0x03010006, &LevelGetAbsoluteStage},
     {0x03010007, &LevelIsNextStageAvailable},
+    {0x03010008, &LevelGetCurrentRoomDesc},
+    {0x03010009, &LevelGetRoomByIdx},
+    {0x0301000A, &LevelGetRooms},
 };
 
 constexpr LuaHandlerBinding kRoomHandlers[] = {
@@ -694,10 +709,378 @@ int ItemPoolGetCollectible(lua_State* state) {
     return 1;
 }
 
+// --- 地基二期（2026-09-15）：`RoomDescriptor` 与它的三件套 API -----------------------
+//
+// 字段偏移**全部来自布局表 + 真机行为验证**（`tools/layout_tables/room_descriptor.json`，
+// 每条带可复核证据），不是从 PC 版抄的：
+//
+//   描述符数组：内联在 Level(=Game) 对象里，基址 `Level + 0x18`、步长 `0x100`、
+//              元素个数在 `Level + 0x21510`（真机实测 11 个已分配槽位，ListIndex 恰好 0..10）；
+//   `+0x00` GridIndex（网格下标）、`+0x04` SafeGridIndex、`+0x08` ListIndex、
+//   `+0x10` Data（指向房间配置，其中 `Data+0x08` 是 Type）、
+//   `+0x4c` VisitedCount、`+0x50` Clear。
+//
+// **只暴露已 confirmed 的字段**：未确认的（例如 `+0x48` 的显示标志、`Data.Variant`）
+// 一律返回 nil，并按项目规矩在文档/台账里标为未满足 —— 读错字段比读不到更糟（会给出错误内容）。
+//
+// `Level:GetRoomByIdx` 的定位方式：**扫描数组找 `+0x00 == 目标索引`**。
+// 引擎自己那段"找起始房间"的循环（`0x3dc624`）也是扫数组；而 `Level + 0x2d18` 那张表
+// 经真机验证**不是"索引→槽号"**（索引 97 读出槽号 6，可 slot6 是另一个房间），所以不依赖它。
+namespace {
+
+//: 描述符数组的几何（与布局表一致；改动必须同时改表并由 `--verify` 复核）。
+constexpr std::uintptr_t kDescriptorArrayBase = 0x18;
+constexpr std::uintptr_t kDescriptorStride = 0x100;
+constexpr std::uintptr_t kDescriptorCountOffset = 0x21510;
+//: 未分配槽位的 `+0x00` 是 0xFFFFFFFF（真机实测：11 号槽位起全是它）。
+constexpr std::uint32_t kUnallocatedGridIndex = 0xFFFFFFFFu;
+//: 描述符内部偏移。
+constexpr std::uintptr_t kGridIndexOffset = 0x00;
+constexpr std::uintptr_t kSafeGridIndexOffset = 0x04;
+constexpr std::uintptr_t kListIndexOffset = 0x08;
+constexpr std::uintptr_t kDataOffset = 0x10;
+constexpr std::uintptr_t kVisitedCountOffset = 0x4C;
+constexpr std::uintptr_t kClearOffset = 0x50;
+//: `Data` 指向的房间配置里，Type 在 +0x8（布局表 confirmed）。
+constexpr std::uintptr_t kRoomConfigTypeOffset = 0x08;
+//: 数组元素个数上限：3 个维度 × 169 个房间 + 少量特殊槽位，实际远小于 512。
+constexpr std::uint32_t kDescriptorMaximumCount = 512;
+
+// `Level` 就内嵌在 `Game` 起始处，所以解析链与 `ReadGameCurses` 逐字相同：
+//   `GameOwnerSlot()` 是**槽的地址**（指针变量）→ 解一次得 owner → 再解一次才是 `Game*`。
+// ★ 第一版直接把 `GameOwnerSlot()` 当 Level 用，少解了两层 —— 那会去读模块里的代码字节
+// （真机探针上踩过同一个坑：`g_Game` 槽里存的不是对象本身）。
+std::uintptr_t ResolveLevelForDescriptor() noexcept {
+    const std::uintptr_t slot = GameOwnerSlot();
+    if (slot == 0 || !IsEngineMemoryReadable(slot, sizeof(std::uintptr_t))) {
+        return 0;
+    }
+    std::uintptr_t owner = 0;
+    std::memcpy(&owner, reinterpret_cast<const void*>(slot), sizeof(owner));
+    if (owner == 0 || !IsEngineMemoryReadable(owner, sizeof(std::uintptr_t))) {
+        return 0;
+    }
+    std::uintptr_t level = 0;
+    std::memcpy(&level, reinterpret_cast<const void*>(owner), sizeof(level));
+    return level;
+}
+
+bool ReadDescriptorU32(std::uintptr_t descriptor, std::uintptr_t offset,
+                       std::uint32_t* value) noexcept {
+    if (value == nullptr || descriptor == 0 || descriptor > UINTPTR_MAX - offset) {
+        return false;
+    }
+    if (!IsEngineMemoryReadable(descriptor + offset, sizeof(std::uint32_t))) {
+        return false;
+    }
+    std::memcpy(value, reinterpret_cast<const void*>(descriptor + offset), sizeof(*value));
+    return true;
+}
+
+std::uintptr_t DescriptorAddress(std::uintptr_t level, std::uint32_t slot) noexcept {
+    return level + kDescriptorArrayBase + static_cast<std::uintptr_t>(slot) * kDescriptorStride;
+}
+
+//: 房间数组里当前有多少个槽位（引擎自己用它做扫描边界）。
+std::uint32_t DescriptorCount(std::uintptr_t level) noexcept {
+    if (level == 0 || level > UINTPTR_MAX - kDescriptorCountOffset ||
+        !IsEngineMemoryReadable(level + kDescriptorCountOffset, sizeof(std::uint32_t))) {
+        return 0;
+    }
+    std::uint32_t count = 0;
+    std::memcpy(&count, reinterpret_cast<const void*>(level + kDescriptorCountOffset),
+                sizeof(count));
+    // 上限只用来兜住"读到垃圾值"的情形：3 个维度 × 169 个房间 + 少量特殊槽位，实际远小于 512。
+    return count > kDescriptorMaximumCount ? kDescriptorMaximumCount : count;
+}
+
+//: 按 `+0x00 == gridIndex` 扫描定位描述符；找不到返回 0。
+std::uintptr_t FindDescriptorByGridIndex(std::uintptr_t level, std::uint32_t gridIndex) noexcept {
+    if (level == 0 || gridIndex == kUnallocatedGridIndex) {
+        return 0;
+    }
+    const std::uint32_t count = DescriptorCount(level);
+    for (std::uint32_t slot = 0; slot < count; ++slot) {
+        const std::uintptr_t candidate = DescriptorAddress(level, slot);
+        std::uint32_t value = 0;
+        if (!ReadDescriptorU32(candidate, kGridIndexOffset, &value)) {
+            return 0;
+        }
+        if (value == gridIndex) {
+            return candidate;
+        }
+    }
+    return 0;
+}
+
+std::uintptr_t CurrentRoomIndex(std::uintptr_t level) noexcept {
+    std::uint32_t index = 0;
+    if (!ReadDescriptorU32(level, kLevelCurrentRoomIndexOffset, &index)) {
+        return kUnallocatedGridIndex;
+    }
+    return index;
+}
+
+int PushRoomDescriptor(lua_State* state, std::uintptr_t descriptor) {
+    if (descriptor == 0) {
+        lua_pushnil(state);
+        return 1;
+    }
+    auto* handle = static_cast<LuaRuntime::RoomDescriptorHandle*>(
+        lua_newuserdata(state, sizeof(LuaRuntime::RoomDescriptorHandle)));
+    handle->descriptor = reinterpret_cast<void*>(descriptor);
+    luaL_getmetatable(state, LuaRuntime::kRoomDescriptorMetatable);
+    lua_setmetatable(state, -2);
+    return 1;
+}
+
+}  // namespace
+
+
+int RoomDescriptorListGet(lua_State* state) {
+    auto* handle = static_cast<LuaRuntime::RoomDescriptorListHandle*>(
+        luaL_checkudata(state, 1, LuaRuntime::kRoomDescriptorListMetatable));
+    if (handle == nullptr || !lua_isinteger(state, 2)) {
+        return luaL_error(state, "RoomDescriptorList:Get expects an index");
+    }
+    const lua_Integer requested = lua_tointegerx(state, 2, nullptr);
+    const std::uintptr_t level = reinterpret_cast<std::uintptr_t>(handle->level);
+    const std::uint32_t count = DescriptorCount(level);
+    if (requested < 0 || static_cast<std::uint64_t>(requested) >= count) {
+        lua_pushnil(state);
+        return 1;
+    }
+    const std::uint32_t slot = static_cast<std::uint32_t>(requested);
+    std::uintptr_t descriptor = DescriptorAddress(level, slot);
+    std::uint32_t listIndex = 0;
+    if (ReadDescriptorU32(descriptor, kListIndexOffset, &listIndex) && listIndex != slot) {
+        descriptor = 0;
+        for (std::uint32_t candidate = 0; candidate < count; ++candidate) {
+            const std::uintptr_t address = DescriptorAddress(level, candidate);
+            std::uint32_t value = 0;
+            if (ReadDescriptorU32(address, kListIndexOffset, &value) && value == slot) {
+                descriptor = address;
+                break;
+            }
+        }
+    }
+    return PushRoomDescriptor(state, descriptor);
+}
+
+// `RoomDescriptorList` 的**方法**表（`Size` 是字段、走 `__index`；这里只有 `Get`）。
+// 这一族没有 catalog id（它是 `Level:GetRooms()` 的返回值，不是 Mod 直接调用的 API），
+// 所以不能用 `AttachOwnerMethods` 那套"id → handler"的绑定方式，直接按名字挂。
+struct NamedHandler {
+    const char* name;
+    lua_CFunction handler;
+};
+
+int LevelGetCurrentRoomDesc(lua_State* state) {
+    luaL_checkudata(state, 1, kLevelMetatable);
+    if (lua_gettop(state) != 1) {
+        return luaL_error(state, "Level:GetCurrentRoomDesc accepts no arguments");
+    }
+    if (!InManagedCallbackScope()) {
+        return luaL_error(state,
+                          "Level:GetCurrentRoomDesc is only available during a Runtime callback");
+    }
+    const std::uintptr_t level = ResolveLevelForDescriptor();
+    if (level == 0) {
+        return luaL_error(state, "Level:GetCurrentRoomDesc could not read the native Level state");
+    }
+    const std::uintptr_t index = CurrentRoomIndex(level);
+    if (index == kUnallocatedGridIndex) {
+        return luaL_error(state, "Level:GetCurrentRoomDesc could not read the current room index");
+    }
+    return PushRoomDescriptor(state, FindDescriptorByGridIndex(level,
+                                                              static_cast<std::uint32_t>(index)));
+}
+
+int LevelGetRoomByIdx(lua_State* state) {
+    luaL_checkudata(state, 1, kLevelMetatable);
+    const int argumentCount = lua_gettop(state);
+    if (argumentCount < 2 || argumentCount > 3 || !lua_isinteger(state, 2)) {
+        return luaL_error(state, "Level:GetRoomByIdx expects an index and an optional dimension");
+    }
+    if (!InManagedCallbackScope()) {
+        return luaL_error(state, "Level:GetRoomByIdx is only available during a Runtime callback");
+    }
+    const lua_Integer requested = lua_tointegerx(state, 2, nullptr);
+    if (argumentCount == 3 && lua_isinteger(state, 3)) {
+        const lua_Integer dimension = lua_tointegerx(state, 3, nullptr);
+        if (dimension != 0 && dimension != -1) {
+            // 非 0 维度还没验证过（真机那几轮都在普通楼层，维度恒为 0）。宁可给 nil，
+            // 也不把"另一个维度的房间"当成当前维度的返回给 Mod。
+            lua_pushnil(state);
+            return 1;
+        }
+    }
+    const std::uintptr_t level = ResolveLevelForDescriptor();
+    if (level == 0) {
+        return luaL_error(state, "Level:GetRoomByIdx could not read the native Level state");
+    }
+    if (requested == -1) {
+        // PC 语义：`GetRoomByIdx(-1)` = 当前房间。这里按"当前索引"解析，与 `GetCurrentRoomDesc`
+        // 同一条链（而不是去信那个没验证过的负数槽位公式）。
+        const std::uintptr_t index = CurrentRoomIndex(level);
+        if (index == kUnallocatedGridIndex) {
+            lua_pushnil(state);
+            return 1;
+        }
+        return PushRoomDescriptor(state, FindDescriptorByGridIndex(level,
+                                                                  static_cast<std::uint32_t>(index)));
+    }
+    if (requested < 0) {
+        // PC 侧 -2/-3 是"上一个/下一个房间"，其含义**没有证据**（负数槽位公式未验证）⇒ 给 nil。
+        lua_pushnil(state);
+        return 1;
+    }
+    return PushRoomDescriptor(
+        state, FindDescriptorByGridIndex(level, static_cast<std::uint32_t>(requested)));
+}
+
+int LevelGetRooms(lua_State* state) {
+    luaL_checkudata(state, 1, kLevelMetatable);
+    if (lua_gettop(state) != 1) {
+        return luaL_error(state, "Level:GetRooms accepts no arguments");
+    }
+    if (!InManagedCallbackScope()) {
+        return luaL_error(state, "Level:GetRooms is only available during a Runtime callback");
+    }
+    const std::uintptr_t level = ResolveLevelForDescriptor();
+    if (level == 0) {
+        return luaL_error(state, "Level:GetRooms could not read the native Level state");
+    }
+    auto* handle = static_cast<LuaRuntime::RoomDescriptorListHandle*>(
+        lua_newuserdata(state, sizeof(LuaRuntime::RoomDescriptorListHandle)));
+    handle->level = reinterpret_cast<void*>(level);
+    luaL_getmetatable(state, LuaRuntime::kRoomDescriptorListMetatable);
+    lua_setmetatable(state, -2);
+    return 1;
+}
+
 } // namespace
 
 std::size_t AttachLevelMethods(lua_State* state) noexcept {
     return AttachOwnerMethods(state, "Level", kLevelHandlers, RowCount(kLevelHandlers));
+}
+
+// `RoomDescriptor` 的字段访问。**只服务已 confirmed 的字段**；其它一律 nil。
+int RoomDescriptorIndex(lua_State* state) {
+    auto* handle = static_cast<LuaRuntime::RoomDescriptorHandle*>(
+        luaL_checkudata(state, 1, LuaRuntime::kRoomDescriptorMetatable));
+    const char* key = lua_tostring(state, 2);
+    if (handle == nullptr || key == nullptr) {
+        lua_pushnil(state);
+        return 1;
+    }
+    const std::uintptr_t descriptor = reinterpret_cast<std::uintptr_t>(handle->descriptor);
+    std::uint32_t value = 0;
+    if (std::strcmp(key, "GridIndex") == 0) {
+        if (!ReadDescriptorU32(descriptor, kGridIndexOffset, &value)) {
+            return luaL_error(state, "RoomDescriptor.GridIndex could not read the native state");
+        }
+        lua_pushinteger(state, static_cast<lua_Integer>(value));
+        return 1;
+    }
+    if (std::strcmp(key, "SafeGridIndex") == 0) {
+        if (!ReadDescriptorU32(descriptor, kSafeGridIndexOffset, &value)) {
+            return luaL_error(state, "RoomDescriptor.SafeGridIndex could not read the native state");
+        }
+        lua_pushinteger(state, static_cast<lua_Integer>(value));
+        return 1;
+    }
+    if (std::strcmp(key, "ListIndex") == 0) {
+        if (!ReadDescriptorU32(descriptor, kListIndexOffset, &value)) {
+            return luaL_error(state, "RoomDescriptor.ListIndex could not read the native state");
+        }
+        lua_pushinteger(state, static_cast<lua_Integer>(value));
+        return 1;
+    }
+    if (std::strcmp(key, "VisitedCount") == 0) {
+        if (!ReadDescriptorU32(descriptor, kVisitedCountOffset, &value)) {
+            return luaL_error(state, "RoomDescriptor.VisitedCount could not read the native state");
+        }
+        lua_pushinteger(state, static_cast<lua_Integer>(value));
+        return 1;
+    }
+    if (std::strcmp(key, "Clear") == 0) {
+        if (!ReadDescriptorU32(descriptor, kClearOffset, &value)) {
+            return luaL_error(state, "RoomDescriptor.Clear could not read the native state");
+        }
+        // 真机验证过：清房瞬间该字段 0→1；起始房间本来就是 1（没有敌人）。
+        lua_pushboolean(state, value != 0 ? 1 : 0);
+        return 1;
+    }
+    if (std::strcmp(key, "Data") == 0) {
+        // PC 的 `Data` 是房间配置对象；EID 只读它的 `Type`（布局表 confirmed 的 `Data+0x8`）。
+        // 未确认的成员（例如 `Variant`）这里**不编值**，返回 nil 由调用方自行判断。
+        std::uintptr_t data = 0;
+        if (!IsEngineMemoryReadable(descriptor + kDataOffset, sizeof(std::uintptr_t))) {
+            return luaL_error(state, "RoomDescriptor.Data could not read the native state");
+        }
+        std::memcpy(&data, reinterpret_cast<const void*>(descriptor + kDataOffset), sizeof(data));
+        if (data == 0) {
+            lua_pushnil(state);
+            return 1;
+        }
+        lua_createtable(state, 0, 1);
+        std::uint32_t roomType = 0;
+        if (IsEngineMemoryReadable(data + kRoomConfigTypeOffset, sizeof(std::uint32_t))) {
+            std::memcpy(&roomType, reinterpret_cast<const void*>(data + kRoomConfigTypeOffset),
+                        sizeof(roomType));
+            lua_pushinteger(state, static_cast<lua_Integer>(roomType));
+            lua_setfield(state, -2, "Type");
+        }
+        return 1;
+    }
+    lua_pushnil(state);
+    return 1;
+}
+
+// `RoomDescriptorList.__index`：`Size` 现读（房间会随探索增加），没有别的方法落在这里。
+int RoomDescriptorListIndex(lua_State* state) {
+    auto* handle = static_cast<LuaRuntime::RoomDescriptorListHandle*>(
+        luaL_checkudata(state, 1, LuaRuntime::kRoomDescriptorListMetatable));
+    const char* key = lua_tostring(state, 2);
+    if (handle == nullptr || key == nullptr) {
+        lua_pushnil(state);
+        return 1;
+    }
+    if (std::strcmp(key, "Size") == 0) {
+        lua_pushinteger(state, static_cast<lua_Integer>(
+            DescriptorCount(reinterpret_cast<std::uintptr_t>(handle->level))));
+        return 1;
+    }
+    // ★ 必须从**元表**取方法表：用 `lua_getfield(state, 1, ...)` 去索引 userdata 会再次
+    // 触发 `__index`（就是本函数），直接 C 栈溢出 —— 宿主机上实测到 `C stack overflow`。
+    luaL_getmetatable(state, LuaRuntime::kRoomDescriptorListMetatable);
+    lua_getfield(state, -1, "__methods");
+    if (!lua_istable(state, -1)) {
+        lua_pop(state, 2);
+        lua_pushnil(state);
+        return 1;
+    }
+    lua_getfield(state, -1, key);
+    lua_remove(state, -2);   // 弹掉 __methods
+    lua_remove(state, -2);   // 弹掉元表
+    return 1;
+}
+
+// `rooms:Get(i)`：EID 的用法是 `for i = 0, rooms.Size - 1 do local room = rooms:Get(i)`。
+// 快路径直接取第 i 个槽位；它的 `+0x08`（ListIndex）不等于 i 时才退化为整表扫描
+// （槽位顺序与 ListIndex 顺序在真机上一致，但这里不把"一致"当永久保证）。
+std::size_t AttachRoomDescriptorListMethods(lua_State* state) noexcept {
+    static constexpr NamedHandler kMethods[] = {
+        {"Get", &RoomDescriptorListGet},
+    };
+    std::size_t attached = 0;
+    for (const NamedHandler& method : kMethods) {
+        lua_pushcfunction(state, method.handler);
+        lua_setfield(state, -2, method.name);
+        ++attached;
+    }
+    return attached;
 }
 
 std::size_t AttachRoomMethods(lua_State* state) noexcept {
