@@ -218,5 +218,54 @@ class SymbolHintTests(unittest.TestCase):
         self.assertEqual(unresolved, {}, f"这些符号在本构建的 ELF 里找不到：{unresolved}")
 
 
+class GameRunningCheckTests(unittest.TestCase):
+    """"游戏在不在跑"的判据：**不能只看进程表里有没有 Application**。
+
+    2026-09-15 实测教训：FTP 自己（`hbl.elf` + `ftpd.elf`）也是一个 Application 进程，
+    于是"用户已彻底关掉游戏、只开着 FTP"时，只看进程表的检查一直报"游戏还在跑" ——
+    既挡住了本来安全的写卡，又让人怀疑用户没关游戏。真正的判据是模块清单里有没有
+    `Repentance.nrs.elf`。这几条把两个方向的误判都钉住。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = load_module("read_device_state_via_gdb_gamecheck", GDB_TOOL)
+
+    FTP_INFO = """Process:     0x170 (Application)
+Program Id:  0x052bd540ec804000
+Application: 1
+Hbl:         0
+Modules:
+  0x0062000000 - 0x0062005fff hbl.elf
+  0x062be51000 - 0x062bf5efff ftpd.elf
+"""
+
+    GAME_INFO = """Process:     0x16f (Application)
+Modules:
+  0x0036b394f000 - 0x0036b3f40000 Repentance.nrs.elf
+  0x007c28d81000 - 0x007c28d8f000 runtime.elf
+"""
+
+    def test_module_names_are_read_from_the_modules_section(self):
+        self.assertEqual(self.tool.parse_module_names(self.FTP_INFO), ["hbl.elf", "ftpd.elf"])
+        self.assertEqual(self.tool.parse_module_names(self.GAME_INFO),
+                         ["Repentance.nrs.elf", "runtime.elf"])
+
+    def test_ftp_application_is_not_the_game(self):
+        """只看"有没有 Application"的写法会在这里判错 —— 这正是要防的那次事故。"""
+        self.assertEqual(self.tool.parse_processes("368        Application \n"), 368)
+        names = self.tool.parse_module_names(self.FTP_INFO)
+        self.assertFalse(any(self.tool.GAME_MODULE_MARKER in name for name in names),
+                         "FTP 进程被误判成游戏在跑")
+
+    def test_game_application_is_recognized(self):
+        names = self.tool.parse_module_names(self.GAME_INFO)
+        self.assertTrue(any(self.tool.GAME_MODULE_MARKER in name for name in names))
+
+    def test_empty_output_says_nothing_instead_of_guessing(self):
+        """拿不到模块清单时不许猜 —— 返回空表（调用方据此报"判断不了"）。"""
+        self.assertEqual(self.tool.parse_module_names("Modules:\n"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

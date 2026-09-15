@@ -119,7 +119,43 @@ def cmd_sha(args) -> int:
     return 0
 
 
+def assert_game_stopped(args) -> bool:
+    """写卡前确认游戏没在跑（项目纪律：游戏运行时写卡会与 `fs.mitm` 抢 SD 卡）。
+
+    ⚠️ 判据**不是**"进程表里有没有 Application" —— FTP 自己（`hbl.elf` + `ftpd.elf`）
+    也是一个 Application 进程。要看模块清单里有没有以撒本体（`Repentance.nrs.elf`）。
+    2026-09-15 就吃过这个亏：用户在"游戏已彻底关闭、只开着 FTP"的状态下，
+    只看进程表的检查反复判成"游戏还在跑"。
+
+    判断不了（调试桩连不上）时不硬闯也不装死：明确印出"判断不了"并**继续** ——
+    这条检查是"把纪律自动化"，不是权限墙。
+    """
+    if getattr(args, 'force_write', False):
+        print('⚠ 指定了 --force-write：跳过"游戏是否已退出"的检查（请自行确认过）')
+        return True
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import read_device_state_via_gdb as gdb_tool
+    except Exception as exc:                 # 工具链不在/导入失败：退化成人工确认
+        print(f'⚠ 无法加载调试桩工具（{type(exc).__name__}）⇒ 判断不了游戏是否在跑')
+        return True
+    try:
+        running, detail = gdb_tool.game_is_running(args.host)
+    except Exception as exc:
+        print(f'⚠ 调试桩检查失败（{type(exc).__name__}: {exc}）⇒ 判断不了游戏是否在跑')
+        return True
+    print(f'写卡前检查：{detail}')
+    if running is True:
+        print('✗ 游戏正在运行 —— 现在写卡会与 fs.mitm 抢 SD 卡（下一次启动可能崩在装载界面）。')
+        print('  请先彻底退出游戏（Home → 该游戏 → X → Close）再重试；')
+        print('  确实要强行写就加 --force-write（不推荐）。')
+        return False
+    return True
+
+
 def cmd_put(args) -> int:
+    if not assert_game_stopped(args):
+        return 1
     payload = Path(args.local).read_bytes()
 
     def action(ftp: ftplib.FTP):
@@ -202,9 +238,11 @@ def main() -> int:
     p.add_argument('local')
     p.set_defaults(func=cmd_get)
 
-    p = sub.add_parser('put', help='上传覆盖')
+    p = sub.add_parser('put', help='上传覆盖（写卡前会自动确认游戏已退出）')
     p.add_argument('local')
     p.add_argument('path')
+    p.add_argument('--force-write', action='store_true',
+                   help='跳过"游戏是否已退出"的自动检查（自己确认过再用）')
     p.set_defaults(func=cmd_put)
 
     p = sub.add_parser('sha', help='读回并算大小+sha256')

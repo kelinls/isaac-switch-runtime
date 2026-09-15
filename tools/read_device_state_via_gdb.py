@@ -290,6 +290,64 @@ def parse_processes(text: str) -> int | None:
     return None
 
 
+#: 游戏本体模块名里的识别串（`Repentance.nrs.elf`）。
+GAME_MODULE_MARKER = 'Repentance'
+
+
+def parse_module_names(info_text: str) -> list[str]:
+    """从 `monitor get info` 输出里取 `Modules:` 段的模块名。
+
+    为什么需要它：**"进程表里有 Application"不等于"游戏在跑"** ——
+    FTP 自己（`hbl.elf` + `ftpd.elf`）也是一个 Application 进程。
+    2026-09-15 实测：用户已经彻底关掉游戏、只开着 FTP，而只看 `parse_processes` 的检查
+    会一直报"游戏还在跑"，既挡住本来安全的写卡、又会让人怀疑用户没关游戏。
+    真正要看的是模块清单里有没有 `Repentance.nrs.elf`。
+    """
+    names: list[str] = []
+    in_modules = False
+    for line in info_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith('Modules:'):
+            in_modules = True
+            continue
+        if not in_modules:
+            continue
+        if not stripped:                     # 空行 = 段落结束
+            break
+        match = re.match(r'\s*0x[0-9a-f]+\s*-\s*0x[0-9a-f]+\s+(\S+)', line)
+        if match:
+            names.append(match.group(1))
+        elif names:
+            break
+    return names
+
+
+def game_is_running(ip: str) -> tuple[bool | None, str]:
+    """设备上的以撒在不在跑。返回 `(是否在跑 | None=判断不了, 说明)`。
+
+    写卡（FTP）之前必须问这一句：游戏运行时写卡会与 `fs.mitm` 抢 SD 卡，
+    轻则下一次启动崩在装载界面（见 `AGENTS.md` 的"设备取证纪律"）。
+    """
+    session = GdbSession(timeout=90)
+    try:
+        session.command(f'target extended-remote {ip}:22225')
+        pid = parse_processes(session.command('info os processes'))
+        if not pid:
+            return False, '进程表里没有 Application ⇒ 游戏没在跑'
+        session.command(f'attach {pid}')
+        names = parse_module_names(session.command('monitor get info'))
+        session.command('detach')
+    except Exception as error:               # 桩连不上/预算用光：老实说"判断不了"
+        return None, f'调试桩用不了（{type(error).__name__}: {error}）⇒ 判断不了'
+    finally:
+        session.close()
+    if not names:
+        return None, '拿不到这个 Application 的模块清单 ⇒ 判断不了'
+    if any(GAME_MODULE_MARKER in name for name in names):
+        return True, f'模块清单里有 {GAME_MODULE_MARKER} ⇒ 游戏正在运行'
+    return False, f'这个 Application 是 {" + ".join(names)}（不是以撒）⇒ 游戏没在跑'
+
+
 def parse_bases(text: str) -> tuple[int | None, int | None, int | None]:
     """返回（运行时模块基址, 插件基址, 游戏模块基址）。
 
