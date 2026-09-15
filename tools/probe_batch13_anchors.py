@@ -163,7 +163,9 @@ def sanitize_value(value: str) -> str:
     if not value or not value[0].isdigit() and value[0] != "-":
         return value
     match = NUMERIC_PREFIX.match(value)
-    return match.group(0) if match else value
+    if match is None:
+        return value
+    return match.group(0).rstrip("/")
 
 
 def parse_lua_report(text: str) -> dict[str, str]:
@@ -440,6 +442,18 @@ def compare(canonical: dict[str, object], chain: dict) -> tuple[list[dict], list
             check(key, canonical.get(key), "false",
                   "掩码后越界/负颜色必须返回 false（不能抛错、也不能返回 true）")
 
+    #: 药丸那半条：如果这一轮里有颜色是"已识别"，就把 true 分支也点出来
+    #: （`ItemPool:IsPillIdentified` 的"读到 1 ⇒ true"只有在这一刻才算真机验过）。
+    pills = str(canonical.get("pills") or "")
+    if "1" in pills:
+        colours = [index for index, flag in enumerate(pills) if flag == "1"]
+        notes.append({"key": "pills_true_branch",
+                      "lua": f"颜色 {colours} 报 true",
+                      "why": "已验到 true 分支：引擎那 15 个字节里同样这几位置 1（见上面的逐字节对照）"})
+    else:
+        notes.append({"key": "pills_true_branch", "lua": "全 0",
+                      "why": "本轮没有已识别的药丸 ⇒ 只验到 false 分支（true 分支需用过一颗药丸后再读）"})
+
     for key in ("goob",):
         if canonical.get(key) is not None:
             notes.append({"key": key, "lua": canonical[key],
@@ -632,6 +646,11 @@ def main(argv: list[str] | None = None) -> int:
             scan_base, scan_game = DEVICE.locate_by_scan(session, elf)
             base = base or scan_base or 0
             game_base = game_base or scan_game or 0
+            if not base or not game_base:
+                print("  提示：`monitor get mappings` 的输出**会被截断**（2026-09-16 实测："
+                      "只列到 0x35be… 就没有了，而游戏模块在 0x3942…），所以按映射表扫模块这条"
+                      "兜底路线不可靠。同一进程没重启时，用上一份读数里的那对基址即可："
+                      "`--base <运行时> --game-base <游戏>`（身份锚点会自校验，错了会明说）。")
         if not base or not game_base:
             print("没拿到模块基址 —— 可用 --base/--game-base 指定。")
             return 3

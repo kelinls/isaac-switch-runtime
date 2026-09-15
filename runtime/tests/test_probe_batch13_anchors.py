@@ -184,6 +184,8 @@ class ProbeBatch13AnchorsTests(unittest.TestCase):
         self.assertEqual(fields["i"], "71")
         #: `true` / `false` / `ERR:…` 不能被"数字化"清洗搞坏
         self.assertEqual(self.tool.sanitize_value("true"), "true")
+        #: 尾巴上只粘了一个 `/` 时也要削掉（否则字段数多一段，那一格只能降级成"不判定"）
+        self.assertEqual(self.tool.sanitize_value("0x20F013A7/"), "0x20F013A7")
         self.assertEqual(self.tool.sanitize_value("ERR:boom"), "ERR:boom")
 
     def test_cells_the_probe_deliberately_omits_are_not_failures(self):
@@ -219,6 +221,21 @@ class ProbeBatch13AnchorsTests(unittest.TestCase):
         code, output = self.run_report(raw)
         self.assertEqual(code, 1, output)
         self.assertIn("都与 A 通道不一致", output)
+
+    def test_the_pill_true_branch_is_called_out_when_it_is_exercised(self):
+        """★ 药丸那半条：只有真有颜色是"已识别"时，才算把 `true` 分支验到了。
+
+        全 0 时两边"都是 false"也一致，但那只说明读法一致，**没有**验到"读到 1 ⇒ true"。
+        这条断言把两种情形分清楚（免得报告看起来一样、结论却差一条）。
+        """
+        raw = raw_fixture(pills="000100000000000")
+        code, output = self.run_report(raw)
+        self.assertEqual(code, 0, output)
+        self.assertIn("已验到 true 分支", output)
+        raw = raw_fixture(pills="0" * 15)
+        code, output = self.run_report(raw)
+        self.assertEqual(code, 0, output)
+        self.assertIn("只验到 false 分支", output)
 
     def test_a_wrong_variant_is_caught(self):
         """Lua 报的 variant 与引擎内存不一致必须判红（否则等于没有验收）。"""
