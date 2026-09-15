@@ -1,6 +1,7 @@
 #include "interfaces/lua/api_sequence_probe.hpp"
 #include "interfaces/lua/isaac_api.hpp"
 #include "interfaces/lua/engine_memory_guard.hpp"
+#include "interfaces/lua/field_api.hpp"
 
 #include "interfaces/lua/mod_api.hpp"
 #include "interfaces/lua/owner_binding.hpp"
@@ -43,33 +44,15 @@ namespace isaac::runtime {
 // 而**我们自己的 API 用 `luaL_error` 报的错不走那条路** —— 真机报告 `01789219353` 因此只给出
 // 一个 `.`，无法定位是哪个 API、哪一句。
 //
-// 做法：本 TU 内把 `luaL_error(...)` 统一换成 `ReportApiError(...)`：先按同样格式记一段文本进
-// 探针缓冲区（`lua_runtime.cpp` 的 `RecordLuaErrorText`，与探针读的是同一块），再抛原来的错误。
-// 抛出行为不变（同一个 Lua 错误），只是多了一条可读证据。
+// 做法（2026-09-15 改）：**直接调 `luaL_error` 就行** —— `lua_runtime_state.hpp` 已经把它定义成宏，
+// 转调独立编译的 `LuaRuntime::ReportAndRecordLuaError`，那条路径本身就是"先把整段消息记进探针
+// 缓冲区（`RecordLuaErrorText`）、再真正抛错"，并且会带上 `file:line:` 位置前缀。
 //
-// 注意两点：
-//   * 这里的 `luaL_error` 要临时屏蔽 `lua_runtime_state.hpp` 的宏，否则会递归；
-//   * 只改本 TU：`Entity`/`ItemConfig`/`EntityPlayer` 家族的错误都从这里抛。
-template <typename... Args>
-int ReportApiError(lua_State* state, const char* format, Args... args) noexcept {
-    char message[256] = {};
-    // 显式忽略 `-Wformat-security`：`format` 在我们这里始终是字面量（34 个调用点都是），
-    // 但模板把它变成了非字面量参数，编译器无法自证。
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-security"
-    const int written = std::snprintf(message, sizeof(message), format, args...);
-#pragma GCC diagnostic pop
-    if (written > 0) {
-        const std::size_t length = static_cast<std::size_t>(written) < sizeof(message)
-                                       ? static_cast<std::size_t>(written)
-                                       : sizeof(message) - 1;
-        LuaRuntime::RecordLuaErrorText(message, length);
-    }
-#pragma push_macro("luaL_error")
-#undef luaL_error
-    return luaL_error(state, format, args...);
-#pragma pop_macro("luaL_error")
-}
+// ★ 这里原先有个**本 TU 私有的模板** `ReportApiError(...)`，做的是同一件事，已删除。原因很具体：
+// 编译器把模板体在**每个调用点整个内联** —— 每次都在栈上建一个 256 字节缓冲区、清零、把消息拷
+// 进去，再调 `RecordLuaErrorText`。实测 `IsaacGetFrameCount`（只做"检查参数个数 + 压一个整数"）
+// 编出来 **152 字节**，其中绝大部分就是这段内联代码；改走宏那条路径后，调用点只剩
+// "取字符串地址 + `bl`"。这是成本压缩最直接的一笔：API 还要成百上千地长，每个报错点省约 85 字节。
 
 // 探针（2026-09-12 第九轮）：EID 的 `hasDescription`（`eid_api.lua:1065`）第一件事就是
 // `EID:EntitySanityCheck(entity)` + `entity.Type`，只有在它返回真之后才会走到
@@ -202,12 +185,9 @@ int EntityPlayerHasCollectible(lua_State* state);
 // `EntityPlayer:AddCollectible`（2026-09-14 新增，真实现）。声明与实现同在本单元（Isaac 家族）——
 // 契约测试要求"家族方法体住在家族单元里、登记名与 catalog 的 id 一致"。
 int EntityPlayerAddCollectible(lua_State* state);
-int EntityPlayerGetPlayerType(lua_State* state);
 int EntityPlayerGetData(lua_State* state);
 int EntityPlayerGetOtherTwin(lua_State* state);
 int EntityPlayerGetEffectiveMaxHearts(lua_State* state);
-int EntityPlayerGetSoulHearts(lua_State* state);
-int EntityPlayerGetBrokenHearts(lua_State* state);
 int EntityPlayerGetActiveItem(lua_State* state);
 // 批次 6（2026-09-12）：EID 在 update 回调里逐帧调用的一批 `EntityPlayer` 成员。缺任何一个，
 // `player:X()` 就是 "attempt to call a nil value"，整条回调被派发器静默摘除（真机报告
@@ -223,7 +203,6 @@ int EntityPlayerGetNumKeys(lua_State* state);
 int EntityPlayerGetNumBombs(lua_State* state);
 int EntityPlayerGetNumCoins(lua_State* state);
 int EntityPlayerGetHearts(lua_State* state);
-int EntityPlayerGetMaxHearts(lua_State* state);
 int EntityPlayerGetSoulCharge(lua_State* state);
 int EntityPlayerGetBloodCharge(lua_State* state);
 int EntityPlayerGetPoopMana(lua_State* state);
@@ -243,7 +222,6 @@ int EntityPlayerHasPlayerForm(lua_State* state);
 int EntityPlayerCanPickRedHearts(lua_State* state);
 int EntityPlayerIsSubPlayer(lua_State* state);
 int EntityPlayerGetTrinket(lua_State* state);
-int EntityPlayerGetBabySkin(lua_State* state);
 
 // 全局函数（`GetPtrHash`）。
 int GlobalGetPtrHash(lua_State* state);
@@ -293,15 +271,11 @@ constexpr LuaHandlerBinding kIsaacHandlers[] = {
 constexpr LuaHandlerBinding kEntityPlayerHandlers[] = {
     {0x0E010015, &EntityPlayerHasCollectible},
     {0x0E01004E, &EntityPlayerAddCollectible},
-    {0x0E010016, &EntityPlayerGetPlayerType},
     {0x0E010017, &EntityPlayerGetData},
     {0x0E01001F, &EntityPlayerGetOtherTwin},
     {0x0E010020, &EntityPlayerGetEffectiveMaxHearts},
-    {0x0E010021, &EntityPlayerGetSoulHearts},
-    {0x0E010022, &EntityPlayerGetBrokenHearts},
     {0x0E010026, &EntityPlayerGetActiveItem},
     {0x0E010027, &EntityPlayerGetTrinket},
-    {0x0E010028, &EntityPlayerGetBabySkin},
     // 批次 6：EID 逐帧调用的一批成员（安全默认值，语义与成熟度见各自的实现注释）。
     {0x0E010030, &EntityPlayerGetPill},
     {0x0E010031, &EntityPlayerGetCard},
@@ -314,7 +288,6 @@ constexpr LuaHandlerBinding kEntityPlayerHandlers[] = {
     {0x0E010038, &EntityPlayerGetNumBombs},
     {0x0E010039, &EntityPlayerGetNumCoins},
     {0x0E01003A, &EntityPlayerGetHearts},
-    {0x0E01003B, &EntityPlayerGetMaxHearts},
     {0x0E01003C, &EntityPlayerGetSoulCharge},
     {0x0E01003D, &EntityPlayerGetBloodCharge},
     {0x0E01003E, &EntityPlayerGetPoopMana},
@@ -501,7 +474,7 @@ int WorldToIdentity(lua_State* state, Stub stub, const char* member) {
 
 int IsaacGetFrameCount(lua_State* state) {
     if (lua_gettop(state) != 0) {
-        return ReportApiError(state, "Isaac.GetFrameCount accepts no arguments");
+        return luaL_error(state, "Isaac.GetFrameCount accepts no arguments");
     }
     lua_pushinteger(state, static_cast<lua_Integer>(FrameCount()));
     return 1;
@@ -509,7 +482,7 @@ int IsaacGetFrameCount(lua_State* state) {
 
 int IsaacGetTime(lua_State* state) {
     if (lua_gettop(state) != 0) {
-        return ReportApiError(state, "Isaac.GetTime accepts no arguments");
+        return luaL_error(state, "Isaac.GetTime accepts no arguments");
     }
     // **近似**：`GetFrameCount() / 30` 的整数秒。PC 版返回的是引擎自己的游戏内计时
     // （暂停、过场、加载都由引擎扣减），我们的引擎时钟偏移尚未定位，所以这里只是
@@ -520,7 +493,7 @@ int IsaacGetTime(lua_State* state) {
 
 int IsaacDebugString(lua_State* state) {
     if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "Isaac.DebugString accepts one string");
+        return luaL_error(state, "Isaac.DebugString accepts one string");
     }
     std::size_t length = 0;
     const char* text = luaL_checklstring(state, 1, &length);
@@ -530,7 +503,7 @@ int IsaacDebugString(lua_State* state) {
 
 int IsaacIsInGame(lua_State* state) {
     if (lua_gettop(state) != 0) {
-        return ReportApiError(state, "Isaac.IsInGame accepts no arguments");
+        return luaL_error(state, "Isaac.IsInGame accepts no arguments");
     }
     // 与各家族同一个判断：只有处在 Runtime 的托管回调作用域里，Lua 才"在游戏里"——
     // 那里的游戏对象才是可读的。
@@ -552,11 +525,11 @@ int IsaacIsInGame(lua_State* state) {
 int IsaacRunCallback(lua_State* state) {
     const int argumentCount = lua_gettop(state);
     if (argumentCount < 1) {
-        return ReportApiError(state, "Isaac.RunCallback expects a callback id");
+        return luaL_error(state, "Isaac.RunCallback expects a callback id");
     }
     if (lua_type(state, 1) == LUA_TSTRING) {
         if (g_RunCallbackDepth >= kRunCallbackMaximumDepth) {
-            return ReportApiError(state, "Isaac.RunCallback nesting exceeds the maximum depth");
+            return luaL_error(state, "Isaac.RunCallback nesting exceeds the maximum depth");
         }
         ++g_RunCallbackDepth;
         const int results = RunNamedCallbacks(state, lua_tostring(state, 1), 2);
@@ -565,12 +538,12 @@ int IsaacRunCallback(lua_State* state) {
         return results;
     }
     if (!lua_isinteger(state, 1)) {
-        return ReportApiError(state, "Isaac.RunCallback expects a callback id");
+        return luaL_error(state, "Isaac.RunCallback expects a callback id");
     }
     const lua_Integer requested = lua_tointegerx(state, 1, nullptr);
     if (requested < 0 ||
         requested > static_cast<lua_Integer>(std::numeric_limits<CallbackId>::max())) {
-        return ReportApiError(state, "Isaac.RunCallback received an out-of-range callback id");
+        return luaL_error(state, "Isaac.RunCallback received an out-of-range callback id");
     }
     const CallbackId id = static_cast<CallbackId>(requested);
     CallbackRegistry& registry = LuaRuntime::ManagedCallbackRegistry();
@@ -579,7 +552,7 @@ int IsaacRunCallback(lua_State* state) {
         return 0;
     }
     if (g_RunCallbackDepth >= kRunCallbackMaximumDepth) {
-        return ReportApiError(state, "Isaac.RunCallback nesting exceeds the maximum depth");
+        return luaL_error(state, "Isaac.RunCallback nesting exceeds the maximum depth");
     }
     ++g_RunCallbackDepth;
     for (std::size_t index = 0; index < registrations; ++index) {
@@ -877,7 +850,7 @@ EntityHandle* CheckEntityHandle(lua_State* state, int index) {
         handle = static_cast<EntityHandle*>(luaL_testudata(state, index, kEntityPickupMetatable));
     }
     if (handle == nullptr) {
-        ReportApiError(state, "expected an Entity, EntityPlayer or EntityPickup");
+        luaL_error(state, "expected an Entity, EntityPlayer or EntityPickup");
         return nullptr;  // 不会到达：`luaL_error` 长跳到受保护调用
     }
     return handle;
@@ -1678,7 +1651,7 @@ int EntityPickupIndex(lua_State* state) {
 int EntityToPlayer(lua_State* state) {
     auto* handle = CheckEntityHandle(state, 1);
     if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "Entity:ToPlayer accepts no arguments");
+        return luaL_error(state, "Entity:ToPlayer accepts no arguments");
     }
     // PC 文档（`Entity.md:631`）："If the conversion is not successful, this function returns
     // `nil`"。批次 2 时只会交付出 `EntityPlayer`，所以无条件返回自身；批次 4 起
@@ -1709,7 +1682,7 @@ int EntityToPickup(lua_State* state) {
     RecordFilterChain(2U);
     auto* handle = CheckEntityHandle(state, 1);
     if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "Entity:ToPickup accepts no arguments");
+        return luaL_error(state, "Entity:ToPickup accepts no arguments");
     }
     const std::uintptr_t entity = ValidatedEntity(handle);
     const std::uintptr_t base = EngineModuleBase();
@@ -1744,7 +1717,7 @@ int EntityPickupIsShopItem(lua_State* state) {
     RecordFilterChain(4U);
     auto* handle = CheckEntityHandle(state, 1);
     if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "EntityPickup:IsShopItem accepts no arguments");
+        return luaL_error(state, "EntityPickup:IsShopItem accepts no arguments");
     }
     // 仍然走一次句柄校验（`CheckEntityHandle` 已经保证这是 `EntityPickup` 视图；这里再确认
     // 底层指针仍然是一张有效实体），但返回值**恒为 false**：见上面的注释 —— 我们没有能判定
@@ -1765,7 +1738,7 @@ int EntityGetData(lua_State* state) {
     RecordFilterChain(0U);
     auto* handle = CheckEntityHandle(state, 1);
     if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "Entity:GetData accepts no arguments");
+        return luaL_error(state, "Entity:GetData accepts no arguments");
     }
     const std::uintptr_t entity = ValidatedEntity(handle);
     if (entity == 0) {
@@ -1799,7 +1772,7 @@ int EntityGetSprite(lua_State* state) {
     RecordFilterChain(1U);
     auto* handle = CheckEntityHandle(state, 1);
     if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "Entity:GetSprite accepts no arguments");
+        return luaL_error(state, "Entity:GetSprite accepts no arguments");
     }
     const std::uintptr_t entity = ValidatedEntity(handle);
     if (entity == 0) {
@@ -1867,13 +1840,13 @@ int EntityPlayerAddCollectible(lua_State* state) {
     auto* handle = CheckEntityHandle(state, 1);
     const int argumentCount = lua_gettop(state);
     if (argumentCount < 2 || argumentCount > 6 || !lua_isinteger(state, 2)) {
-        return ReportApiError(
+        return luaL_error(
             state,
             "EntityPlayer:AddCollectible accepts (type[, charge[, force[, slot[, varData]]]])");
     }
     const lua_Integer type = lua_tointegerx(state, 2, nullptr);
     if (type < 0 || static_cast<std::uint64_t>(type) > std::numeric_limits<std::uint32_t>::max()) {
-        return ReportApiError(state, "EntityPlayer:AddCollectible type is outside uint32 range");
+        return luaL_error(state, "EntityPlayer:AddCollectible type is outside uint32 range");
     }
     const lua_Integer charge = argumentCount >= 3 ? lua_tointegerx(state, 3, nullptr) : 0;
     const bool force = argumentCount >= 4 && lua_toboolean(state, 4) != 0;
@@ -1915,12 +1888,12 @@ int EntityPlayerHasCollectible(lua_State* state) {
     RecordApiSequenceSecondary(0U);
     auto* handle = CheckEntityHandle(state, 1);
     if (lua_gettop(state) != 2 || !lua_isinteger(state, 2)) {
-        return ReportApiError(state, "EntityPlayer:HasCollectible accepts one collectible id");
+        return luaL_error(state, "EntityPlayer:HasCollectible accepts one collectible id");
     }
     const lua_Integer requested = lua_tointegerx(state, 2, nullptr);
     if (requested < 0 ||
         static_cast<std::uint64_t>(requested) > std::numeric_limits<std::uint32_t>::max()) {
-        return ReportApiError(state, "EntityPlayer:HasCollectible collectible id is outside uint32 range");
+        return luaL_error(state, "EntityPlayer:HasCollectible collectible id is outside uint32 range");
     }
     const std::uintptr_t entity = ValidatedEntityPlayer(handle);
     const std::uintptr_t method = HasCollectibleMethod();
@@ -1934,23 +1907,6 @@ int EntityPlayerHasCollectible(lua_State* state) {
     return 1;
 }
 
-int EntityPlayerGetPlayerType(lua_State* state) {
-    RecordApiSequenceSecondary(1U);
-    auto* handle = CheckEntityHandle(state, 1);
-    if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "EntityPlayer:GetPlayerType accepts no arguments");
-    }
-    const std::uintptr_t entity = ValidatedEntityPlayer(handle);
-    std::uint32_t playerType = 0;
-    if (entity == 0 || !ReadEngine(entity + kEntityPlayerTypeOffset, &playerType)) {
-        // 读不出来就给 nil，而不是编一个枚举值：`player:GetPlayerType() == PlayerType.ISAAC`
-        // 这种比较在 nil 上自然为 false，而假值会让 Mod 走进错误的判断分支。
-        lua_pushnil(state);
-        return 1;
-    }
-    lua_pushinteger(state, static_cast<lua_Integer>(playerType));
-    return 1;
-}
 
 // `EntityPlayer:GetData()`：批次 2 起它返回 nil（"ModData 结构还没有证据"），**批次 4 起
 // 返回 Runtime 自管的那张表** —— EID 真的往它里面写（`features/eid_api.lua:2229`：
@@ -1959,7 +1915,7 @@ int EntityPlayerGetPlayerType(lua_State* state) {
 int EntityPlayerGetData(lua_State* state) {
     auto* handle = CheckEntityHandle(state, 1);
     if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "EntityPlayer:GetData accepts no arguments");
+        return luaL_error(state, "EntityPlayer:GetData accepts no arguments");
     }
     const std::uintptr_t entity = ValidatedEntityPlayer(handle);
     if (entity == 0) {
@@ -1982,27 +1938,12 @@ int EntityPlayerGetData(lua_State* state) {
 int EntityPlayerGetOtherTwin(lua_State* state) {
     CheckEntityHandle(state, 1);
     if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "EntityPlayer:GetOtherTwin accepts no arguments");
+        return luaL_error(state, "EntityPlayer:GetOtherTwin accepts no arguments");
     }
     PushNil(state);
     return 1;
 }
 
-// 读一个玩家整数字段，读不出来时给 0。**恒返回数字**：EID 拿血量做算术
-// （`EID.player:GetEffectiveMaxHearts() + EID.player:GetSoulHearts() + EID.player:GetBrokenHearts()*2`，
-// `main.lua:1288`），返回 nil 会变成 "attempt to perform arithmetic on a nil value"。
-// 0 只会让 EID 选中偏移最小的那套 HUD 排版（`main.lua:1288` 的三个分支），
-// 而 nil 会直接把整段渲染打断。
-int PushPlayerCounterOrZero(lua_State* state, const EntityHandle* handle, std::uintptr_t offset) {
-    std::uint32_t value = 0;
-    const std::uintptr_t entity = ValidatedEntityPlayer(handle);
-    if (entity != 0 && ReadEngine(entity + offset, &value)) {
-        lua_pushinteger(state, static_cast<lua_Integer>(value));
-        return 1;
-    }
-    PushZero(state);
-    return 1;
-}
 
 // `EntityPlayer:GetEffectiveMaxHearts()`：**红心容器**（`+0x16B8`，半心为单位）加上
 // **2 × 骨心**（`+0x2450`）—— 与引擎自己的 `Entity_Player::GetEffectiveMaxHearts()`
@@ -2012,7 +1953,7 @@ int PushPlayerCounterOrZero(lua_State* state, const EntityHandle* handle, std::u
 int EntityPlayerGetEffectiveMaxHearts(lua_State* state) {
     auto* handle = CheckEntityHandle(state, 1);
     if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "EntityPlayer:GetEffectiveMaxHearts accepts no arguments");
+        return luaL_error(state, "EntityPlayer:GetEffectiveMaxHearts accepts no arguments");
     }
     const std::uintptr_t entity = ValidatedEntityPlayer(handle);
     std::uint32_t containers = 0;
@@ -2037,26 +1978,7 @@ int EntityPlayerGetEffectiveMaxHearts(lua_State* state) {
     return 1;
 }
 
-// `EntityPlayer:GetSoulHearts()`：`+0x16C4`（半心为单位，含黑心）。PC 文档
-// （`EntityPlayer.md:1266`）："Returns the amount of Soul Hearts the player has. 1 unit is half
-// a heart." + 注记 "Black Hearts count toward this total"。
-int EntityPlayerGetSoulHearts(lua_State* state) {
-    auto* handle = CheckEntityHandle(state, 1);
-    if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "EntityPlayer:GetSoulHearts accepts no arguments");
-    }
-    return PushPlayerCounterOrZero(state, handle, kEntityPlayerSoulHeartsOffset);
-}
 
-// `EntityPlayer:GetBrokenHearts()`：`+0x2470`。PC 文档（`EntityPlayer.md:873`）明确它
-// **不**像 `GetMaxHearts` 那样翻倍："if the player has 3 broken hearts, this will return 3"。
-int EntityPlayerGetBrokenHearts(lua_State* state) {
-    auto* handle = CheckEntityHandle(state, 1);
-    if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "EntityPlayer:GetBrokenHearts accepts no arguments");
-    }
-    return PushPlayerCounterOrZero(state, handle, kEntityPlayerBrokenHeartsOffset);
-}
 
 // 读一个 `Entity_Player` 无符号整数字段并压栈，读不出来时给 0。**恒返回数字**：
 // EID 把主动道具/饰品/婴儿皮肤的结果直接拿去比较或当表键（`main.lua:1076` 那一类写法），
@@ -2085,7 +2007,7 @@ int EntityPlayerGetActiveItem(lua_State* state) {
     auto* handle = CheckEntityHandle(state, 1);
     const int argumentCount = lua_gettop(state);
     if (argumentCount > 2) {
-        return ReportApiError(state, "EntityPlayer:GetActiveItem accepts an optional active slot");
+        return luaL_error(state, "EntityPlayer:GetActiveItem accepts an optional active slot");
     }
     lua_Integer slot = 0;
     if (argumentCount == 2 && !ReadIntegerArgument(state, 2, &slot)) {
@@ -2112,7 +2034,7 @@ int EntityPlayerGetTrinket(lua_State* state) {
     auto* handle = CheckEntityHandle(state, 1);
     lua_Integer slot = 0;
     if (lua_gettop(state) != 2 || !ReadIntegerArgument(state, 2, &slot)) {
-        return ReportApiError(state, "EntityPlayer:GetTrinket accepts one trinket slot");
+        return luaL_error(state, "EntityPlayer:GetTrinket accepts one trinket slot");
     }
     if (slot < 0 || static_cast<std::uint64_t>(slot) >= kEntityPlayerTrinketSlotCount) {
         PushZero(state);
@@ -2149,7 +2071,7 @@ namespace {
 bool EntityPlayerProbeNoArguments(lua_State* state, const char* name) {
     static_cast<void>(CheckEntityHandle(state, 1));
     if (lua_gettop(state) != 1) {
-        ReportApiError(state, "%s accepts no arguments", name);
+        luaL_error(state, "%s accepts no arguments", name);
         return false;
     }
     return true;
@@ -2160,7 +2082,7 @@ bool EntityPlayerProbeSlots(lua_State* state, const char* name, int maximum) {
     lua_Integer slot = 0;
     if (lua_gettop(state) != 2 || !ReadIntegerArgument(state, 2, &slot) || slot < 0 ||
         slot >= maximum) {
-        ReportApiError(state, "%s accepts one slot in [0, %d]", name, maximum - 1);
+        luaL_error(state, "%s accepts one slot in [0, %d]", name, maximum - 1);
         return false;
     }
     return true;
@@ -2181,7 +2103,7 @@ bool EntityPlayerProbeSlots(lua_State* state, const char* name, int maximum) {
 bool EntityPlayerProbePocketSlot(lua_State* state, const char* name, lua_Integer* slot) {
     static_cast<void>(CheckEntityHandle(state, 1));
     if (lua_gettop(state) != 2 || !ReadIntegerArgument(state, 2, slot)) {
-        ReportApiError(state, "%s accepts one integer slot", name);
+        luaL_error(state, "%s accepts one integer slot", name);
         return false;
     }
     return true;
@@ -2286,13 +2208,6 @@ int EntityPlayerGetHearts(lua_State* state) {
     return 1;
 }
 
-int EntityPlayerGetMaxHearts(lua_State* state) {
-    if (!EntityPlayerProbeNoArguments(state, "EntityPlayer:GetMaxHearts")) {
-        return 0;
-    }
-    PushZero(state);
-    return 1;
-}
 
 int EntityPlayerGetSoulCharge(lua_State* state) {
     if (!EntityPlayerProbeNoArguments(state, "EntityPlayer:GetSoulCharge")) {
@@ -2366,7 +2281,7 @@ int EntityPlayerGetCollectibleNum(lua_State* state) {
     lua_Integer collectibleId = 0;
     if (argumentCount < 2 || argumentCount > 3 ||
         !ReadIntegerArgument(state, 2, &collectibleId)) {
-        return ReportApiError(
+        return luaL_error(
             state,
             "EntityPlayer:GetCollectibleNum accepts (collectible[, ignoreModifiers])");
     }
@@ -2407,7 +2322,7 @@ int EntityPlayerGetTrinketMultiplier(lua_State* state) {
     auto* handle = CheckEntityHandle(state, 1);
     lua_Integer trinketId = 0;
     if (lua_gettop(state) != 2 || !ReadIntegerArgument(state, 2, &trinketId)) {
-        return ReportApiError(state, "EntityPlayer:GetTrinketMultiplier accepts one trinket id");
+        return luaL_error(state, "EntityPlayer:GetTrinketMultiplier accepts one trinket id");
     }
     const std::uintptr_t entity = ValidatedEntityPlayer(handle);
     if (entity == 0 || trinketId <= 0 ||
@@ -2441,7 +2356,7 @@ int EntityPlayerGetPlayerFormCounter(lua_State* state) {
 int EntityPlayerGetSmeltedTrinkets(lua_State* state) {
     static_cast<void>(CheckEntityHandle(state, 1));
     if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "EntityPlayer:GetSmeltedTrinkets accepts no arguments");
+        return luaL_error(state, "EntityPlayer:GetSmeltedTrinkets accepts no arguments");
     }
     // PC 返回一个可遍历集合；空表是最安全的近似（Mod 遍历得到 0 个元素，而不是报错）。
     lua_newtable(state);
@@ -2451,7 +2366,7 @@ int EntityPlayerGetSmeltedTrinkets(lua_State* state) {
 int EntityPlayerGetEffects(lua_State* state) {
     static_cast<void>(CheckEntityHandle(state, 1));
     if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "EntityPlayer:GetEffects accepts no arguments");
+        return luaL_error(state, "EntityPlayer:GetEffects accepts no arguments");
     }
     lua_newtable(state);  // 同上：空集合
     return 1;
@@ -2506,24 +2421,6 @@ int EntityPlayerIsSubPlayer(lua_State* state) {
     return 1;
 }
 
-// `EntityPlayer:GetBabySkin()`（批次 4）：`+0x20E8`，**有符号** —— 非婴儿（普通角色）时是
-// **-1**，这正是 EID 的判据（"婴儿才有皮肤"）。按无符号读会把它变成 4294967295，
-// 所以这里必须按 `int32` 读（与 `ControllerIndex` 同一条规则）。
-int EntityPlayerGetBabySkin(lua_State* state) {
-    auto* handle = CheckEntityHandle(state, 1);
-    if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "EntityPlayer:GetBabySkin accepts no arguments");
-    }
-    std::int32_t skin = -1;
-    const std::uintptr_t entity = ValidatedEntityPlayer(handle);
-    if (entity == 0 || !ReadEngine(entity + kEntityPlayerBabySkinOffset, &skin)) {
-        // 读不出来同样返回 -1（= "不是婴儿"）：PC 的非婴儿值就是 -1，编一个非负值会让 Mod
-        // 走进"这是婴儿"的分支去查一套不存在的皮肤。
-        skin = -1;
-    }
-    lua_pushinteger(state, static_cast<lua_Integer>(skin));
-    return 1;
-}
 
 // --- ItemConfig 只读视图（批次 2b）-------------------------------------------
 //
@@ -2949,7 +2846,7 @@ int ItemConfigItemHasTags(lua_State* state) {
 int ItemConfigItemIsCollectible(lua_State* state) {
     auto* handle = CheckItemConfigItemHandle(state, 1);
     if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "ItemConfig_Item:IsCollectible accepts no arguments");
+        return luaL_error(state, "ItemConfig_Item:IsCollectible accepts no arguments");
     }
     const std::uintptr_t item = ValidatedItem(handle);
     std::uint32_t type = kItemTypeNull;
@@ -3422,14 +3319,14 @@ int IsaacGetTrinketIdByName(lua_State* state) {
 int IsaacGetCallbacks(lua_State* state) {
     const int argumentCount = lua_gettop(state);
     if (argumentCount < 1 || argumentCount > 2) {
-        return ReportApiError(state, "Isaac.GetCallbacks accepts a callback id and an optional flag");
+        return luaL_error(state, "Isaac.GetCallbacks accepts a callback id and an optional flag");
     }
     if (lua_type(state, 1) == LUA_TSTRING) {
         PushNamedCallbacks(state, lua_tostring(state, 1));
         return 1;
     }
     if (!lua_isinteger(state, 1)) {
-        return ReportApiError(state, "Isaac.GetCallbacks expects a callback id");
+        return luaL_error(state, "Isaac.GetCallbacks expects a callback id");
     }
     const lua_Integer requested = lua_tointegerx(state, 1, nullptr);
     if (requested < 0 ||
@@ -3489,7 +3386,7 @@ int IsaacRenderScaledText(lua_State* state) {
 int GlobalGetPtrHash(lua_State* state) {
     RecordFilterChain(5U);
     if (lua_gettop(state) != 1) {
-        return ReportApiError(state, "GetPtrHash accepts one object");
+        return luaL_error(state, "GetPtrHash accepts one object");
     }
     for (const char* metatable : {kEntityMetatable, kEntityPlayerMetatable, kEntityPickupMetatable}) {
         auto* handle = static_cast<EntityHandle*>(luaL_testudata(state, 1, metatable));
@@ -3507,6 +3404,142 @@ int GlobalGetPtrHash(lua_State* state) {
 
 } // namespace
 
+// ============================================================================
+// 字段读取型 API：共享处理器 + 数据行（门禁三期成本压缩，机制说明见 `field_api.hpp`）
+// ============================================================================
+namespace {
+
+//: 从 Lua 栈上第 `index` 个参数解出接收者对象地址（无效/不可读时返回 0）。
+std::uintptr_t ResolveFieldReceipt(lua_State* state, FieldReceipt receipt, int index) {
+    switch (receipt) {
+        case FieldReceipt::Entity: {
+            auto* handle = CheckEntityHandle(state, index);
+            return ValidatedEntity(handle);
+        }
+        case FieldReceipt::EntityPlayer: {
+            auto* handle = CheckEntityHandle(state, index);
+            return ValidatedEntityPlayer(handle);
+        }
+        case FieldReceipt::ItemConfigItem: {
+            auto* handle = CheckItemConfigItemHandle(state, index);
+            return ValidatedItem(handle);
+        }
+    }
+    return 0;
+}
+
+void PushMissingFieldValue(lua_State* state, FieldMissing missing) {
+    switch (missing) {
+        case FieldMissing::Nil:
+            lua_pushnil(state);
+            return;
+        case FieldMissing::False:
+            lua_pushboolean(state, 0);
+            return;
+        case FieldMissing::MinusOne:
+            lua_pushinteger(state, -1);
+            return;
+        case FieldMissing::Zero:
+        default:
+            PushZero(state);
+            return;
+    }
+}
+
+//: Entity 族的字段读取型 API。
+//:
+//: 每一行 = 一个 API，**0 字节代码**；手写同类方法实测 236–312 字节。
+//: 只收"无参数、接收者+固定偏移、读不到按族约定降级"的形状；带参数或需要分支的（例如
+//: `GetEffectiveMaxHearts` 要按 `PlayerType` 决定是否算骨心）继续手写，不硬塞。
+constexpr FieldApiRow kEntityFieldApis[] = {
+    // `EntityPlayer:GetPlayerType()`：`+0x1738`。读不到给 nil（`== PlayerType.ISAAC` 在 nil
+    // 上自然为假，假值会让 Mod 走进错误分支）；探针位 1 与原先手写实现保持一致。
+    {0x0E010016, kEntityPlayerTypeOffset, 0, FieldKind::U32, FieldMissing::Nil,
+     FieldReceipt::EntityPlayer, 1},
+    // `EntityPlayer:GetSoulHearts()`：`+0x16C4`，半心为单位（PC 文档：1 单位 = 半颗心）。
+    {0x0E010021, kEntityPlayerSoulHeartsOffset, 0, FieldKind::U32, FieldMissing::Zero,
+     FieldReceipt::EntityPlayer, 0xFF},
+    // `EntityPlayer:GetBrokenHearts()`：`+0x2470`。PC 文档明确它**不**翻倍。
+    {0x0E010022, kEntityPlayerBrokenHeartsOffset, 0, FieldKind::U32, FieldMissing::Zero,
+     FieldReceipt::EntityPlayer, 0xFF},
+    // `EntityPlayer:GetMaxHearts()`：`+0x16B8`（红心**容器**，1 单位 = 半颗心容器 ——
+    // PC 文档 `EntityPlayer.md` 的 `GetMaxHearts` 原文）。原先这里返回硬编码 0，
+    // 属于"有实现但语义偏弱"，现在按已确认偏移真读。
+    {0x0E01003B, kEntityPlayerRedHeartContainersOffset, 0, FieldKind::U32, FieldMissing::Zero,
+     FieldReceipt::EntityPlayer, 0xFF},
+    // `EntityPlayer:GetBabySkin()`：`+0x20E8`，**有符号**，非婴儿 = `-1`（读不到也给 -1：
+    // 编一个非负值会让 Mod 走进"这是婴儿"的分支去查一套不存在的皮肤）。
+    {0x0E010028, kEntityPlayerBabySkinOffset, 0, FieldKind::I32, FieldMissing::MinusOne,
+     FieldReceipt::EntityPlayer, 0xFF},
+};
+
+} // namespace
+
+int FieldApiHandler(lua_State* state) {
+    const auto* row =
+        static_cast<const FieldApiRow*>(lua_touserdata(state, lua_upvalueindex(1)));
+    if (row == nullptr) {
+        return luaL_error(state, "field api row missing");
+    }
+    if (row->probeBit != 0xFF) {
+        RecordApiSequenceSecondary(row->probeBit);
+    }
+    if (lua_gettop(state) != 1) {
+        // 消息按 catalog 里的 `owner:name` 现拼，与手写处理器逐字一致
+        // （例如 `"EntityPlayer:GetSoulHearts accepts no arguments"`）。只在出错路径上拼。
+        const LuaApiDescriptor* descriptor = ApiCatalog::Default().Find(row->id);
+        return luaL_error(state, "%s:%s accepts no arguments",
+                          descriptor != nullptr ? descriptor->owner : "?",
+                          descriptor != nullptr ? descriptor->name : "?");
+    }
+    const std::uintptr_t receiver = ResolveFieldReceipt(state, row->receipt, 1);
+    if (receiver == 0) {
+        PushMissingFieldValue(state, row->missing);
+        return 1;
+    }
+    switch (row->kind) {
+        case FieldKind::I32: {
+            std::int32_t value = 0;
+            if (!ReadEngine(receiver + row->offset, &value)) {
+                PushMissingFieldValue(state, row->missing);
+                return 1;
+            }
+            lua_pushinteger(state, static_cast<lua_Integer>(value));
+            return 1;
+        }
+        case FieldKind::Bool: {
+            std::uint8_t value = 0;
+            if (!ReadEngine(receiver + row->offset, &value)) {
+                PushMissingFieldValue(state, row->missing);
+                return 1;
+            }
+            lua_pushboolean(state, value != 0 ? 1 : 0);
+            return 1;
+        }
+        case FieldKind::Sum2U32: {
+            std::uint32_t first = 0;
+            std::uint32_t second = 0;
+            if (!ReadEngine(receiver + row->offset, &first) ||
+                !ReadEngine(receiver + row->offset2, &second)) {
+                PushMissingFieldValue(state, row->missing);
+                return 1;
+            }
+            lua_pushinteger(state, static_cast<lua_Integer>(first + second));
+            return 1;
+        }
+        case FieldKind::U32:
+        default: {
+            std::uint32_t value = 0;
+            if (!ReadEngine(receiver + row->offset, &value)) {
+                PushMissingFieldValue(state, row->missing);
+                return 1;
+            }
+            lua_pushinteger(state, static_cast<lua_Integer>(value));
+            return 1;
+        }
+    }
+}
+
 // 引擎实体存活判据的导出实现（声明与理由见 `isaac_api.hpp`）：就是 `ValidatedEntity` 用的那一条，
 // 不另写一份 —— `sprite_api.cpp` 的引擎实体 `Sprite` 句柄每次访问都要重新问一次。
 bool IsLiveEntityPointer(std::uintptr_t candidate) noexcept {
@@ -3523,7 +3556,8 @@ std::size_t AttachEntityMethods(lua_State* state) noexcept {
 
 std::size_t AttachEntityPlayerMethods(lua_State* state) noexcept {
     return AttachOwnerMethods(state, kEntityPlayerOwner, kEntityPlayerHandlers,
-                              RowCount(kEntityPlayerHandlers));
+                              RowCount(kEntityPlayerHandlers), kEntityFieldApis,
+                              RowCount(kEntityFieldApis));
 }
 
 std::size_t AttachEntityPickupMethods(lua_State* state) noexcept {

@@ -140,10 +140,12 @@ int main() {
         constexpr int rounds = 20000;
 
         std::atomic<bool> stop{false};
+        std::atomic<bool> readerStarted{false};
         std::atomic<unsigned long long> falseHits{0};
         std::atomic<unsigned long long> reads{0};
 
         std::thread reader([&]() {
+            readerStarted.store(true, std::memory_order_release);
             while (!stop.load(std::memory_order_relaxed)) {
                 for (std::uintptr_t index = 0; index < 8; ++index) {
                     // 缝隙中点：布局 A 覆盖 [0, 0x1000)，布局 B 覆盖 [0x4000, 0x5000)，
@@ -156,6 +158,15 @@ int main() {
                 }
             }
         });
+
+        // ★ 必须等读线程**真的开始**再让写线程跑完那几轮。
+        // 2026-09-15 实测：这条用例原先直接开跑，读线程能不能在写线程跑完 20000 轮之前抢到一次
+        // 调度完全看运气 —— 门禁改成 8 个模块并行之后，CPU 争用把它变成间歇性红
+        // （`GUARD_FAIL concurrent-reader-ran`，而待测代码一点问题没有）。
+        // 这是"夹具靠调度运气"，不是"断言错"：加上这句就稳定，下面几条断言一个字没改。
+        while (!readerStarted.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
 
         for (int round = 0; round < rounds; ++round) {
             const std::uintptr_t shift = ((round % 2) == 0) ? 0 : layoutShift;

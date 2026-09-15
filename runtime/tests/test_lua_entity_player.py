@@ -151,6 +151,14 @@ void FillPlayer(bool validVtable) {
     WriteAt<float>(g_PlayerBytes, kEntityPositionOffset + sizeof(float), 280.0F);
     WriteAt<float>(g_PlayerBytes, kEntitySizeOffset, 12.5F);
     WriteAt<std::uint32_t>(g_PlayerBytes, kEntityPlayerTypeOffset, 0);
+    // 字段读取型 API（**数据行**机制，见 `field_api.hpp`）要读的三个偏移。
+    // 值刻意取非零/非默认，用来证明"真的读了内存"，而不是像以前的桩那样返回硬编码 0：
+    //   * 红心容器 = 6（半心单位）⇒ `GetMaxHearts()` 必须回 6；
+    //   * 魂心 = 4（半心单位）⇒ `GetSoulHearts()` 必须回 4；
+    //   * 婴儿皮肤 = -1（**有符号**，非婴儿）⇒ `GetBabySkin()` 必须回 -1 而不是 4294967295。
+    WriteAt<std::uint32_t>(g_PlayerBytes, kEntityPlayerRedHeartContainersOffset, 6);
+    WriteAt<std::uint32_t>(g_PlayerBytes, kEntityPlayerSoulHeartsOffset, 4);
+    WriteAt<std::int32_t>(g_PlayerBytes, kEntityPlayerBabySkinOffset, -1);
     // `Entity.Index` 是**房间实体表序号**（`Entity+0x30`，批次 4 定位），与"玩家在 `players`
     // 向量里的下标"（`+0x19F0`）不是同一个量；两个偏移刻意写不同的值，用来钉住读的是哪个。
     WriteAt<std::uint32_t>(g_PlayerBytes, kEntityIndexOffset, 7);
@@ -393,6 +401,21 @@ local function verifyFields(player)
     check(ok, name .. ' must not raise: ' .. tostring(value))
     check(type(value) == 'number', name .. ' must return a number, got ' .. describe(value))
   end
+  -- 字段读取型 API（**数据行**机制，见 `field_api.hpp`）：值必须来自伪造内存里那几个偏移，
+  -- 而不是像以前的桩那样返回硬编码 0；`GetBabySkin` 还要证明是**有符号**读。
+  check(player:GetMaxHearts() == 6,
+        'GetMaxHearts must read the heart-container field (+0x16B8), got '
+        .. describe(player:GetMaxHearts()))
+  check(player:GetSoulHearts() == 4,
+        'GetSoulHearts must read the soul-heart field (+0x16C4), got '
+        .. describe(player:GetSoulHearts()))
+  check(player:GetBabySkin() == -1,
+        'GetBabySkin must be a signed read (non-baby = -1), got ' .. describe(player:GetBabySkin()))
+  -- 参数个数不对：共享处理器要按 catalog 里的 `owner:name` 现拼消息（与手写时代逐字一致）。
+  local okArity, arityError = pcall(function() return player:GetMaxHearts(1) end)
+  check(not okArity and string.find(tostring(arityError),
+        'EntityPlayer:GetMaxHearts accepts no arguments', 1, true) ~= nil,
+        'wrong arity must name the method, got ' .. tostring(arityError))
   -- 带槽位参数的成员：同样返回数字（药丸/卡片/饰品/表单计数都是"没有就是 0"）。
   local zeroSlotted = { 'GetPill', 'GetCard', 'GetCollectibleNum', 'GetTrinketMultiplier',
                         'GetPlayerFormCounter' }
@@ -478,6 +501,14 @@ local function verifyInvalidatedHandle()
   check(savedPlayer.Type == nil, 'an invalidated handle must not answer fields')
   check(savedPlayer.Position == nil, 'an invalidated handle must not answer Position')
   check(savedPlayer:GetPlayerType() == nil, 'GetPlayerType must be nil on an invalidated handle')
+  -- 句柄失效时，字段读取型 API（数据行）也必须按各自**约定好的**降级值返回：
+  -- 计数器回 0、婴儿皮肤回 -1（PC 的"非婴儿"就是 -1，回 0 会让 Mod 以为这是婴儿）。
+  check(savedPlayer:GetMaxHearts() == 0,
+        'GetMaxHearts on an invalidated handle must degrade to 0, got '
+        .. describe(savedPlayer:GetMaxHearts()))
+  check(savedPlayer:GetBabySkin() == -1,
+        'GetBabySkin on an invalidated handle must degrade to -1, got '
+        .. describe(savedPlayer:GetBabySkin()))
   -- 这一句在 harness 侧被核对：它不许再到达引擎（调用计数必须停在 2）。
   check(savedPlayer:HasCollectible(1) == false,
         'HasCollectible on an invalidated handle must degrade to false')

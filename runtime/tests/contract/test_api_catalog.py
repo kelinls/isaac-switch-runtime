@@ -202,11 +202,17 @@ def registered_function_names() -> set[str]:
 
     registered_ids = set()
     for source_path in FAMILY_API_SOURCES:
+        body = source_path.read_text(encoding="utf-8")
+        # 两种绑定形态都要认：
+        #   * 手写处理器：`{0x…, &Handler}`
+        #   * **字段读取型数据行**（`field_api.hpp`）：`{0x…, k...Offset, 0, FieldKind::…, …}`
+        # 后者是 2026-09-15 成本压缩引入的共享处理器机制：每个 API 只占一行数据。
+        # 不认它的话，这些 API 会被判成"目录里有、运行时没注册"的幽灵条目。
         registered_ids.update(
-            re.findall(
-                r"\{\s*(0x[0-9A-Fa-f]{8}),\s*&",
-                source_path.read_text(encoding="utf-8"),
-            )
+            re.findall(r"\{\s*(0x[0-9A-Fa-f]{8}),\s*&", body)
+        )
+        registered_ids.update(
+            re.findall(r"\{\s*(0x[0-9A-Fa-f]{8}),\s*k\w+Offset\s*,", body)
         )
     domain_bytes = {
         "Global": 0, "Mod": 1, "Game": 2, "Level": 3, "Room": 4,
@@ -452,7 +458,10 @@ class ApiCatalogContractTests(unittest.TestCase):
             by_owner.setdefault(owner, set()).add(identifier)
 
         # 家族表既可以直接引用本 TU 的 handler，也可以通过过渡 thunk 引用旧 TU。
-        row = re.compile(r"\{\s*(0x[0-9A-Fa-f]{8}),\s*&(?:LuaRuntime::)?(\w+)\s*\}")
+        # 手写处理器行，外加**字段读取型数据行**（`{0x…, k...Offset, …}`，共享处理器机制）。
+        row = re.compile(
+            r"\{\s*(0x[0-9A-Fa-f]{8}),\s*(?:&(?:LuaRuntime::)?(\w+)|k\w+Offset\s*,)"
+        )
         unit_owners = {
             "mod_api.cpp": {"Mod"},
             # `Game` 之外还有 `Seeds`（`Game:GetSeeds()` 的返回值，2026-09-12 第五轮加入）：
