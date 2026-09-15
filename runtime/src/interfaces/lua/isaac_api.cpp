@@ -3511,12 +3511,15 @@ constexpr FieldApiRow kFieldApis[] = {
     {0x0E010028, kEntityPlayerBabySkinOffset, 0, FieldKind::I32, FieldMissing::MinusOne,
      FieldReceipt::EntityPlayer, 0xFF},
     // --- 批次 7（2026-09-15）：EID 用到、而运行时里**完全没有**的两条 -----------------
-    // `EntityPlayer:GetCollectibleCount()`：收藏品容器的格子数（`+0x1AB8`/`+0x1AC0` 是
-    // begin/end 这一对指针）。**语义待真机核对**：这里按"容器里的元素个数"实现，
-    // PC 的 `GetCollectibleCount()` 文档没有正文说明；EID 只用它当"数量变了没"的信号
-    // （`eid_bagofcrafting.lua:489`/`492`），所以这个口径够用，但**不能**当作已验证。
+    // `EntityPlayer:GetCollectibleCount()`：**按 id 的计数数组求和**（`+0x1AB8`/`+0x1AC0`
+    // 是 begin/end 这一对指针，每格 4 字节 = "该收藏品有几件"）。
+    //
+    // ★ 这里原先按"容器格子数"实现，**真机验收当场证伪**（2026-09-16）：它返回 733，
+    // 而 733 只是数组长度（Repentance 的收藏品 id 空间），玩家实际只有 1 件（D6，id 105）。
+    // 口径依据：PC 侧另有一条 `EntityPlayer:GetCollectibleNum(id)`（按 id 数），
+    // 本项目的它与这张数组的第 id 格同源 ⇒ `GetCollectibleCount()` 应当是**总件数**。
     {0x0E01004F, kEntityPlayerCollectibleBeginOffset, static_cast<std::uint32_t>(
-         kEntityPlayerCollectibleEndOffset), FieldKind::VectorCount, FieldMissing::Zero,
+         kEntityPlayerCollectibleEndOffset), FieldKind::SumU32Array, FieldMissing::Zero,
      FieldReceipt::EntityPlayer, 0xFF},
     // `ItemConfig_Item:IsTrinket()`：`Type == ITEM_TRINKET`（`kItemTypeTrinket = 2`）。
     // `offset2` 在这里是"要比较的常量"，不是第二个偏移 —— 见 `FieldKind::BoolEquals`。
@@ -3610,6 +3613,39 @@ int FieldApiHandler(lua_State* state) {
                 return 1;
             }
             lua_pushinteger(state, static_cast<lua_Integer>(span / stride));
+            return 1;
+        }
+        case FieldKind::SumU32Array: {
+            // `offset`/`offset2` 是一对 `u32[]` 的 begin/end，把每一格**相加**。
+            //
+            // 为什么是求和而不是"数非零格子"：这张数组是"**按收藏品 id 的计数**"，
+            // 而 PC 侧另有一条 `EntityPlayer:GetCollectibleNum(id)`（按 id 数）——
+            // 本项目的 `GetCollectibleNum` 读的就是同一张数组的第 id 格。
+            // 既然"按 id 的数量"已经有独立 API，`GetCollectibleCount()` 就应当是**总件数**。
+            // 真机证据（2026-09-16）：D6（id 105）= 1、其余为 0 ⇒ 求和 = 1、非零格子也 = 1，
+            // 两种口径在这个场景下同值；口径的选择依据是上面那条 PC 契约，不是这个数值。
+            std::uintptr_t begin = 0;
+            std::uintptr_t end = 0;
+            if (!ReadEngine(receiver + row->offset, &begin) ||
+                !ReadEngine(receiver + row->offset2, &end)) {
+                PushMissingFieldValue(state, row->missing);
+                return 1;
+            }
+            if (begin == 0 || end < begin || ((end - begin) % sizeof(std::uint32_t)) != 0 ||
+                (end - begin) / sizeof(std::uint32_t) > kFieldVectorCountMaximum) {
+                PushMissingFieldValue(state, row->missing);
+                return 1;
+            }
+            std::uint64_t total = 0;
+            for (std::uintptr_t address = begin; address < end; address += sizeof(std::uint32_t)) {
+                std::uint32_t value = 0;
+                if (!ReadEngine(address, &value)) {
+                    PushMissingFieldValue(state, row->missing);
+                    return 1;
+                }
+                total += value;
+            }
+            lua_pushinteger(state, static_cast<lua_Integer>(total));
             return 1;
         }
         case FieldKind::U32:

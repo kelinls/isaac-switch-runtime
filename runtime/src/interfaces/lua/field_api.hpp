@@ -55,7 +55,8 @@ enum class FieldKind : std::uint8_t {
     BoolEquals = 4,   // 读一个 `u32`，与 `offset2` 里的常量比较后按布尔压回
                       // （例如 `ItemConfig_Item:IsTrinket()` = `Type == ITEM_TRINKET`）
     VectorCount = 5,  // `offset`/`offset2` 是一对 `T*` 的 begin/end，按元素数压回
-                      // （例如 `EntityPlayer:GetCollectibleCount()`）
+    SumU32Array = 6,  // `offset`/`offset2` 是一对 `u32[]` 的 begin/end，把各格**相加**后压回
+                      // （例如 `EntityPlayer:GetCollectibleCount()`：每格是"该收藏品有几件"）
 };
 
 //: 读不到（或接收者无效）时返回什么。按各族 PC 语义与既有实现选定，**不许随手挑**：

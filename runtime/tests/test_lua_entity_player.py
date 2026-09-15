@@ -161,13 +161,16 @@ void FillPlayer(bool validVtable) {
     WriteAt<std::uint32_t>(g_PlayerBytes, kEntityPlayerRedHeartContainersOffset, 6);
     WriteAt<std::uint32_t>(g_PlayerBytes, kEntityPlayerSoulHeartsOffset, 4);
     WriteAt<std::int32_t>(g_PlayerBytes, kEntityPlayerBabySkinOffset, -1);
-    // 收藏品容器：3 格（每格 4 字节）。`GetCollectibleCount()` 必须回 3 ——
-    // 这条 API 是批次 7 用**数据行**（`FieldKind::VectorCount`）实现的，这里是它的行为证据。
-    g_CollectibleBytes.assign(3 * sizeof(std::uint32_t), 0);
+    // 收藏品容器：**按 id 的计数数组**（每格 4 字节 = "该收藏品有几件"）。
+    // 写 `{1, 0, 2}` ⇒ `GetCollectibleCount()`（求和）必须回 **3**，而不是 2（非零格子数）
+    // 或 3（格子数本身也恰好是 3 —— 所以这里刻意让"求和"与"格子数"不同：见下面 6 格那组）。
+    g_CollectibleBytes.assign(6 * sizeof(std::uint32_t), 0);
+    WriteAt<std::uint32_t>(g_CollectibleBytes, 0 * sizeof(std::uint32_t), 1);
+    WriteAt<std::uint32_t>(g_CollectibleBytes, 4 * sizeof(std::uint32_t), 2);
     WriteWord(g_PlayerBytes, kEntityPlayerCollectibleBeginOffset,
               AddressOf(g_CollectibleBytes));
     WriteWord(g_PlayerBytes, kEntityPlayerCollectibleEndOffset,
-              AddressOf(g_CollectibleBytes) + 3 * sizeof(std::uint32_t));
+              AddressOf(g_CollectibleBytes) + 6 * sizeof(std::uint32_t));
     // `Entity.Index` 是**房间实体表序号**（`Entity+0x30`，批次 4 定位），与"玩家在 `players`
     // 向量里的下标"（`+0x19F0`）不是同一个量；两个偏移刻意写不同的值，用来钉住读的是哪个。
     WriteAt<std::uint32_t>(g_PlayerBytes, kEntityIndexOffset, 7);
@@ -420,8 +423,10 @@ local function verifyFields(player)
         .. describe(player:GetSoulHearts()))
   check(player:GetBabySkin() == -1,
         'GetBabySkin must be a signed read (non-baby = -1), got ' .. describe(player:GetBabySkin()))
+  -- 求和口径：容器是"按 id 的计数"（`{1,0,0,0,2,0}`）⇒ 总数 = 3。
+  -- 这条断言同时排除三种错口径：格子数（6）、非零格子数（2）、以及恒为 0 的桩。
   check(player:GetCollectibleCount() == 3,
-        'GetCollectibleCount must count the collectible container entries, got '
+        'GetCollectibleCount must sum the per-id counts, got '
         .. describe(player:GetCollectibleCount()))
   -- 参数个数不对：共享处理器要按 catalog 里的 `owner:name` 现拼消息（与手写时代逐字一致）。
   local okArity, arityError = pcall(function() return player:GetMaxHearts(1) end)
