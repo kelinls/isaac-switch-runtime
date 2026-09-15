@@ -23,6 +23,8 @@ cd "$(git rev-parse --show-toplevel)"
 
 # 允许公开的路径（白名单）。**新增目录要显式加进来**，避免把设备备份/文档/第三方内容一起推上去。
 PUBLIC_PATHS=(runtime tools tests README.md CONTRIBUTING.md LICENSE .gitignore)
+# 白名单里也要**排除**的路径：第三方模组内容（可再分发的授权不明确），保持仓库不夹带他人作品。
+PUBLIC_EXCLUDES=(runtime/pc-mods/MuteOnPause)
 
 echo "== 1/4 门禁测试 =="
 if [ "${SKIP_TESTS:-0}" = "1" ]; then
@@ -39,6 +41,9 @@ for path in "${PUBLIC_PATHS[@]}"; do
   git checkout master -- "$path"
 done
 git add -A -- "${PUBLIC_PATHS[@]}"
+for path in "${PUBLIC_EXCLUDES[@]}"; do
+  git rm -r --cached -q --ignore-unmatch -- "$path"
+done
 
 if git diff --cached --quiet; then
   echo "没有变化，不提交。"
