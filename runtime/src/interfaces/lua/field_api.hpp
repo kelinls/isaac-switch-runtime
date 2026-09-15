@@ -48,10 +48,14 @@ enum class FieldReceipt : std::uint8_t {
 
 //: 读什么、怎么读。
 enum class FieldKind : std::uint8_t {
-    U32 = 0,      // 无符号 32 位整数，按整数压回
-    I32 = 1,      // 有符号 32 位整数（例如 `ControllerIndex`：`-1` 表示键鼠）
-    Bool = 2,     // 读一个字节，按布尔压回
-    Sum2U32 = 3,  // 两个 `u32` 字段相加（例如 `GetEffectiveMaxHearts` = 红心容器 + 骨心）
+    U32 = 0,          // 无符号 32 位整数，按整数压回
+    I32 = 1,          // 有符号 32 位整数（例如 `ControllerIndex`：`-1` 表示键鼠）
+    Bool = 2,         // 读一个字节，按布尔压回
+    Sum2U32 = 3,      // 两个 `u32` 字段相加（例如 `GetEffectiveMaxHearts` = 红心容器 + 骨心）
+    BoolEquals = 4,   // 读一个 `u32`，与 `offset2` 里的常量比较后按布尔压回
+                      // （例如 `ItemConfig_Item:IsTrinket()` = `Type == ITEM_TRINKET`）
+    VectorCount = 5,  // `offset`/`offset2` 是一对 `T*` 的 begin/end，按元素数压回
+                      // （例如 `EntityPlayer:GetCollectibleCount()`）
 };
 
 //: 读不到（或接收者无效）时返回什么。按各族 PC 语义与既有实现选定，**不许随手挑**：

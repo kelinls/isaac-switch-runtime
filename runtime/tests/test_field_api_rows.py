@@ -57,15 +57,17 @@ def constant_values() -> dict[str, int]:
 
 
 def field_rows() -> list[dict]:
-    """`kEntityFieldApis` 里的每一行（解析字段而不是执行 C++）。"""
+    """`kFieldApis` 里的每一行（解析字段而不是执行 C++）。"""
     text = read(ISAAC_API)
-    table = re.search(r"constexpr FieldApiRow kEntityFieldApis\[\] = \{(.*?)\n\};", text, re.S)
+    table = re.search(r"constexpr FieldApiRow kFieldApis\[\] = \{(.*?)\n\};", text, re.S)
     if table is None:
         return []
     rows = []
-    for match in re.finditer(r"\{\s*(0x[0-9A-Fa-f]+)\s*,\s*(k\w+Offset)\s*,\s*(\w+)\s*,"
-                             r"\s*FieldKind::(\w+)\s*,\s*FieldMissing::(\w+)\s*,"
-                             r"\s*FieldReceipt::(\w+)\s*,\s*(0x[0-9A-Fa-f]+|\d+)\s*\}", table.group(1)):
+    offset2 = r"(?:static_cast<std::uint32_t>\(\s*)?(k\w+Offset|0x[0-9A-Fa-f]+|\d+)\s*\)?"
+    pattern = (r"\{\s*(0x[0-9A-Fa-f]+)\s*,\s*(k\w+Offset)\s*,\s*"
+               + offset2 + r"\s*,\s*FieldKind::(\w+)\s*,\s*FieldMissing::(\w+)\s*,"
+               r"\s*FieldReceipt::(\w+)\s*,\s*(0x[0-9A-Fa-f]+|\d+)\s*\}")
+    for match in re.finditer(pattern, table.group(1)):
         rows.append({
             "id": int(match.group(1), 16),
             "offset_name": match.group(2),
@@ -89,6 +91,14 @@ class FieldApiRowTests(unittest.TestCase):
         """行表必须真的解析出内容 —— 解析器失效会让下面几条"全绿但什么都没查"。"""
         self.assertGreaterEqual(len(self.rows), 4, f"只解析到 {len(self.rows)} 行")
 
+    #: 接收者族 → 允许的 catalog owner。同一张数据行表服务多个族（绑定循环按 id 匹配），
+    #: 所以这里按 `receipt` 判断 owner 对不对，而不是假定全是 EntityPlayer。
+    OWNERS_BY_RECEIPT = {
+        "Entity": {"Entity", "EntityPlayer", "EntityPickup"},
+        "EntityPlayer": {"EntityPlayer"},
+        "ItemConfigItem": {"ItemConfig_Item"},
+    }
+
     def test_every_row_id_exists_in_the_catalog_with_the_right_owner(self):
         self.assertTrue(self.catalog, "没有解析到 catalog 条目")
         for row in self.rows:
@@ -96,7 +106,9 @@ class FieldApiRowTests(unittest.TestCase):
                 self.assertIn(row["id"], self.catalog,
                               f"{hex(row['id'])} 不在 catalog 里 ⇒ 这一行永远不会被挂上")
                 owner, _name = self.catalog[row["id"]]
-                self.assertEqual(owner, "EntityPlayer", "行表目前只服务 EntityPlayer 族")
+                allowed = self.OWNERS_BY_RECEIPT[row["receipt"]]
+                self.assertIn(owner, allowed,
+                              f"行说接收者是 {row['receipt']}，catalog 里的 owner 却是 {owner}")
 
     def test_ids_are_unique_within_the_table(self):
         ids = [row["id"] for row in self.rows]
@@ -108,7 +120,8 @@ class FieldApiRowTests(unittest.TestCase):
         这种"改了行却没生效"的现象很难查，所以直接禁掉：迁移一个方法就把手写那行删掉。
         """
         hand_written = set(int(value, 16) for value in re.findall(
-            r"\{\s*(0x0E01[0-9A-Fa-f]{4})\s*,\s*&EntityPlayer\w+\s*\}", read(ISAAC_API)))
+            r"\{\s*(0x0E01[0-9A-Fa-f]{4})\s*,\s*&(?:EntityPlayer|ItemConfigItem)\w+\s*\}",
+            read(ISAAC_API)))
         overlap = sorted(set(row["id"] for row in self.rows) & hand_written)
         self.assertEqual(overlap, [], f"这些 id 同时挂在两处：{[hex(v) for v in overlap]}")
 
@@ -130,8 +143,10 @@ class FieldApiRowTests(unittest.TestCase):
     def test_rows_are_registered_through_attach_owner_methods(self):
         """行表必须真的传给 `AttachOwnerMethods`，否则整张表是死数据。"""
         text = read(ISAAC_API)
-        self.assertRegex(text, r"AttachOwnerMethods\(state, kEntityPlayerOwner,[^;]*kEntityFieldApis",
-                         "行表没有传给 AttachOwnerMethods ⇒ 那些方法根本不会被挂上")
+        self.assertRegex(text, r"AttachOwnerMethods\(state, kEntityPlayerOwner,[^;]*kFieldApis",
+                         "EntityPlayer 族的行表没有传给 AttachOwnerMethods ⇒ 那些方法根本不会被挂上")
+        self.assertRegex(text, r"AttachOwnerMethods\(state, kItemConfigItemOwner,[^;]*kFieldApis",
+                         "ItemConfig_Item 族的行表没有挂上（批次 7 起两个族共用同一张表）")
 
     def test_binding_mechanism_supports_rows_with_a_closure_upvalue(self):
         """绑定机制要按"闭包 + 行作为上值"注册，而不是把行指针忘了传。"""

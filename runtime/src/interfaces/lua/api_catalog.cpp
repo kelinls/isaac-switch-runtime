@@ -473,6 +473,19 @@ constexpr LuaApiDescriptor kDefaultApis[] = {
     {MakeId(ApiDomain::Isaac, 1, 0x0023), ApiDomain::Isaac, "ItemConfig_Item", "IsCollectible",
      kV1, 0, ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
 
+    // 批次 7（2026-09-15）：补齐 EID 用到但**运行时里完全没有**的两条（缺了就是
+    // "attempt to call a nil value"，落在条件回调里会让整条描述静默消失）：
+    //
+    //   0x004F `EntityPlayer.GetCollectibleCount()` —— 收藏品容器（`+0x1AB8`/`+0x1AC0` 的
+    //          begin/end 对）里的格子数。EID 的背包合成（`eid_bagofcrafting.lua:489`/`492`）
+    //          拿它当"收藏品数量变了没"的信号。
+    //   0x0050 `ItemConfig_Item.IsTrinket()` —— `Type == ITEM_TRINKET`（`kItemTypeTrinket = 2`），
+    //          与既有的 `IsCollectible()` 同一形状。
+    {MakeId(ApiDomain::Isaac, 1, 0x004F), ApiDomain::Isaac, "EntityPlayer", "GetCollectibleCount",
+     kV1, 0, ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    {MakeId(ApiDomain::Isaac, 1, 0x0050), ApiDomain::Isaac, "ItemConfig_Item", "IsTrinket",
+     kV1, 0, ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+
     // 批次 4：房间实体枚举（`Isaac.FindInRadius`/`FindByType`/`CountEnemies` 从 stub 变成
     // 真实现，id 不变）与实体视图补全。
     //

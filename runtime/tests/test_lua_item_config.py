@@ -411,6 +411,9 @@ local function verifyValid()
   -- （`main.lua:669`/`738`/`757`），判据是"句柄仍有效且 `Type != ITEM_NULL`"。
   check(item:IsCollectible() == true,
         'ItemConfig_Item:IsCollectible must be true for a validated collectible entry')
+  -- 批次 7：`ItemConfig_Item:IsTrinket()`（同样是**数据行**实现，判据 `Type == ITEM_TRINKET`）。
+  check(item:IsTrinket() == false,
+        'ItemConfig_Item:IsTrinket must be false for a passive collectible')
   check(config:HasTags(1) == false, 'ItemConfig:HasTags has no evidence and must return false')
 
   -- 0 号是真机上的空槽（指针为 0）：必须 nil，既不是假对象也不能崩。
@@ -455,6 +458,7 @@ local function verifyValid()
   check(trinket.Name == 'Swallowed Penny',
         'GetTrinket(1).Name must come from the trinket vector, got ' .. describe(trinket.Name))
   check(trinket.Type == 2, 'a trinket entry must report kind 2, got ' .. describe(trinket.Type))
+  check(trinket:IsTrinket() == true, 'a kind-2 entry must answer IsTrinket true')
   check(trinket.ID == 1, 'the trinket id must come from its own entry')
   check(config:GetTrinket(0) == nil, 'the null trinket slot must be nil')
   check(config:GetTrinket(2) == nil, 'the trinket vector has 3 slots: index 2 is the null slot')
@@ -537,6 +541,8 @@ local function verifyWrongKind()
   check(item ~= nil, 'the entry is still addressable')
   check(item.Type == 2, 'Type is the raw kind field, got ' .. describe(item.Type))
   check(config:IsCollectible(1) == false, 'IsCollectible requires kind == 1')
+  -- 同一条目、同一个 `Type` 字段：`IsTrinket` 必须与 `IsCollectible` 给出相反答案。
+  check(item:IsTrinket() == true, 'IsTrinket requires kind == 2, got kind 2')
   check(config:IsCollectible(2) == true, 'the neighbouring collectible is untouched')
 end
 

@@ -98,6 +98,8 @@ std::vector<unsigned char> g_ModuleBytes;
 std::vector<unsigned char> g_GameBytes;
 std::vector<unsigned char> g_PlayerBytes;
 std::vector<unsigned char> g_PlayerArrayBytes;
+// 收藏品容器（`EntityPlayer:GetCollectibleCount()` 读 `+0x1AB8`/`+0x1AC0` 那一对指针）。
+std::vector<unsigned char> g_CollectibleBytes;
 std::vector<unsigned char> g_OwnerSlotBytes;
 
 std::uintptr_t g_EngineBase = 0;
@@ -159,6 +161,13 @@ void FillPlayer(bool validVtable) {
     WriteAt<std::uint32_t>(g_PlayerBytes, kEntityPlayerRedHeartContainersOffset, 6);
     WriteAt<std::uint32_t>(g_PlayerBytes, kEntityPlayerSoulHeartsOffset, 4);
     WriteAt<std::int32_t>(g_PlayerBytes, kEntityPlayerBabySkinOffset, -1);
+    // 收藏品容器：3 格（每格 4 字节）。`GetCollectibleCount()` 必须回 3 ——
+    // 这条 API 是批次 7 用**数据行**（`FieldKind::VectorCount`）实现的，这里是它的行为证据。
+    g_CollectibleBytes.assign(3 * sizeof(std::uint32_t), 0);
+    WriteWord(g_PlayerBytes, kEntityPlayerCollectibleBeginOffset,
+              AddressOf(g_CollectibleBytes));
+    WriteWord(g_PlayerBytes, kEntityPlayerCollectibleEndOffset,
+              AddressOf(g_CollectibleBytes) + 3 * sizeof(std::uint32_t));
     // `Entity.Index` 是**房间实体表序号**（`Entity+0x30`，批次 4 定位），与"玩家在 `players`
     // 向量里的下标"（`+0x19F0`）不是同一个量；两个偏移刻意写不同的值，用来钉住读的是哪个。
     WriteAt<std::uint32_t>(g_PlayerBytes, kEntityIndexOffset, 7);
@@ -411,6 +420,9 @@ local function verifyFields(player)
         .. describe(player:GetSoulHearts()))
   check(player:GetBabySkin() == -1,
         'GetBabySkin must be a signed read (non-baby = -1), got ' .. describe(player:GetBabySkin()))
+  check(player:GetCollectibleCount() == 3,
+        'GetCollectibleCount must count the collectible container entries, got '
+        .. describe(player:GetCollectibleCount()))
   -- 参数个数不对：共享处理器要按 catalog 里的 `owner:name` 现拼消息（与手写时代逐字一致）。
   local okArity, arityError = pcall(function() return player:GetMaxHearts(1) end)
   check(not okArity and string.find(tostring(arityError),

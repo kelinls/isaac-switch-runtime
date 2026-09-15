@@ -544,7 +544,12 @@ class ApiCatalogContractTests(unittest.TestCase):
         # 163 + 地基二期（2026-09-15）的 3 行 `Level` 房间描述符成员：
         # `GetCurrentRoomDesc`/`GetRoomByIdx`/`GetRooms`。它们背后是一整条新的读取链
         # （内联描述符数组 + 八个已真机验证的字段偏移），不是单个字段读。
-        self.assertEqual(checked, 166, "家族绑定行数应与已登记 API 数一致")
+        # 166 + 批次 7（2026-09-15）的 2 行：`EntityPlayer.GetCollectibleCount` 与
+        # `ItemConfig_Item.IsTrinket` —— EID 用到而运行时里完全没有的两条。它们走的是**数据行**
+        # 形态（`{id, k...Offset, …}`，共享处理器 `FieldApiHandler`），所以上面的计数正则
+        # 同时认"手写绑定行"与"数据行"两种形态（见 `registered_ids` 处的注释）。
+        # 地基三期（成本压缩）把 5 条既有成员也迁成了数据行，**总数不变**，只是换了登记形态。
+        self.assertEqual(checked, 168, "家族绑定行数应与已登记 API 数一致")
 
     def test_options_fields_are_registered_as_values(self):
         """`Options` 的两个字段是**值**而不是方法：Catalog 里有条目、绑定表里没有绑定行。

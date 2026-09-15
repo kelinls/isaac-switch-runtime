@@ -3446,12 +3446,16 @@ void PushMissingFieldValue(lua_State* state, FieldMissing missing) {
     }
 }
 
+//: `VectorCount` 的合理上限：正常容器（收藏品/饰品/卡片…）都是几十个元素的量级。
+//: 超过它说明 begin/end 读到的不是一对真指针（内存不可信），按"读不到"降级而不是返回巨大数字。
+constexpr std::uintptr_t kFieldVectorCountMaximum = 4096;
+
 //: Entity 族的字段读取型 API。
 //:
 //: 每一行 = 一个 API，**0 字节代码**；手写同类方法实测 236–312 字节。
 //: 只收"无参数、接收者+固定偏移、读不到按族约定降级"的形状；带参数或需要分支的（例如
 //: `GetEffectiveMaxHearts` 要按 `PlayerType` 决定是否算骨心）继续手写，不硬塞。
-constexpr FieldApiRow kEntityFieldApis[] = {
+constexpr FieldApiRow kFieldApis[] = {
     // `EntityPlayer:GetPlayerType()`：`+0x1738`。读不到给 nil（`== PlayerType.ISAAC` 在 nil
     // 上自然为假，假值会让 Mod 走进错误分支）；探针位 1 与原先手写实现保持一致。
     {0x0E010016, kEntityPlayerTypeOffset, 0, FieldKind::U32, FieldMissing::Nil,
@@ -3471,6 +3475,18 @@ constexpr FieldApiRow kEntityFieldApis[] = {
     // 编一个非负值会让 Mod 走进"这是婴儿"的分支去查一套不存在的皮肤）。
     {0x0E010028, kEntityPlayerBabySkinOffset, 0, FieldKind::I32, FieldMissing::MinusOne,
      FieldReceipt::EntityPlayer, 0xFF},
+    // --- 批次 7（2026-09-15）：EID 用到、而运行时里**完全没有**的两条 -----------------
+    // `EntityPlayer:GetCollectibleCount()`：收藏品容器的格子数（`+0x1AB8`/`+0x1AC0` 是
+    // begin/end 这一对指针）。**语义待真机核对**：这里按"容器里的元素个数"实现，
+    // PC 的 `GetCollectibleCount()` 文档没有正文说明；EID 只用它当"数量变了没"的信号
+    // （`eid_bagofcrafting.lua:489`/`492`），所以这个口径够用，但**不能**当作已验证。
+    {0x0E01004F, kEntityPlayerCollectibleBeginOffset, static_cast<std::uint32_t>(
+         kEntityPlayerCollectibleEndOffset), FieldKind::VectorCount, FieldMissing::Zero,
+     FieldReceipt::EntityPlayer, 0xFF},
+    // `ItemConfig_Item:IsTrinket()`：`Type == ITEM_TRINKET`（`kItemTypeTrinket = 2`）。
+    // `offset2` 在这里是"要比较的常量"，不是第二个偏移 —— 见 `FieldKind::BoolEquals`。
+    {0x0E010050, kItemConfigItemTypeOffset, kItemTypeTrinket, FieldKind::BoolEquals,
+     FieldMissing::False, FieldReceipt::ItemConfigItem, 0xFF},
 };
 
 } // namespace
@@ -3527,6 +3543,40 @@ int FieldApiHandler(lua_State* state) {
             lua_pushinteger(state, static_cast<lua_Integer>(first + second));
             return 1;
         }
+        case FieldKind::BoolEquals: {
+            // `offset2` 在这里是"要比较的常量"（例如 `ITEM_TRINKET`），不是第二个偏移。
+            std::uint32_t value = 0;
+            if (!ReadEngine(receiver + row->offset, &value)) {
+                PushMissingFieldValue(state, row->missing);
+                return 1;
+            }
+            lua_pushboolean(state, value == row->offset2 ? 1 : 0);
+            return 1;
+        }
+        case FieldKind::VectorCount: {
+            // `offset`/`offset2` 是一对 `T*`（begin/end），元素数是 `(end - begin) / sizeof(T)`。
+            std::uintptr_t begin = 0;
+            std::uintptr_t end = 0;
+            if (!ReadEngine(receiver + row->offset, &begin) ||
+                !ReadEngine(receiver + row->offset2, &end)) {
+                PushMissingFieldValue(state, row->missing);
+                return 1;
+            }
+            // 空容器在引擎里就是 `begin == end`；`end < begin` 或跨度离谱说明内存不可信，
+            // 一律按"读不到"降级 —— 编一个巨大数字会让 Mod 走进错误分支。
+            if (end < begin) {
+                PushMissingFieldValue(state, row->missing);
+                return 1;
+            }
+            const std::uintptr_t span = end - begin;
+            const std::uintptr_t stride = sizeof(std::uint32_t);
+            if (span / stride > kFieldVectorCountMaximum) {
+                PushMissingFieldValue(state, row->missing);
+                return 1;
+            }
+            lua_pushinteger(state, static_cast<lua_Integer>(span / stride));
+            return 1;
+        }
         case FieldKind::U32:
         default: {
             std::uint32_t value = 0;
@@ -3556,8 +3606,8 @@ std::size_t AttachEntityMethods(lua_State* state) noexcept {
 
 std::size_t AttachEntityPlayerMethods(lua_State* state) noexcept {
     return AttachOwnerMethods(state, kEntityPlayerOwner, kEntityPlayerHandlers,
-                              RowCount(kEntityPlayerHandlers), kEntityFieldApis,
-                              RowCount(kEntityFieldApis));
+                              RowCount(kEntityPlayerHandlers), kFieldApis,
+                              RowCount(kFieldApis));
 }
 
 std::size_t AttachEntityPickupMethods(lua_State* state) noexcept {
@@ -3571,8 +3621,11 @@ std::size_t AttachItemConfigMethods(lua_State* state) noexcept {
 }
 
 std::size_t AttachItemConfigItemMethods(lua_State* state) noexcept {
+    // 同一张数据行表也挂给 `ItemConfig_Item` 族：绑定循环按 id 匹配，不会串族
+    // （行里的 `receipt` 决定用哪套接收者校验）。
     return AttachOwnerMethods(state, kItemConfigItemOwner, kItemConfigItemHandlers,
-                              RowCount(kItemConfigItemHandlers));
+                              RowCount(kItemConfigItemHandlers), kFieldApis,
+                              RowCount(kFieldApis));
 }
 
 #if !defined(__SWITCH__)
