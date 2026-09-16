@@ -45,6 +45,12 @@ def layered_lua_runtime_sources(source_root: Path) -> list[Path]:
         unit_root / "interfaces" / "lua" / "color_api.cpp",
         unit_root / "interfaces" / "lua" / "vector_api.cpp",
         unit_root / "interfaces" / "lua" / "sprite_api.cpp",
+        # 2026-09-16：运行时自带的模组开关菜单控制面（`RuntimeMods`）——
+        # `lua_runtime.cpp` 的准备阶段会调它的注册函数，宿主 harness 因此必须带上它。
+        unit_root / "interfaces" / "lua" / "mod_menu_api.cpp",
+        # 菜单控制面背后是模组开关服务（读/改/落盘）与它的纯值对象状态。
+        unit_root / "application" / "mod" / "mod_toggle_service.cpp",
+        unit_root / "domain" / "mod" / "mod_toggle_state.cpp",
         unit_root / "interfaces" / "lua" / "json_api.cpp",
         # 共享**弱默认桩**（`shared_lua_stubs.cpp`）：放进这份清单，任何 harness 都会自动带上。
         # 它们是弱符号，所以老 harness 自己那份强定义照旧优先；而"运行时新增一个观测函数"

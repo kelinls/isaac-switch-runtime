@@ -161,6 +161,20 @@ void FillPlayer(bool validVtable) {
     WriteAt<std::uint32_t>(g_PlayerBytes, kEntityPlayerRedHeartContainersOffset, 6);
     WriteAt<std::uint32_t>(g_PlayerBytes, kEntityPlayerSoulHeartsOffset, 4);
     WriteAt<std::int32_t>(g_PlayerBytes, kEntityPlayerBabySkinOffset, -1);
+    // 2026-09-16 新增字段（**故意写死字面偏移**，不跟实现侧常量走 —— 夹具跟着常量走会两边一起错、
+    // 断言永远绿；见 `docs/错误复盘.md` 2026-09-16 第一条）：
+    //   * 四个 float 属性：Damage=4.25 / MoveSpeed=1.5 / MaxFireDelay=7.5 / TearRange=300.0
+    //     （取非整数，能证明是按 float 读而不是按整数读）；
+    //   * `CanFly` = 1（+0x1954，**1 字节**；前后各一个单字节诱饵，按 4 字节读会读到诱饵）；
+    //   * `ControlsCooldown` = -3（+0x404，有符号：无符号读会给出 4294967293）。
+    WriteAt<float>(g_PlayerBytes, 0x1844, 4.25F);
+    WriteAt<float>(g_PlayerBytes, 0x194C, 1.5F);
+    WriteAt<float>(g_PlayerBytes, 0x1834, 7.5F);
+    WriteAt<float>(g_PlayerBytes, 0x1854, 300.0F);
+    WriteAt<std::uint8_t>(g_PlayerBytes, 0x1953, 0x7Fu);   // 诱饵：CanFly 前一字节
+    WriteAt<std::uint8_t>(g_PlayerBytes, 0x1954, 1u);
+    WriteAt<std::uint8_t>(g_PlayerBytes, 0x1955, 0x7Eu);   // 诱饵：CanFly 后一字节
+    WriteAt<std::int32_t>(g_PlayerBytes, 0x404, -3);
     // 收藏品容器：**按 id 的计数数组**（每格 4 字节 = "该收藏品有几件"）。
     // 写 `{1, 0, 2}` ⇒ `GetCollectibleCount()`（求和）必须回 **3**，而不是 2（非零格子数）
     // 或 3（格子数本身也恰好是 3 —— 所以这里刻意让"求和"与"格子数"不同：见下面 6 格那组）。
@@ -293,6 +307,17 @@ int main(int argc, char** argv) {
             std::printf("ISAAC_FAIL: the last collectible id must be 2, got %u\n", g_CallId);
             return 1;
         }
+        // 2026-09-16 写通道：Lua 侧 `player.ControlsCooldown = 2` 必须**真的落进引擎内存**。
+        // 这里**故意写死字面偏移 0x404**，不跟实现侧的 `kEntityPlayerControlsCooldownOffset` 走
+        // —— 夹具跟着常量走会两边一起错、断言永远绿（见 `docs/错误复盘.md` 2026-09-16 第一条）。
+        // 第二帧 Lua 又写了一次 5（句柄已失效）⇒ 必须**没有**写进去，值仍是 2。
+        std::int32_t cooldown = 0;
+        std::memcpy(&cooldown, g_PlayerBytes.data() + 0x404, sizeof(cooldown));
+        if (cooldown != 2) {
+            std::printf("ISAAC_FAIL: ControlsCooldown at +0x404 must be 2 after the write "
+                        "(stale-handle write must be ignored), got %d\n", cooldown);
+            return 1;
+        }
     } else if (g_CallCount != 0) {
         std::printf("ISAAC_FAIL: no engine call is allowed without a validated player, got %d\n",
                     g_CallCount);
@@ -400,6 +425,55 @@ local function verifyFields(player)
         'Position must return a fresh Vector on every read')
   -- 未知字段仍然是 nil（`__index` 不能凭空造值）。
   check(player.NotAThing == nil, 'an unknown field must be nil')
+  -- 2026-09-16 新增字段（偏移证据见 `runtime_constants.hpp` 的同名常量注释）：
+  --   * 四个战斗属性是 **float**（夹具给 4.25 / 1.5 / 7.5 / 300.0 这种非整数 ⇒ 按整数读会失败）；
+  --   * `CanFly` 是 **1 字节布尔**（夹具在前后各放了一个单字节诱饵 ⇒ 按 4 字节读会读到诱饵）；
+  --   * `ControlsCooldown` 是**有符号** int32（夹具 -3 ⇒ 无符号读会给出 4294967293）。
+  --   * 收藏品没有 `MimicCharge`（那是卡/胶囊的字段）⇒ 必须是 nil。
+  check(player.Damage == 4.25, 'Damage must come from +0x1844, got ' .. describe(player.Damage))
+  check(player.MoveSpeed == 1.5,
+        'MoveSpeed must come from +0x194C, got ' .. describe(player.MoveSpeed))
+  check(player.MaxFireDelay == 7.5,
+        'MaxFireDelay must come from +0x1834 (float, not int), got '
+        .. describe(player.MaxFireDelay))
+  check(player.TearRange == 300.0,
+        'TearRange must come from +0x1854, got ' .. describe(player.TearRange))
+  check(player.CanFly == true,
+        'CanFly must be the byte at +0x1954 (1 = true), got ' .. describe(player.CanFly))
+  check(type(player.CanFly) == 'boolean', 'CanFly must be a boolean, got ' .. describe(player.CanFly))
+  check(player.ControlsCooldown == -3,
+        'ControlsCooldown must be a **signed** int32 at +0x404, got '
+        .. describe(player.ControlsCooldown))
+  check(player.MimicCharge == nil,
+        'a collectible must not expose MimicCharge, got ' .. describe(player.MimicCharge))
+
+  -- ---------------------------------------------------------------------------
+  -- 写通道（2026-09-16）：`EntityPlayer.ControlsCooldown` 是**可写**成员
+  -- ---------------------------------------------------------------------------
+  -- EID 的用法是 `player.ControlsCooldown = 2`（`features/eid_bagofcrafting.lua:877`、
+  -- `features/eid_holdmapdesc.lua:669`：背包 / 按住地图时"吃掉"随后的按键）。
+  -- 此前元表没有 `__newindex` ⇒ 这两句会抛 "attempt to index a userdata value"，
+  -- 整条回调被派发器摘除（画面正常但功能消失）。
+  check(player.ControlsCooldown == -3,
+        'before the write the field must still be the fixture value (-3), got '
+        .. describe(player.ControlsCooldown))
+  local writeOk, writeError = pcall(function() player.ControlsCooldown = 2 end)
+  check(writeOk, 'player.ControlsCooldown = 2 must not raise: ' .. tostring(writeError))
+  check(player.ControlsCooldown == 2,
+        'the write must be visible to the next read, got ' .. describe(player.ControlsCooldown))
+  -- 引擎内存里的那个字必须真的变了（harness 在派发结束后核对 +0x404 的四字节）。
+  CONTROLS_WRITE_OK = 1
+
+  -- 只有 `ControlsCooldown` 可写：别的字段名必须报错（不许静默吞掉笔误）。
+  local unknownOk, unknownError = pcall(function() player.NotAThing = 1 end)
+  check(not unknownOk, 'writing an unknown EntityPlayer field must raise')
+  check(string.find(tostring(unknownError), 'read-only', 1, true) ~= nil,
+        'the error must say the remaining fields are read-only, got ' .. tostring(unknownError))
+  local damageOk = pcall(function() player.Damage = 99.0 end)
+  check(not damageOk, 'Damage is read-only in this build: writing it must raise')
+  -- 类型不对也不许写进去（`luaL_checkinteger` 会抛）。
+  local typeOk, typeError = pcall(function() player.ControlsCooldown = 'two' end)
+  check(not typeOk, 'a non-integer ControlsCooldown must raise, got ' .. tostring(typeError))
 
   -- 批次 6（2026-09-12）：EID 逐帧调用的一批成员。缺任何一个都是 "attempt to call a nil value"，
   -- 而派发器会**静默摘除**整条回调（真机报告 `01789210946` 的 `player:GetPill(0)` 就是这样）。
@@ -529,6 +603,10 @@ local function verifyInvalidatedHandle()
   -- 这一句在 harness 侧被核对：它不许再到达引擎（调用计数必须停在 2）。
   check(savedPlayer:HasCollectible(1) == false,
         'HasCollectible on an invalidated handle must degrade to false')
+  -- 写通道也一样：句柄失效时**不许**往那个地址写（那可能是别人的内存）。
+  -- harness 会在派发结束后核对 +0x404 仍是第一帧写的 2（没被这一句改成 5）。
+  local staleOk, staleError = pcall(function() savedPlayer.ControlsCooldown = 5 end)
+  check(staleOk, 'writing through an invalidated handle must not raise: ' .. tostring(staleError))
   PHASE2_OK = 1
 end
 

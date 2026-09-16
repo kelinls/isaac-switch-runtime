@@ -73,6 +73,8 @@ int RoomGetGridPath(lua_State* state);
 int RoomGetGridEntity(lua_State* state);
 int RoomGetRenderScrollOffset(lua_State* state);
 int RoomGetWorldToScreenPosition(lua_State* state);
+// 2026-09-16：`Room:GetFrameCount()`（房间已经活动了多少帧；真机上暴露的每帧报错见实现处注释）。
+int RoomGetFrameCount(lua_State* state);
 int LevelIsPreAscent(lua_State* state);
 int GridEntityGetVariant(lua_State* state);
 int GridEntityGetType(lua_State* state);
@@ -111,6 +113,7 @@ constexpr LuaHandlerBinding kRoomHandlers[] = {
     {0x04010007, &RoomGetGridEntity},
     {0x04010008, &RoomGetRenderScrollOffset},
     {0x04010009, &RoomGetWorldToScreenPosition},
+    {0x0401000A, &RoomGetFrameCount},
 };
 
 constexpr LuaHandlerBinding kItemPoolHandlers[] = {
@@ -605,6 +608,65 @@ bool RoomGridIndexArgument(lua_State* state, int index, lua_Integer* value) {
     return true;
 }
 
+// --- 2026-09-16：`Room:GetFrameCount()` -----------------------------------------
+//
+// PC 语义（`analysis/isaacdocs-snapshot/docs/Room.md`）："Returns the amount of frames the room has
+// been active for. Resets to 0 when the player leaves the room or the run is exited."
+//
+// 为什么要补：EID 的背包合成渲染路径里有 `game:GetRoom():GetFrameCount() < 2`
+// （`features/eid_bagofcrafting.lua:967`）。这个 API 之前**完全不存在** ⇒ 只要玩家拿着背包合成，
+// 那句就每帧抛 `attempt to call a nil value (method 'GetFrameCount')`，**EID 的描述渲染整段被打断**
+// —— 这是 2026-09-16 真机上（`g_LastLuaErrorText`）暴露出来的用户可见缺陷。
+//
+// 实现口径：调引擎自己的 `Room::GetFrameCount()`（`0x470B0C`，只有 `this` 一个参数）。
+// 调用前**再核对一次入口 16 字节**（与 `CallLevelIntMethod` 同一形态：只认"这串指令在"，
+// 不认"地址恰好落在模块里"）。绑定为 0（安装期守卫没过）时**报 Lua 错误**而不是返回 0 ——
+// 返回 0 会让上面那句判断恒成立，把合成结果显示静默跳过，属于最难查的一类缺陷。
+bool CallRoomIntMethod(void* room, std::uintptr_t method,
+                       const std::array<u8, 16>& expected, std::int32_t* value) noexcept {
+    if (room == nullptr || value == nullptr || method == 0 || (method & 3) != 0 ||
+        !IsEngineMemoryReadable(method, expected.size())) {
+        return false;
+    }
+    std::array<u8, 16> actual{};
+    std::memcpy(actual.data(), reinterpret_cast<const void*>(method), actual.size());
+    if (actual != expected) {
+        return false;
+    }
+    using RoomIntMethod = std::int32_t (*)(const void*);
+    *value = reinterpret_cast<RoomIntMethod>(method)(room);
+    return true;
+}
+
+int RoomGetFrameCount(lua_State* state) {
+    if (!RoomArgumentCountIs(state, 1, "Room:GetFrameCount")) {
+        return 0;
+    }
+    void* room = nullptr;
+    if (ReadCurrentGameRoom(GameOwnerSlot(), &room) != GameRoomObservation::Success ||
+        room == nullptr) {
+        return luaL_error(state, "Room:GetFrameCount could not read the native Room state");
+    }
+    const std::uintptr_t method = LuaRuntime::RoomGetFrameCountThunk();
+    std::int32_t frames = 0;
+#if !defined(__SWITCH__)
+    // 宿主：没有引擎映像，用注入的替身（与 `Room:WorldToScreenPosition` 的宿主钩子同一形态）。
+    // 没注入替身、也没发布绑定 ⇒ 走下面那条"绑定不可用"，**不编造帧数**。
+    const auto host = LuaRuntime::GetRoomGetFrameCountHostFunction();
+    if (host != nullptr) {
+        frames = host(room);
+    } else if (!CallRoomIntMethod(room, method, kRoomGetFrameCountExpectedBytes, &frames)) {
+        return luaL_error(state, "Room:GetFrameCount binding is unavailable");
+    }
+#else
+    if (!CallRoomIntMethod(room, method, kRoomGetFrameCountExpectedBytes, &frames)) {
+        return luaL_error(state, "Room:GetFrameCount binding is unavailable");
+    }
+#endif
+    lua_pushinteger(state, static_cast<lua_Integer>(frames));
+    return 1;
+}
+
 int RoomGetGridWidth(lua_State* state) {
     if (!RoomArgumentCountIs(state, 1, "Room:GetGridWidth")) {
         return 0;
@@ -1081,9 +1143,40 @@ constexpr std::uintptr_t kSafeGridIndexOffset = 0x04;
 constexpr std::uintptr_t kListIndexOffset = 0x08;
 constexpr std::uintptr_t kDataOffset = 0x10;
 constexpr std::uintptr_t kVisitedCountOffset = 0x4C;
-constexpr std::uintptr_t kClearOffset = 0x50;
+//: `+0x50` 是 PC 的 `RoomDescriptor.Flags`：**32 位位掩码**，`Clear` 只是它的**第 0 位**。
+//: 2026-09-16 静态取证（`Repentance.nro`，函数@文件偏移）：
+//:   * 整字读写：`GameState::read_Room @ 0x36FCA4`（`0x36FFC0 add x1,x23,#0x50` + `mov w2,#0x4`
+//:     ⇒ 按 4 字节读存档；旧存档格式 <0x3f 时用六次 `ldr/orr #1|2|4|8|0x10|0x20/str` 把六个布尔
+//:     **合成低六位**，正好等于 PC 的 FLAG_CLEAR/PRESSURE_PLATES_TRIGGERED/SACRIFICE_DONE/
+//:     CHALLENGE_DONE/SURPRISE_MINIBOSS/HAS_WATER）；`GameState::write_Room @ 0x368688` 反着写回。
+//:   * 高位另有独立用途：`Level::CanOpenChallengeRoom [email protected]` 测 bit3、
+//:     `Level::try_display_room @ 0x3D95F4` 测 bit10、`Room::SetRotgutCleared @ 0x46AC70` 置 bit16
+//:     —— 一个布尔字段不可能容纳 `1<<16`，所以它只能是位掩码。
+//:   * 真机佐证：`dist/room-probe-C.json → room-probe-D.json` 同一宝箱房清敌后该字段 0→1（= FLAG_CLEAR）。
+constexpr std::uintptr_t kFlagsOffset = 0x50;
+//: 兼容旧名（`Clear` = bit0）。**语义收窄**：以前这里用"非零即真"，会把 bit3/bit10/bit16 也算成
+//: 清房；现在按 PC 契约只看 bit0。
+constexpr std::uintptr_t kClearOffset = kFlagsOffset;
+constexpr std::uint32_t kRoomFlagClear = 1u << 0;
 //: `Data` 指向的房间配置里，Type 在 +0x8（布局表 confirmed）。
 constexpr std::uintptr_t kRoomConfigTypeOffset = 0x08;
+//: `RoomConfig::Room.Shape`（PC：`RoomShape` 枚举，1..12）在 `Data + 0x5C`。
+//: 2026-09-16 静态取证：`RoomConfig::parse_room_node @ 0x48F480` 在 `0x48F6EC str w0,[x20,#0x5c]`
+//: （XML 属性名就是 `"shape"`；相邻 `strb …, #0x5b` 是 height、`#0x5a` 是 width ⇒ **宽高是 1 字节、
+//: 而 +0x5C 是 4 字节**，这也是"它不可能是 Width"的反证）；`RoomConfig::read_room @ 0x491774`
+//: `str w8,[x20,#0x5c]!`（二进制房间表加载器）；`Room::Init @ 0x45F97C` 读它并
+//: `sub w8,w8,#9; cmp w8,#3; b.hi`（只有 9..12 四个 L 形走特判）。
+constexpr std::uintptr_t kRoomConfigShapeOffset = 0x5C;
+//: `RoomDescriptor.Data` 暴露给 Lua 的字段表。⚠️ 用"名字 → 偏移"的**静态表**形态，
+//: 不用零散的 `lua_setfield` —— 枚举工具（`tools/eid_api_gap_report.py`）靠这种形态认
+//: "这个字段已经实现了"；写成散装 setfield 会让它继续把已实现的字段报成缺口（2026-09-16 实测踩到）。
+constexpr struct RoomConfigRoomField {
+    const char* name;
+    std::uintptr_t offset;
+} kRoomConfigRoomFields[] = {
+    {"Type", kRoomConfigTypeOffset},
+    {"Shape", kRoomConfigShapeOffset},
+};
 //: 数组元素个数上限：3 个维度 × 169 个房间 + 少量特殊槽位，实际远小于 512。
 constexpr std::uint32_t kDescriptorMaximumCount = 512;
 
@@ -1405,12 +1498,20 @@ int RoomDescriptorIndex(lua_State* state) {
         lua_pushinteger(state, static_cast<lua_Integer>(value));
         return 1;
     }
+    if (std::strcmp(key, "Flags") == 0) {
+        // PC 的 `RoomDescriptor.Flags`：32 位位掩码（EID 用 `room.Flags & 1024` 做道具预测）。
+        if (!ReadDescriptorU32(descriptor, kFlagsOffset, &value)) {
+            return luaL_error(state, "RoomDescriptor.Flags could not read the native state");
+        }
+        lua_pushinteger(state, static_cast<lua_Integer>(value));
+        return 1;
+    }
     if (std::strcmp(key, "Clear") == 0) {
         if (!ReadDescriptorU32(descriptor, kClearOffset, &value)) {
             return luaL_error(state, "RoomDescriptor.Clear could not read the native state");
         }
-        // 真机验证过：清房瞬间该字段 0→1；起始房间本来就是 1（没有敌人）。
-        lua_pushboolean(state, value != 0 ? 1 : 0);
+        // PC 契约：`Clear` 就是 `Flags` 的**第 0 位**（真机验证过：清房瞬间该位 0→1，起始房间本来就是 1）。
+        lua_pushboolean(state, (value & kRoomFlagClear) != 0 ? 1 : 0);
         return 1;
     }
     if (std::strcmp(key, "Data") == 0) {
@@ -1425,13 +1526,18 @@ int RoomDescriptorIndex(lua_State* state) {
             lua_pushnil(state);
             return 1;
         }
-        lua_createtable(state, 0, 1);
-        std::uint32_t roomType = 0;
-        if (IsEngineMemoryReadable(data + kRoomConfigTypeOffset, sizeof(std::uint32_t))) {
-            std::memcpy(&roomType, reinterpret_cast<const void*>(data + kRoomConfigTypeOffset),
-                        sizeof(roomType));
-            lua_pushinteger(state, static_cast<lua_Integer>(roomType));
-            lua_setfield(state, -2, "Type");
+        lua_createtable(state, 0, static_cast<int>(RowCount(kRoomConfigRoomFields)));
+        for (std::size_t index = 0; index < RowCount(kRoomConfigRoomFields); ++index) {
+            std::uint32_t value = 0;
+            if (!IsEngineMemoryReadable(data + kRoomConfigRoomFields[index].offset,
+                                        sizeof(std::uint32_t))) {
+                continue;   // 读不到就**不建这一项**（nil），不编值
+            }
+            std::memcpy(&value,
+                        reinterpret_cast<const void*>(data + kRoomConfigRoomFields[index].offset),
+                        sizeof(value));
+            lua_pushinteger(state, static_cast<lua_Integer>(value));
+            lua_setfield(state, -2, kRoomConfigRoomFields[index].name);
         }
         return 1;
     }

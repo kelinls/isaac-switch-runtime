@@ -141,6 +141,16 @@ def assert_game_stopped(args) -> bool:
         return True
     try:
         running, detail = gdb_tool.game_is_running(args.host)
+        # `monitor get info` 会**抖**（返回空 ⇒ 拿不到模块清单 ⇒ "判断不了"）。
+        # 2026-09-16 实测：有时第一次就答对、有时连着两次都空、第三次才对
+        # （同一天见了三次"判断不了"）⇒ 判断不了就**多补几次、中间留间隔**。
+        # 这一步是"把纪律自动化"的第一道门，让它因为桩抖动而默认放行，等于门形同虚设。
+        attempt = 1
+        while running is None and attempt < 3:
+            attempt += 1
+            print(f'写卡前检查（第 {attempt} 次）：{detail} —— 隔 2 秒再问一次（桩抖动是已知现象）')
+            time.sleep(2)
+            running, detail = gdb_tool.game_is_running(args.host)
     except Exception as exc:
         print(f'⚠ 调试桩检查失败（{type(exc).__name__}: {exc}）⇒ 判断不了游戏是否在跑')
         return True
@@ -150,6 +160,9 @@ def assert_game_stopped(args) -> bool:
         print('  请先彻底退出游戏（Home → 该游戏 → X → Close）再重试；')
         print('  确实要强行写就加 --force-write（不推荐）。')
         return False
+    if running is None:
+        print(f'⚠ 连问 {attempt} 次仍判断不了 ⇒ **请自己确认游戏已退出**再继续'
+              f'（检查已放行，但不代表安全）。')
     return True
 
 

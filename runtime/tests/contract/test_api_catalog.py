@@ -30,6 +30,8 @@ FAMILY_API_SOURCES = (
     SRC / "interfaces" / "lua" / "color_api.cpp",
     SRC / "interfaces" / "lua" / "vector_api.cpp",
     SRC / "interfaces" / "lua" / "sprite_api.cpp",
+    # 2026-09-16：运行时的模组开关控制面（`RuntimeMods`，新域 `ModMenu`）。
+    SRC / "interfaces" / "lua" / "mod_menu_api.cpp",
 )
 
 DRIVER = textwrap.dedent(
@@ -223,6 +225,8 @@ def registered_function_names() -> set[str]:
         # `test_family_binding_ids_match_the_catalog` 里的那份必须同时加，否则新家族会被
         # 静默跳过 —— 两个字典各写一份本身就是个坑，注释在此留痕。
         "Seed": 15,
+        # `RuntimeMods`（运行时自带的模组开关菜单控制面），2026-09-16 加入。
+        "ModMenu": 16,
     }
     catalog = CATALOG_SOURCE.read_text(encoding="utf-8")
     for domain, group, sequence, name in re.findall(
@@ -308,12 +312,18 @@ class ApiCatalogContractTests(unittest.TestCase):
         self.assertNotIn("LuaModAddCallback", mod_api)
         self.assertNotIn("LuaModAddCallback", source)
         # 回调注册表仍由旧 TU 拥有，家族 TU 只通过访问器取用。
+        #
+        # 2026-09-16（多模组加载）：owner 句柄从"全局常量 `RuntimeOwnerHandle()`"改成
+        # "从 Mod userdata 解包"（`UnpackModOwner`），因为每个 Mod 现在各有自己的 owner。
+        # 这条断言的**意图不变**：家族 TU 不许自己去摸旧 TU 的状态，只能通过
+        # `lua_runtime_state.hpp` 声明出来的访问器取。所以这里换成新的那个名字。
         state = (ROOT / "runtime" / "source" / "lua_runtime_state.hpp").read_text(encoding="utf-8")
-        for accessor in ("ManagedCallbackRegistry", "RuntimeOwnerHandle", "IsStage13CallbackMode"):
+        for accessor in ("ManagedCallbackRegistry", "UnpackModOwner", "IsStage13CallbackMode"):
             with self.subTest(accessor=accessor):
                 self.assertIn(accessor, state)
                 self.assertIn(accessor, mod_api)
         self.assertIn("CallbackRegistry& ManagedCallbackRegistry()", source)
+        self.assertIn("ModHandle UnpackModOwner(", state)
 
     def test_game_methods_are_registered_from_their_owner_translation_unit(self):
         source = LUA_RUNTIME.read_text(encoding="utf-8")
@@ -444,6 +454,9 @@ class ApiCatalogContractTests(unittest.TestCase):
             "Diagnostic": 10, "Font": 11, "Vector": 12, "Sprite": 13, "Isaac": 14,
             # `Seeds` 家族（`Game:GetSeeds()` 的返回值），2026-09-12 第五轮加入。
             "Seed": 15,
+            # `RuntimeMods`（运行时自带的模组开关菜单控制面），2026-09-16 加入。
+            # 两份映射（本处与 `registered_function_names` 里那份）必须同时加。
+            "ModMenu": 16,
         }
         catalog = CATALOG_SOURCE.read_text(encoding="utf-8")
         entry = re.compile(
@@ -484,11 +497,14 @@ class ApiCatalogContractTests(unittest.TestCase):
             # 不占绑定行。
             "isaac_api.cpp": {"Isaac", "Entity", "EntityPlayer", "EntityPickup",
                               "ItemConfig", "ItemConfig_Item"},
+            # 2026-09-16：运行时自带的模组开关菜单控制面（`RuntimeMods`，域 `ModMenu`）。
+            "mod_menu_api.cpp": {"RuntimeMods"},
         }
         checked = 0
         for unit in ("mod_api.cpp", "game_api.cpp", "remaining_api.cpp",
                      "music_api.cpp", "rng_api.cpp", "input_api.cpp", "font_api.cpp",
-                     "color_api.cpp", "vector_api.cpp", "sprite_api.cpp", "isaac_api.cpp"):
+                     "color_api.cpp", "vector_api.cpp", "sprite_api.cpp", "isaac_api.cpp",
+                     "mod_menu_api.cpp"):
             body = (SRC / "interfaces" / "lua" / unit).read_text(encoding="utf-8")
             for identifier, _handler in row.findall(body):
                 value = int(identifier, 16)
@@ -569,7 +585,15 @@ class ApiCatalogContractTests(unittest.TestCase):
         # `ItemPool.IsPillIdentified`（`0x05010003`）与 `RNG.GetSeed`（`0x07010003`）。
         # 它们就是 EID 缺口表里最后剩下的两条高置信缺口（`spikes:GetRNG():GetSeed()` 需要
         # `GetRNG` 与 `GetSeed` 各一行；`pool:IsPillIdentified(color)` 一行）。
-        self.assertEqual(checked, 179, "家族绑定行数应与已登记 API 数一致")
+        # 180 + 批次 14（2026-09-16）的一行：`Room.GetFrameCount`（`0x0401000A`）——
+        # EID 的背包合成渲染路径无条件调它，之前完全没有，导致拿着背包合成时每帧抛错
+        # （真机 `g_LastLuaErrorText` 坐实）。**这是台账 designed 的记账方式：每加一批 +1。**
+        # 181 + 4 行（2026-09-16，模组开关菜单的控制面 `RuntimeMods.List/SetEnabled/Save/Reload`）：
+        # 这四条**不是 PC API**，是运行时自带菜单脚本自己用的控制面（新域 `ModMenu`）。
+        # 记进目录的理由与别人一样：Lua 侧可见的东西必须有单一出处，否则"谁能调什么"就查不清了。
+        # 185 + 1 行（2026-09-16）：`RuntimeMods.Report` —— 菜单脚本用它上报"走到哪一步"，
+        # 让真机上"按了没反应"能一次读数定位（脚本加载/字体/打开/回调/落盘）。
+        self.assertEqual(checked, 186, "家族绑定行数应与已登记 API 数一致")
 
     def test_options_fields_are_registered_as_values(self):
         """`Options` 的两个字段是**值**而不是方法：Catalog 里有条目、绑定表里没有绑定行。

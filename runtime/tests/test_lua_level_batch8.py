@@ -90,14 +90,28 @@ std::uintptr_t AddressOf(const std::vector<unsigned char>& block) {
 // 宿主版"引擎函数"的前置声明（定义在文件末尾，注入点在中间）。
 void HostGetRenderPosition(const float* input, float* output, bool useCamera);
 
+// 宿主替身（定义在下面）与当前场景：`room_frame_count_unavailable` 故意不注入替身。
+std::int32_t HostRoomGetFrameCount(const void* room);
+const char* g_Scenario = nullptr;
+
 void PublishFakeEngine() {
     g_ModuleBytes.assign(kGameOwnerGlobalSlotOffset + sizeof(std::uint64_t), 0);
     g_OwnerSlotBytes.assign(sizeof(std::uint64_t), 0);
     // 覆盖到维度字段（`+0x21560`）。
     // 覆盖到"世界→屏幕"调整量（`Game + 0x24F9B0` 起 8 字节）—— `Room:WorldToScreenPosition` 读它。
-    g_GameBytes.assign(kGameToScreenAdjustOffset + sizeof(float) * 2, 0);
+    // 块要覆盖到 `Difficulty`(0x2F0028) —— Game/Level 在本项目里是同地址（`Level` 内嵌在 `Game` 起始处）。
+    g_GameBytes.assign(0x2F0028u + sizeof(std::uint32_t), 0);   // 字面偏移：覆盖到 Difficulty 之后
     WriteAt<float>(g_GameBytes, kGameToScreenAdjustOffset, 3.0F);
     WriteAt<float>(g_GameBytes, kGameToScreenAdjustOffset + sizeof(float), 4.0F);
+    // 2026-09-16：`Game` 的四个字段夹具。值都挑"能定死类型/符号"的：
+    // `Challenge` = 22（`CHALLENGE_SPEED`，EID 用 `game.Challenge` 过滤挑战房道具）、
+    // `Difficulty` = 1（HARD）、`TimeCounter` = 1234（有符号读，给一个普通正值也够钉位置）。
+    // ★ **故意写死字面偏移**（0x26FA88 / 0x2F0028 / 0x24F9A0），不用实现侧的常量：
+    //   夹具一旦跟着常量走，两边就会一起错、断言永远绿（`docs/错误复盘.md` 2026-09-16 第一条）。
+    //   本节第一版就是这么写的，反向验证（把常量改到 0x26FA84）**没变红**才发现 —— 夹具的职责是钉 ABI 本身。
+    WriteAt<std::uint32_t>(g_GameBytes, 0x26FA88, 22u);
+    WriteAt<std::uint32_t>(g_GameBytes, 0x2F0028, 1u);
+    WriteAt<std::int32_t>(g_GameBytes, 0x24F9A0, 1234);
     // 覆盖到渲染滚动偏移（`+0x1938` 起 16 字节）—— `Room:GetRenderScrollOffset()` 读它。
     g_RoomBytes.assign(isaac::runtime::layout::kRoomRenderScrollOffsetOffset + isaac::runtime::layout::kRoomRenderScrollOffsetWidth, 0);
     // 值刻意非零、X/Y 不同：证明读的是这两个 float，而不是"返回一个空向量"。
@@ -117,6 +131,11 @@ void PublishFakeEngine() {
     // 下标 6 留空（= 这个格子上没有东西），用来验"空项返回 nil"。
     LuaRuntime::SetEngineModuleBase(AddressOf(g_ModuleBytes));
     LuaRuntime::SetGetRenderPositionHostFunction(&HostGetRenderPosition);
+    // 2026-09-16：`Room:GetFrameCount()` 的宿主替身。场景 `room_frame_count_unavailable`
+    // **故意不注入**，用来验"绑定不可用时报错而不是编一个 0"。
+    if (g_Scenario == nullptr || std::strcmp(g_Scenario, "room_frame_count_unavailable") != 0) {
+        LuaRuntime::SetRoomGetFrameCountHostFunction(&HostRoomGetFrameCount);
+    }
 }
 
 // 宿主版"引擎函数"：把世界坐标平移 (1000, 2000)，好让断言能分开"引擎算的"与"我们加的"两段。
@@ -125,6 +144,13 @@ void HostGetRenderPosition(const float* input, float* output, bool useCamera) {
     output[0] = input[0] + 1000.0F;
     output[1] = input[1] + 2000.0F;
     static_cast<void>(useCamera);
+}
+
+// 宿主版"引擎函数"：`Room::GetFrameCount()` 在设备侧是引擎方法（16 字节入口守卫 + 调用），
+// 宿主上由这个替身返回一个**可辨认的**值（4321），好让断言能证明"读到的就是引擎给的数"。
+std::int32_t HostRoomGetFrameCount(const void* room) {
+    (void)room;
+    return 4321;
 }
 
 }  // namespace
@@ -153,6 +179,7 @@ int main(int argc, char** argv) {
     if (argc != 2) return 90;
     const char* scenario = argv[1];
 
+    g_Scenario = scenario;
     PublishFakeEngine();
     const std::uint32_t index = std::strcmp(scenario, "index_second") == 0 ? 77u : 42u;
     WriteAt<std::uint32_t>(g_GameBytes, kLevelCurrentRoomIndexOffset, index);
@@ -179,6 +206,16 @@ int main(int argc, char** argv) {
             "local mod=RegisterMod('Probe',1);"
             " mod:AddCallback(ModCallbacks.MC_PRE_GET_COLLECTIBLE,function()"
             " if Game():GetLevel():GetAbsoluteStage()~=nil then error('expected an error') end end)";
+    } else if (std::strcmp(scenario, "room_frame_count_unavailable") == 0) {
+        // 没注入宿主替身、也没发布绑定 ⇒ `Room:GetFrameCount()` 必须**报错**，
+        // 而不是返回 0（返回 0 会让 EID 的 `< 2` 恒成立、把合成结果显示静默跳过）。
+        script =
+            "local mod=RegisterMod('Probe',1);"
+            " mod:AddCallback(ModCallbacks.MC_PRE_GET_COLLECTIBLE,function()"
+            " local ok=pcall(function() return Game():GetRoom():GetFrameCount() end)"
+            " if ok then error('expected Room:GetFrameCount to raise when the binding is missing') end"
+            " print('ROOMFRAMES_UNAVAILABLE_OK')"
+            " end)";
     } else if (std::strcmp(scenario, "next_stage") == 0) {
         script =
             "local mod=RegisterMod('Probe',1);"
@@ -208,6 +245,9 @@ int main(int argc, char** argv) {
             " math.abs(screen.Y-(280+2000-7.25+4))>0.001 then"
             " error('WorldToScreenPosition must compose engine+room+game, got '"
             " ..screen.X..','..screen.Y) end"
+            " local roomFrames=room:GetFrameCount()"
+            " if roomFrames~=4321 then error('Room:GetFrameCount must return the engine value, got '"
+            " ..tostring(roomFrames)) end"
             " local grid=room:GetGridEntity(5)"
             " if grid==nil then error('GetGridEntity(5) must return a handle') end"
             " if grid:GetVariant()~=1000 then error('GridEntity:GetVariant must read +0x10, got '"
@@ -221,6 +261,11 @@ int main(int argc, char** argv) {
             " local preAscent=Game():GetLevel():IsPreAscent()"
             " print('STAGE=type:'..tostring(stageType)..' alt:'..tostring(isAlt)"
             " ..' pre:'..tostring(preAscent))"
+            " local game=Game()"
+            " print('CHALLENGE='..tostring(game.Challenge)..' DIFFICULTY='..tostring(game.Difficulty))"
+            " print('TIMECOUNTER='..tostring(game.TimeCounter))"
+            " print('SHAKE='..tostring(game.ScreenShakeOffset.X)..','..tostring(game.ScreenShakeOffset.Y))"
+            " if type(game.GetRoom)~='function' then error('Game methods must survive the field __index') end"
             " print('INDEX='..tostring(index)..' TYPE='..tostring(room:GetType())"
             " ..' SCROLL='..scroll.X..','..scroll.Y..' SCREEN='..screen.X..','..screen.Y)"
             " end)";
@@ -234,6 +279,11 @@ int main(int argc, char** argv) {
     }
     if (result != LuaRuntime::LuaInitResult::Success) return 2;
     LuaRuntime::DispatchPreGetCollectible(nullptr, 0, 0, 1, 0);
+    if (std::strcmp(scenario, "room_frame_count_unavailable") == 0) {
+        // 这个场景的脚本**自己**用 pcall 抓住了"绑定不可用"那次错误并核对了它，
+        // 所以这里要求的是"回调没有别的错误"（多一个错误就说明别处也炸了）。
+        return LuaRuntime::TakeCallbackError() ? 3 : 0;
+    }
     if (std::strcmp(scenario, "absolute_stage") == 0 ||
         std::strcmp(scenario, "next_stage") == 0) {
         // 绑定不可用 ⇒ 回调里那次调用必须抛错并被记下来（返回编造的值就会走到 error('expected an error')）。
@@ -312,6 +362,41 @@ class LuaLevelBatch8Tests(unittest.TestCase):
             with self.subTest(scenario=scenario):
                 result = self.run_scenario(scenario)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_game_fields_read_their_own_offsets(self):
+        """`Game` 的四个**字段**（点访问）必须走 `__index` 的字段分支；同时方法不能被吃掉。
+
+        偏移证据见 `runtime_constants.hpp` 的 `kGameChallengeOffset` / `kGameDifficultyOffset` /
+        `kGameTimeCounterOffset` / `kGameScreenShakeOffsetOffset` 注释（每条两处不同函数）。
+        最后一条断言（`game.GetRoom` 仍是函数）钉住"字段查找不吃方法名"。
+        """
+        result = self.run_scenario("valid")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("CHALLENGE=22 DIFFICULTY=1", result.stdout)
+        self.assertIn("TIMECOUNTER=1234", result.stdout)
+        self.assertIn("SHAKE=3.0,4.0", result.stdout)
+
+    def test_room_frame_count_returns_the_engine_value(self):
+        """`Room:GetFrameCount()` 走"调引擎方法"那条路 ⇒ 读到的必须是引擎给的值。
+
+        夹具（`HostRoomGetFrameCount`）返回 **4321**；脚本里断言 `room:GetFrameCount() == 4321`，
+        不等就 `error(...)` ⇒ 场景会以非零码退出。这条同时覆盖"参数正确（只有 this）"这一层：
+        宿主替身签名就是 `int32(const void* room)`。
+        """
+        result = self.run_scenario("valid")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_room_frame_count_reports_an_error_when_the_binding_is_missing(self):
+        """绑定不可用（守卫没过 / 没发布）时必须**报错**，不能返回 0。
+
+        返回 0 会让 EID 的 `game:GetRoom():GetFrameCount() < 2` 恒成立，把背包合成的
+        结果显示整段静默跳过 —— 那是最难查的一类缺陷（"少一块、不报错"）。
+        这条按项目纪律反向验过：把 handler 里的 `luaL_error` 换成 `lua_pushinteger(0)`
+        之后本用例必须变红。
+        """
+        result = self.run_scenario("room_frame_count_unavailable")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ROOMFRAMES_UNAVAILABLE_OK", result.stdout)
 
     def test_a_guard_mismatch_never_calls_the_address(self):
         """入口守护卫不符时**绝不调用**该地址（与 `CallGameCurseAccessor` 同一口径）。

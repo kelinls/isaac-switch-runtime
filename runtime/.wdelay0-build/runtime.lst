@@ -1,0 +1,2307 @@
+                 U nn::ro::detail::g_pAutoLoadList
+                 U nn::ro::detail::g_LookupGlobalManualFunctionPointer
+0000000000000000 T __code_start__
+0000000000000000 T __module_start
+0000000000000000 a __start__
+0000000000000000 t __text_start__
+0000000000000020 t entrypoint
+0000000000000030 t get_module_info
+0000000000000038 t __get_module_start_shim
+0000000000000068 t bssclr_start
+0000000000000074 t bss_loop
+00000000000000b0 0000000000000080 t rtld::lookup_global_auto(char const*)
+0000000000000100 a CTX_STACK_BASE_SIZE
+0000000000000130 000000000000008c t __rtld_lazy_bind_symbol
+00000000000001c0 00000000000000d4 t rtld::ModuleObject::GetSymbolByName(char const*)
+0000000000000200 a CTX_STACK_FLOAT_SIZE
+00000000000002a0 0000000000000148 t rtld::ModuleObject::TryResolveSymbol(unsigned long*, Elf64_Sym*)
+00000000000003f0 0000000000000168 t exl_relocate_self
+0000000000000560 000000000000003c t __rtld_elf_hash
+00000000000005a0 0000000000000068 t IsaacModRuntime_RebuildContentMountPointsRelay
+0000000000000610 0000000000000104 t bool (anonymous namespace)::VerifyGameEntry<16ul>(TargetModule const&, unsigned long, std::array<unsigned char, 16ul> const&, unsigned long*)
+0000000000000720 0000000000000214 t GameFileReader::VerifyBindings(TargetModule const&, GameFileReader::Bindings*)
+0000000000000940 0000000000000170 t GameFileReader::ReadTextFile(GameFileReader::Bindings const&, char const*, unsigned char*, unsigned long, unsigned long*)
+0000000000000ab0 000000000000008c t (anonymous namespace)::IsReadableNonExecutableMapping(unsigned long, unsigned long)
+0000000000000b3c 0000000000000034 t (anonymous namespace)::RecordGameOwnerObservation(GameOwnerObservation)
+0000000000000b70 0000000000000094 t (anonymous namespace)::IsMappedRxModuleCodeWindow(unsigned long, unsigned long) [clone .constprop.0]
+0000000000000c04 00000000000000e0 t ObserveGameIsPaused(unsigned long, unsigned long)
+0000000000000ce4 00000000000000b4 t ReadCurrentGameLevelStage(unsigned long, unsigned int*)
+0000000000000d98 00000000000000e0 t ReadCurrentGameItemPool(unsigned long, void**)
+0000000000000e78 0000000000000110 t ReadCurrentGameRoom(unsigned long, void**)
+0000000000000f88 0000000000000070 t ReadCurrentGameRoomType(unsigned long, unsigned int*)
+0000000000000ff8 00000000000000e0 t ObserveGameIsGreedMode(unsigned long, unsigned long)
+00000000000010d8 00000000000000dc t ObserveLevelIsAscent(unsigned long, unsigned long)
+00000000000011b4 0000000000000044 t (anonymous namespace)::PackModLoadDiagnostics(isaac::runtime::ModLoadFailure const&)
+00000000000011f8 0000000000000010 t (anonymous namespace)::RecordRenderPresentRelayInstall(RenderPresentRelayInstallResult)
+0000000000001208 0000000000000090 t (anonymous namespace)::IsMappedRxModuleCodeWindow(unsigned long, unsigned long)
+0000000000001298 000000000000001c t (anonymous namespace)::ObserveGameStart(void*, unsigned int)
+00000000000012b4 000000000000002c t EntryRelayManagerRenderCallback::{lambda(IsaacRepentance::Manager*)#1}::_FUN(IsaacRepentance::Manager*)
+00000000000012e0 0000000000000014 t (anonymous namespace)::ManagerRenderHook::Callback(IsaacRepentance::Manager*)::{lambda(IsaacRepentance::Manager*)#1}::_FUN(IsaacRepentance::Manager*)
+00000000000012f4 0000000000000204 t (anonymous namespace)::LoadDefaultManifestModThroughService(unsigned int*) [clone .constprop.0]
+00000000000014f8 0000000000000124 t (anonymous namespace)::ManagerUpdateHook::Callback(IsaacRepentance::Manager*)
+000000000000161c 0000000000000098 t (anonymous namespace)::DispatchModPostRender(void*)
+00000000000016b4 0000000000000030 t IsaacModRuntime_DispatchPostRenderBeforePresent
+00000000000016e4 0000000000000080 t IsaacModRuntime_PresentGotSlotIntercept
+0000000000001764 0000000000000080 t (anonymous namespace)::RenderHookBody(IsaacRepentance::Manager*, void (*)(IsaacRepentance::Manager*))
+00000000000017e4 000000000000000c t (anonymous namespace)::ManagerRenderHook::Callback(IsaacRepentance::Manager*)
+00000000000017f0 0000000000000038 t TargetModule::Contains(unsigned long, unsigned long) const
+0000000000001828 00000000000000dc T IsaacModRuntime_GetHookDiagnostics
+0000000000001904 000000000000000c t EntryRelayManagerRenderCallback
+0000000000001910 0000000000000004 t EntryRelayManagerUpdateCallback
+0000000000001914 0000000000000048 t PublishEntryRelayOriginals(TargetModule const&)
+000000000000195c 0000000000000038 t verify_bytes(unsigned char const*, unsigned char const*, unsigned long)
+0000000000001994 00000000000000e4 t auto (anonymous namespace)::VerifyGameStartRelay(TargetModule const&, unsigned long*)::{lambda(unsigned long, auto:1 const&, unsigned long, auto:2 const&)#1}::operator()<std::array<unsigned char, 4ul>, std::array<unsigned char, 80ul> >(unsigned long, std::array<unsigned char, 4ul> const&, unsigned long, std::array<unsigned char, 80ul> const&) const
+0000000000001a78 00000000000000a4 t VerifyRngBindings(TargetModule const&, unsigned long*, unsigned long*)::{lambda(unsigned long, unsigned char const*, unsigned long, unsigned long*)#1}::operator()(unsigned long, unsigned char const*, unsigned long, unsigned long*) const [clone .constprop.0] [clone .isra.0]
+0000000000001b1c 00000000000000a4 t VerifyMusicBindings(TargetModule const&, unsigned long*, unsigned long*, unsigned long*)::{lambda(unsigned long, unsigned char const*, unsigned long, unsigned long*)#1}::operator()(unsigned long, unsigned char const*, unsigned long, unsigned long*) const [clone .constprop.0] [clone .isra.0]
+0000000000001bc0 0000000000000164 t VerifyManagerRelay(TargetModule const&, unsigned long, unsigned long*)
+0000000000001d24 0000000000000164 t VerifyManagerRenderRelay(TargetModule const&, unsigned long, unsigned long*)
+0000000000001e88 00000000000000f4 t VerifyGameOwnerSlot(TargetModule const&, unsigned long*)
+0000000000001f7c 000000000000007c t EntryRelayPreGetCollectibleCallback
+0000000000001ff8 000000000000001c t EntryRelayRebuildMountPointsCallback
+0000000000002014 0000000000000020 W bool std::operator==<unsigned char, 32ul>(std::array<unsigned char, 32ul> const&, std::array<unsigned char, 32ul> const&)
+0000000000002034 00000000000000b4 t VerifyManagerUpdate(TargetModule const&, unsigned long*)
+00000000000020e8 00000000000000b4 t VerifyManagerRender(TargetModule const&, unsigned long*)
+000000000000219c 0000000000000114 t TryInstallManagerRenderHook(TargetModule const&)
+00000000000022b0 00000000000000e0 t VerifyGameIsPausedThunk(TargetModule const&, unsigned long*)
+0000000000002390 00000000000000e0 t VerifyGameIsGreedMode(TargetModule const&, unsigned long*)
+0000000000002470 00000000000000e0 t VerifyLevelIsAscent(TargetModule const&, unsigned long*)
+0000000000002550 00000000000000e0 t VerifyGetRenderPositionStub(TargetModule const&, unsigned long*)
+0000000000002630 00000000000000e0 t VerifyLevelGetAbsoluteStage(TargetModule const&, unsigned long*)
+0000000000002710 00000000000000e0 t VerifyLevelIsNextStageAvailable(TargetModule const&, unsigned long*)
+00000000000027f0 00000000000000e0 t VerifyManagerIsActionTriggered(TargetModule const&, unsigned long*)
+00000000000028d0 00000000000000e0 t VerifyManagerIsActionPressed(TargetModule const&, unsigned long*)
+00000000000029b0 00000000000000e0 t VerifyManagerGetActionValue(TargetModule const&, unsigned long*)
+0000000000002a90 00000000000000cc t VerifyMusicBindings(TargetModule const&, unsigned long*, unsigned long*, unsigned long*)
+0000000000002b5c 000000000000009c t VerifyRngBindings(TargetModule const&, unsigned long*, unsigned long*)
+0000000000002bf8 000000000000003c t TryInstallRngBindings(TargetModule const&)
+0000000000002c34 000000000000020c t TryInstallManagerPresentGotSlot(TargetModule const&)
+0000000000002e40 00000000000001c4 t TryInstallManagerPresentRelay(TargetModule const&)
+0000000000003004 00000000000001dc t TryInstallRebuildMountPointsRelay(TargetModule const&)
+00000000000031e0 0000000000000140 t TryInstallGameStartRelay(TargetModule const&)
+0000000000003320 000000000000020c t TryInstallPreGetCollectibleRelay(TargetModule const&)
+000000000000352c 0000000000000104 t bool VerifyBindingTable<LuaRuntime::LuaFontBindings, 15ul>(TargetModule const&, std::array<BindingGuardEntry, 15ul> const&, LuaRuntime::LuaFontBindings*)
+0000000000003630 0000000000000010 t VerifyFontBindings(TargetModule const&, LuaRuntime::LuaFontBindings*)
+0000000000003640 0000000000000104 t bool VerifyBindingTable<LuaRuntime::LuaSpriteBindings, 21ul>(TargetModule const&, std::array<BindingGuardEntry, 21ul> const&, LuaRuntime::LuaSpriteBindings*)
+0000000000003744 0000000000000010 t VerifySpriteBindings(TargetModule const&, LuaRuntime::LuaSpriteBindings*)
+0000000000003754 00000000000001ac t PublishManagerEngineBindings(TargetModule const&)
+0000000000003900 00000000000001d4 t TryInstallDefaultManifestMod(TargetModule const&)
+0000000000003ad4 000000000000013c t TryInstallManagerUpdateHook(TargetModule const&)
+0000000000003c10 0000000000000040 t _GLOBAL__sub_I_hook_manager.cpp
+0000000000003c50 0000000000000014 t _GLOBAL__sub_D_hook_manager.cpp
+0000000000003c64 0000000000000004 t LuaRuntime::LuaCallbackInvoker::~LuaCallbackInvoker()
+0000000000003c64 0000000000000004 t LuaRuntime::LuaCallbackInvoker::~LuaCallbackInvoker()
+0000000000003c68 00000000000000f0 t LuaRuntime::(anonymous namespace)::CaptureLuaErrorTop(lua_State*)
+0000000000003d58 000000000000003c t LuaRuntime::(anonymous namespace)::OpenLibrary(lua_State*, unsigned int, char const*, int (*)(lua_State*))
+0000000000003d94 00000000000000b0 t LuaRuntime::(anonymous namespace)::RecordRequireFailure(unsigned int)
+0000000000003e44 0000000000000034 t LuaRuntime::(anonymous namespace)::OsGetenv(lua_State*)
+0000000000003e78 0000000000000124 t LuaRuntime::(anonymous namespace)::RegisterColorApi(lua_State*)
+0000000000003f9c 000000000000005c t LuaRuntime::(anonymous namespace)::SetIntegerConstants(lua_State*, LuaRuntime::(anonymous namespace)::LuaIntegerConstant const*, unsigned long)
+0000000000003ff8 0000000000000080 t LuaRuntime::(anonymous namespace)::RegisterRngApi(lua_State*)
+0000000000004078 00000000000000a8 t LuaRuntime::(anonymous namespace)::RegisterFontApi(lua_State*)
+0000000000004120 000000000000024c t LuaRuntime::(anonymous namespace)::RegisterVectorApi(lua_State*)
+000000000000436c 00000000000000f8 t LuaRuntime::(anonymous namespace)::RegisterSpriteApi(lua_State*)
+0000000000004464 0000000000000878 t LuaRuntime::(anonymous namespace)::PrepareRuntime(lua_State*)
+0000000000004cdc 0000000000000044 t LuaRuntime::(anonymous namespace)::OsSetlocale(lua_State*)
+0000000000004d20 000000000000004c t LuaRuntime::(anonymous namespace)::OsDifftime(lua_State*)
+0000000000004d6c 000000000000003c t LuaRuntime::(anonymous namespace)::OsClock(lua_State*)
+0000000000004da8 0000000000000008 t LuaRuntime::LuaCallbackInvoker::~LuaCallbackInvoker()
+0000000000004db0 000000000000010c t LuaRuntime::LuaCallbackInvoker::Invoke(isaac::runtime::CallbackDescriptor const&)
+0000000000004ebc 00000000000000c0 t LuaRuntime::(anonymous namespace)::ValidateMusicMethod(unsigned long, unsigned char const*, unsigned long) [clone .constprop.0]
+0000000000004f7c 00000000000000e4 t LuaRuntime::(anonymous namespace)::ResolveMusicForManager(unsigned long, unsigned long, unsigned char const*, unsigned long, unsigned long*) [clone .constprop.0]
+0000000000005060 0000000000000038 t LuaRuntime::(anonymous namespace)::ResolveMusicForCall(unsigned long, unsigned char const*, unsigned long, unsigned long*) [clone .constprop.0]
+0000000000005098 000000000000003c t LuaRuntime::(anonymous namespace)::AppendRequireText(char*, unsigned long, unsigned long, char const*, unsigned long) [clone .constprop.0]
+00000000000050d4 0000000000000264 t LuaRuntime::(anonymous namespace)::OsDate(lua_State*)
+0000000000005338 0000000000000078 t LuaRuntime::(anonymous namespace)::ResetStage13Context()
+00000000000053b0 0000000000000048 t LuaRuntime::(anonymous namespace)::ResetAfterFailure(lua_State*, LuaRuntime::LuaInitResult)
+00000000000053f8 0000000000000190 t LuaRuntime::(anonymous namespace)::InitializeScript(char const*, unsigned long, char const*) [clone .part.0]
+0000000000005588 0000000000000024 t isaac::runtime::EngineReadableRegionCache::Clear()
+00000000000055ac 000000000000002c t isaac::runtime::EngineGuardEnterDispatch()
+00000000000055d8 0000000000000018 t isaac::runtime::EngineGuardLeaveDispatch()
+00000000000055f0 0000000000000004 t LuaRuntime::RecordCallbackOperation(LuaRuntime::CallbackOperation)
+00000000000055f4 0000000000000018 t LuaRuntime::CallbackErrorPending()
+000000000000560c 0000000000000048 t LuaRuntime::LastLuaErrorHead(unsigned int*)
+0000000000005654 0000000000000054 t LuaRuntime::RecordLuaErrorText(char const*, unsigned long)
+00000000000056a8 000000000000019c t LuaRuntime::ReportAndRecordLuaError(lua_State*, char const*, ...)
+0000000000005844 000000000000014c t LuaRuntime::(anonymous namespace)::RegisterMod(lua_State*)
+0000000000005990 000000000000008c t LuaRuntime::(anonymous namespace)::ModNewIndex(lua_State*)
+0000000000005a1c 00000000000000d4 t LuaRuntime::(anonymous namespace)::ModIndex(lua_State*)
+0000000000005af0 0000000000000074 t LuaRuntime::(anonymous namespace)::CreateGameHandle(lua_State*)
+0000000000005b64 0000000000000074 t LuaRuntime::(anonymous namespace)::CreateMusicHandle(lua_State*)
+0000000000005bd8 0000000000000074 t LuaRuntime::(anonymous namespace)::CreateRngHandle(lua_State*)
+0000000000005c4c 000000000000027c t LuaRuntime::(anonymous namespace)::DebugGetInfo(lua_State*)
+0000000000005ec8 0000000000000190 t LuaRuntime::(anonymous namespace)::OsTime(lua_State*)
+0000000000006058 0000000000000054 t LuaRuntime::(anonymous namespace)::MarkPostUpdate(lua_State*)
+00000000000060ac 0000000000000038 t LuaRuntime::(anonymous namespace)::RaiseRequireFailure(lua_State*, unsigned int, char const*)
+00000000000060e4 0000000000000664 t LuaRuntime::(anonymous namespace)::Require(lua_State*) [clone .part.0]
+0000000000006748 0000000000000068 t LuaRuntime::(anonymous namespace)::Require(lua_State*)
+00000000000067b0 0000000000000018 t LuaRuntime::InManagedCallbackScope()
+00000000000067c8 0000000000000010 t LuaRuntime::GameOwnerSlot()
+00000000000067d8 0000000000000010 t LuaRuntime::EngineModuleBase()
+00000000000067e8 0000000000000010 t LuaRuntime::GameIsPausedThunk()
+00000000000067f8 0000000000000010 t LuaRuntime::GameIsGreedModeThunk()
+0000000000006808 0000000000000010 t LuaRuntime::LevelIsAscentThunk()
+0000000000006818 0000000000000010 t LuaRuntime::LevelGetAbsoluteStageThunk()
+0000000000006828 0000000000000010 t LuaRuntime::LevelIsNextStageAvailableThunk()
+0000000000006838 0000000000000010 t LuaRuntime::GetRenderPositionThunk()
+0000000000006848 0000000000000010 t LuaRuntime::ItemPoolGetCollectibleThunk()
+0000000000006858 0000000000000010 t LuaRuntime::MusicGetCurrentMusicIdThunk()
+0000000000006868 0000000000000010 t LuaRuntime::MusicPauseThunk()
+0000000000006878 0000000000000010 t LuaRuntime::MusicResumeThunk()
+0000000000006888 0000000000000010 t LuaRuntime::RngSetSeedThunk()
+0000000000006898 0000000000000010 t LuaRuntime::InputIsActionPressedThunk()
+00000000000068a8 0000000000000010 t LuaRuntime::InputIsActionTriggeredThunk()
+00000000000068b8 0000000000000010 t LuaRuntime::InputGetActionValueThunk()
+00000000000068c8 0000000000000010 t LuaRuntime::RngNextThunk()
+00000000000068d8 0000000000000010 t LuaRuntime::FontCtorThunk()
+00000000000068e8 0000000000000010 t LuaRuntime::FontDestructorThunk()
+00000000000068f8 0000000000000010 t LuaRuntime::FontLoadThunk()
+0000000000006908 0000000000000010 t LuaRuntime::FontUnloadThunk()
+0000000000006918 0000000000000010 t LuaRuntime::FontIsLoadedThunk()
+0000000000006928 0000000000000010 t LuaRuntime::FontGetStringWidthThunk()
+0000000000006938 0000000000000010 t LuaRuntime::FontGetStringWidthUTF8Thunk()
+0000000000006948 0000000000000010 t LuaRuntime::FontGetLineHeightThunk()
+0000000000006958 0000000000000010 t LuaRuntime::FontGetBaselineHeightThunk()
+0000000000006968 0000000000000010 t LuaRuntime::FontGetCharacterWidthThunk()
+0000000000006978 0000000000000010 t LuaRuntime::FontSetMissingCharacterThunk()
+0000000000006988 0000000000000010 t LuaRuntime::FontDrawStringScaledThunk()
+0000000000006998 0000000000000010 t LuaRuntime::FontDrawStringUTF8Thunk()
+00000000000069a8 0000000000000010 t LuaRuntime::FontDrawStringScaledUTF8Thunk()
+00000000000069b8 0000000000000010 t LuaRuntime::FontDrawStringThunk()
+00000000000069c8 0000000000000010 t LuaRuntime::SpriteCtorThunk()
+00000000000069d8 0000000000000010 t LuaRuntime::SpriteDestructorThunk()
+00000000000069e8 0000000000000010 t LuaRuntime::SpritePlayThunk()
+00000000000069f8 0000000000000010 t LuaRuntime::SpriteSetAnimationThunk()
+0000000000006a08 0000000000000010 t LuaRuntime::SpriteSetFrameNamedThunk()
+0000000000006a18 0000000000000010 t LuaRuntime::SpriteSetFrameThunk()
+0000000000006a28 0000000000000010 t LuaRuntime::SpriteGetFrameThunk()
+0000000000006a38 0000000000000010 t LuaRuntime::SpriteSetLayerFrameThunk()
+0000000000006a48 0000000000000010 t LuaRuntime::SpriteGetLayerFrameThunk()
+0000000000006a58 0000000000000010 t LuaRuntime::SpriteGetTexelThunk()
+0000000000006a68 0000000000000010 t LuaRuntime::SpriteUpdateThunk()
+0000000000006a78 0000000000000010 t LuaRuntime::SpriteIsPlayingThunk()
+0000000000006a88 0000000000000010 t LuaRuntime::SpriteIsFinishedThunk()
+0000000000006a98 0000000000000010 t LuaRuntime::SpriteRenderThunk()
+0000000000006aa8 0000000000000010 t LuaRuntime::SpriteRenderLayerThunk()
+0000000000006ab8 0000000000000010 t LuaRuntime::SpritePlayRandomThunk()
+0000000000006ac8 0000000000000010 t LuaRuntime::SpriteLoadThunk()
+0000000000006ad8 0000000000000010 t LuaRuntime::SpriteLoadGraphicsThunk()
+0000000000006ae8 0000000000000010 t LuaRuntime::SpriteReplaceSpritesheetThunk()
+0000000000006af8 0000000000000010 t LuaRuntime::LibcxxStringAssignThunk()
+0000000000006b08 0000000000000010 t LuaRuntime::GameOperatorDeleteThunk()
+0000000000006b18 000000000000011c t LuaRuntime::ValidateItemPoolGetCollectibleBinding(unsigned long)
+0000000000006c34 0000000000000010 t LuaRuntime::ResolveMusicGetCurrentMusicId(unsigned long, unsigned long*)
+0000000000006c44 0000000000000010 t LuaRuntime::ResolveMusicPause(unsigned long, unsigned long*)
+0000000000006c54 0000000000000010 t LuaRuntime::ResolveMusicResume(unsigned long, unsigned long*)
+0000000000006c64 000000000000000c t LuaRuntime::ValidateRngSetSeedBinding(unsigned long)
+0000000000006c70 000000000000000c t LuaRuntime::ValidateRngNextBinding(unsigned long)
+0000000000006c7c 000000000000000c t LuaRuntime::ManagedCallbackRegistry()
+0000000000006c88 0000000000000008 t LuaRuntime::RuntimeOwnerHandle()
+0000000000006c90 0000000000000008 t LuaRuntime::IsStage13CallbackMode()
+0000000000006c98 000000000000001c t LuaRuntime::InitializeFromBuffer(char const*, unsigned long, char const*)
+0000000000006cb4 00000000000001d0 t LuaRuntime::InitializeManifestMod(char const*, unsigned long, char const*, char const*, GameFileReader::Bindings const&)
+0000000000006e84 0000000000000018 t LuaRuntime::Initialize()
+0000000000006e9c 000000000000001c t LuaRuntime::SetGameBindings(unsigned long, unsigned long)
+0000000000006eb8 0000000000000010 t LuaRuntime::SetEngineModuleBase(unsigned long)
+0000000000006ec8 0000000000000028 t LuaRuntime::SetInputBindings(unsigned long, unsigned long, unsigned long)
+0000000000006ef0 0000000000000010 t LuaRuntime::SetGameIsGreedModeBinding(unsigned long)
+0000000000006f00 0000000000000010 t LuaRuntime::SetLevelIsAscentBinding(unsigned long)
+0000000000006f10 0000000000000010 t LuaRuntime::SetGetRenderPositionBinding(unsigned long)
+0000000000006f20 0000000000000010 t LuaRuntime::SetLevelGetAbsoluteStageBinding(unsigned long)
+0000000000006f30 0000000000000010 t LuaRuntime::SetLevelIsNextStageAvailableBinding(unsigned long)
+0000000000006f40 0000000000000010 t LuaRuntime::SetItemPoolGetCollectibleBinding(unsigned long)
+0000000000006f50 0000000000000028 t LuaRuntime::SetMusicBindings(unsigned long, unsigned long, unsigned long)
+0000000000006f78 000000000000001c t LuaRuntime::SetRngBindings(unsigned long, unsigned long)
+0000000000006f94 00000000000000f4 t LuaRuntime::SetFontBindings(LuaRuntime::LuaFontBindings const&)
+0000000000007088 0000000000000154 t LuaRuntime::SetSpriteBindings(LuaRuntime::LuaSpriteBindings const&)
+00000000000071dc 0000000000000058 t LuaRuntime::IsMusicReadyForDefaultCallback(unsigned long)
+0000000000007234 0000000000000018 t LuaRuntime::NoteGameStarted(bool)
+000000000000724c 0000000000000018 t LuaRuntime::IsReady()
+0000000000007264 0000000000000188 t LuaRuntime::DispatchPreGetCollectible(void*, unsigned int, unsigned int, unsigned int, unsigned int)
+00000000000073ec 0000000000000090 t LuaRuntime::DispatchPostGameStarted(bool)
+000000000000747c 00000000000000b4 t LuaRuntime::DispatchPostUpdate()
+0000000000007530 0000000000000090 t LuaRuntime::DispatchPostRender(unsigned long)
+00000000000075c0 0000000000000014 t _GLOBAL__sub_D_lua_runtime.cpp
+00000000000075d4 000000000000003c t (anonymous namespace)::Parser::SkipWhitespace()
+0000000000007610 0000000000000034 t (anonymous namespace)::Parser::Consume(char)
+0000000000007644 00000000000001d0 t (anonymous namespace)::Parser::ParseNumber(bool*)
+0000000000007814 000000000000006c t (anonymous namespace)::Parser::Equals(char const*, (anonymous namespace)::ParsedString const&, char const*)
+0000000000007880 0000000000000058 t (anonymous namespace)::Parser::ConsumeLiteral(char const*, unsigned long)
+00000000000078d8 0000000000000084 t (anonymous namespace)::Parser::ParseHexQuad(unsigned int*) [clone .constprop.0]
+000000000000795c 0000000000000044 t (anonymous namespace)::Parser::AppendByte(unsigned char, char*, unsigned long, (anonymous namespace)::ParsedString*) [clone .isra.0]
+00000000000079a0 0000000000000374 t (anonymous namespace)::Parser::ParseString(char*, unsigned long, (anonymous namespace)::ParsedString*)
+0000000000007d14 0000000000000200 t (anonymous namespace)::Parser::ParseValue(unsigned long)
+0000000000007f14 0000000000000634 t ModManifest::SelectFirstEnabled(char const*, unsigned long, ModManifest::SelectedMod*)
+0000000000008550 0000000000000108 t ReadBuildId(ModuleRange const&, std::array<unsigned char, 32ul>*)
+0000000000008660 00000000000003f4 t ScanTargetModule()
+0000000000008a60 000000000000009c t FindTargetModule()
+0000000000008b00 0000000000000030 t (anonymous namespace)::SetRuntimeState(RuntimeContext const&)
+0000000000008b30 0000000000000140 t (anonymous namespace)::ModuleWorker(void*)
+0000000000008c70 00000000000001a0 t exl_main
+0000000000008e10 0000000000000030 t exl_exception_entry
+0000000000008e40 0000000000000080 t Step(RuntimeState, RuntimeContext const&)
+0000000000008ec0 00000000000000a0 t exl_init
+0000000000008f60 00000000000000c4 t exl_module_init
+0000000000009030 00000000000000d8 t exl_entrypoint_init
+0000000000009110 0000000000000114 t exl::diag::AbortImpl(char const*, char const*, char const*, int)
+0000000000009230 00000000000001cc t exl::diag::AbortImpl(char const*, char const*, char const*, int, char const*, ...)
+0000000000009400 00000000000001c4 t exl::diag::OnAssertionFailure(exl::diag::AssertionType, char const*, char const*, char const*, int, char const*, ...)
+00000000000095d0 0000000000000014 t exl::diag::OnAssertionFailure(exl::diag::AssertionType, char const*, char const*, char const*, int)
+00000000000095f0 0000000000000040 t exl_abort
+0000000000009630 00000000000000dc t exl::util::GetRandomU64()
+0000000000009710 0000000000000004 t exl_random
+0000000000009720 000000000000006c t exl::util::impl::InitVersion()
+0000000000009790 0000000000000080 t exl::util::proc_handle::(anonymous namespace)::ReceiveProcessHandleThreadMain(void*)
+0000000000009810 0000000000000188 t exl::util::proc_handle::(anonymous namespace)::GetViaIpcTrick()
+00000000000099a0 000000000000005c t exl::util::proc_handle::Get()
+0000000000009a00 0000000000000038 t exl::util::GetAddressFromInfo(InfoType) [clone .part.0]
+0000000000009a40 0000000000000308 t exl::util::LogLayout()
+0000000000009d50 00000000000007a0 t exl::util::impl::InitMemLayout()
+000000000000a4f0 0000000000000218 t exl::util::RwPages::RwPages(unsigned long, unsigned long)
+000000000000a4f0 0000000000000218 t exl::util::RwPages::RwPages(unsigned long, unsigned long)
+000000000000a710 0000000000000044 t exl::util::RwPages::Flush() const
+000000000000a760 0000000000000138 t exl::util::RwPages::~RwPages()
+000000000000a760 0000000000000138 t exl::util::RwPages::~RwPages()
+000000000000a8a0 0000000000000004 t exl::reloc::impl::Initialize()
+000000000000a8b0 0000000000000008 t exl::log::SvcLogger::LogRaw(std::basic_string_view<char, std::char_traits<char> >)
+000000000000a8c0 0000000000000028 t exl::hook::nx64::Initialize()
+000000000000b000 0000000000001000 t exl::hook::nx64::impl::s_HookJit::s_Area
+000000000000c000 0000000000000018 t exl::hook::nx64::InitializeInline()
+000000000000d000 0000000000001000 t exl::hook::nx64::impl::s_InlineHookJit::s_Area
+000000000000e000 0000000000000680 t isaac::runtime::relay::TryInstallEntryRelay(unsigned long, void const*, unsigned long, unsigned long*)
+000000000000e680 0000000000000010 t isaac::runtime::relay::LastFailure()
+000000000000f000 0000000000001000 t isaac::runtime::relay::(anonymous namespace)::impl::EntryRelayArena::s_Area
+0000000000010000 0000000000000084 t isaac::runtime::RuntimeBootstrap::Start()
+0000000000010090 000000000000000c t isaac::runtime::RuntimeKernel::Instance()
+00000000000100a0 000000000000004c t isaac::runtime::RuntimeKernel::Initialize(isaac::runtime::RuntimeDependencies const&)
+00000000000100f0 0000000000000054 t isaac::runtime::RuntimeKernel::PublishEvent(unsigned int)
+0000000000010150 00000000000000d8 t isaac::runtime::BinaryEventCodec::Encode(isaac::runtime::DiagnosticEvent const&, unsigned char*, unsigned long)
+0000000000010230 0000000000000038 t isaac::runtime::DiagnosticHealth::RecordDrop()
+0000000000010270 0000000000000070 t isaac::runtime::DiagnosticHealth::RecordFileFailure(isaac::runtime::DiagnosticHealthReason)
+00000000000102e0 000000000000004c t isaac::runtime::HookInstallReport::InstalledCount() const
+0000000000010330 0000000000000098 t isaac::runtime::HookInstallReport::FirstFailureSlot() const
+00000000000103d0 00000000000001dc t isaac::runtime::HookInstallService::InstallProductionHooks(isaac::runtime::ModuleInfo const&, isaac::runtime::HookInstallReport*)
+00000000000105b0 000000000000000c t isaac::runtime::ManagedFrameClock::Reset()
+00000000000105c0 000000000000000c t isaac::runtime::ManagedFrameClock::Count()
+00000000000105d0 000000000000010c t isaac::runtime::CallbackDispatcher::Dispatch(unsigned int, isaac::runtime::ThreadAffinity)
+00000000000106e0 0000000000000058 t isaac::runtime::CallbackRegistry::Register(isaac::runtime::CallbackDescriptor const&)
+0000000000010740 000000000000003c t isaac::runtime::CallbackRegistry::CountOf(unsigned int) const
+0000000000010780 0000000000000054 t isaac::runtime::CallbackRegistry::At(unsigned int, unsigned long) const
+00000000000107e0 0000000000000054 t isaac::runtime::CallbackRegistry::Reset()
+0000000000010840 0000000000000190 t isaac::runtime::ContentMountService::RegisterMod(std::basic_string_view<char, std::char_traits<char> >)
+00000000000109d0 00000000000000b4 t isaac::runtime::ContentMountService::RemountAll()
+0000000000010a90 000000000000000c t isaac::runtime::SessionContentMountService()
+0000000000010aa0 00000000000000bc t isaac::runtime::ManifestParser::Parse(char const*, unsigned long) const
+0000000000010b60 0000000000000094 t isaac::runtime::(anonymous namespace)::JoinPath(char*, unsigned long, char const*, char const*) [clone .part.0]
+0000000000010c00 0000000000000320 t isaac::runtime::ManifestService::Resolve(unsigned char*, unsigned long, char*, unsigned long, char*, unsigned long, char*, unsigned long, isaac::runtime::ModLoadFailure*) const
+0000000000010f20 0000000000000220 t isaac::runtime::ModLoadService::Load(isaac::runtime::ModLoadRequest const&, isaac::runtime::ModLoadFailure*)
+0000000000011140 0000000000000004 t isaac::runtime::HookRoutingAdapter::~HookRoutingAdapter()
+0000000000011140 0000000000000004 t isaac::runtime::HookRoutingAdapter::~HookRoutingAdapter()
+0000000000011150 000000000000005c t isaac::runtime::HookRoutingAdapter::Install(isaac::runtime::HookId, isaac::runtime::HookTarget const&)
+00000000000111b0 000000000000005c t isaac::runtime::HookRoutingAdapter::IsInstalled(isaac::runtime::HookId) const
+0000000000011210 0000000000000008 t isaac::runtime::HookRoutingAdapter::~HookRoutingAdapter()
+0000000000011220 0000000000000008 t isaac::runtime::HookRoutingFailureCode(isaac::runtime::HookRoutingAdapter const&)
+0000000000011230 0000000000000024 t isaac::runtime::ExlaunchHookAdapter::IsInstalled(isaac::runtime::HookId) const
+0000000000011260 0000000000000004 t isaac::runtime::ExlaunchHookAdapter::~ExlaunchHookAdapter()
+0000000000011260 0000000000000004 t isaac::runtime::ExlaunchHookAdapter::~ExlaunchHookAdapter()
+0000000000011270 0000000000000150 t isaac::runtime::ExlaunchHookAdapter::Install(isaac::runtime::HookId, isaac::runtime::HookTarget const&)
+00000000000113c0 0000000000000008 t isaac::runtime::ExlaunchHookAdapter::~ExlaunchHookAdapter()
+00000000000113d0 0000000000000004 t isaac::runtime::EngineContentMountAdapter::~EngineContentMountAdapter()
+00000000000113d0 0000000000000004 t isaac::runtime::EngineContentMountAdapter::~EngineContentMountAdapter()
+00000000000113e0 0000000000000008 t isaac::runtime::EngineContentMountAdapter::~EngineContentMountAdapter()
+00000000000113f0 0000000000000050 t isaac::runtime::(anonymous namespace)::GuardedCode(TargetModule const&, unsigned long, std::array<unsigned char, 16ul> const&) [clone .isra.0]
+0000000000011440 00000000000004e0 t isaac::runtime::EngineContentMountAdapter::MountModDirectory(std::basic_string_view<char, std::char_traits<char> >, std::basic_string_view<char, std::char_traits<char> >)
+0000000000011920 0000000000000018 t isaac::runtime::GameFileReaderAdapter::Size(std::basic_string_view<char, std::char_traits<char> >, unsigned long*)
+0000000000011940 0000000000000004 t isaac::runtime::GameFileReaderAdapter::~GameFileReaderAdapter()
+0000000000011940 0000000000000004 t isaac::runtime::GameFileReaderAdapter::~GameFileReaderAdapter()
+0000000000011950 00000000000000fc t isaac::runtime::GameFileReaderAdapter::Read(std::basic_string_view<char, std::char_traits<char> >, unsigned char*, unsigned long, unsigned long*)
+0000000000011a50 0000000000000008 t isaac::runtime::GameFileReaderAdapter::~GameFileReaderAdapter()
+0000000000011a60 0000000000000008 t isaac::runtime::EmbeddedLuaAdapter::CallGlobal(char const*, int, int*)
+0000000000011a70 0000000000000004 t isaac::runtime::EmbeddedLuaAdapter::Shutdown()
+0000000000011a80 0000000000000004 t isaac::runtime::EmbeddedLuaAdapter::~EmbeddedLuaAdapter()
+0000000000011a80 0000000000000004 t isaac::runtime::EmbeddedLuaAdapter::~EmbeddedLuaAdapter()
+0000000000011a90 0000000000000020 t isaac::runtime::EmbeddedLuaAdapter::Initialize()
+0000000000011ab0 0000000000000004 t isaac::runtime::EmbeddedLuaAdapter::IsReady() const
+0000000000011ac0 0000000000000044 t isaac::runtime::EmbeddedLuaAdapter::RunChunk(isaac::runtime::LuaChunk const&)
+0000000000011b10 0000000000000084 t isaac::runtime::EmbeddedLuaAdapter::LoadManifestMod(isaac::runtime::ManifestModLoad const&, unsigned int*)
+0000000000011ba0 0000000000000008 t isaac::runtime::EmbeddedLuaAdapter::~EmbeddedLuaAdapter()
+0000000000011bb0 0000000000000008 t isaac::runtime::RuntimeHostApiService::Abi() const
+0000000000011bc0 0000000000000004 t isaac::runtime::RuntimeHostApiService::~RuntimeHostApiService()
+0000000000011bc0 0000000000000004 t isaac::runtime::RuntimeHostApiService::~RuntimeHostApiService()
+0000000000011bd0 0000000000000040 t isaac::runtime::RuntimeHostApiService::PublishedFileApi(isaac::runtime::HostFileApiV1*) const
+0000000000011c10 0000000000000008 t isaac::runtime::RuntimeHostApiService::~RuntimeHostApiService()
+0000000000011c20 0000000000000088 t isaac::runtime::RuntimeHostApiService::RegisterFilePort(isaac::runtime::HostFileApiV1 const&)
+0000000000011cb0 0000000000000038 t isaac::runtime::RuntimeHostApiService::PublishHostEvent(void const*, unsigned int)
+0000000000011cf0 000000000000003c t isaac::runtime::(anonymous namespace)::PublishHostEventThunk(void const*, unsigned int)
+0000000000011d30 00000000000000a0 t isaac::runtime::(anonymous namespace)::RegisterFilePortThunk(isaac::runtime::HostFileApiV1 const*)
+0000000000011dd0 0000000000000060 t isaac::runtime::RuntimeHostApiService::RuntimeHostApiService(unsigned long)
+0000000000011dd0 0000000000000060 t isaac::runtime::RuntimeHostApiService::RuntimeHostApiService(unsigned long)
+0000000000011e30 000000000000000c t isaac::runtime::HostApiService()
+0000000000011e40 0000000000000014 T IsaacModRuntime_GetHostApi
+0000000000011e60 0000000000000018 t _GLOBAL__sub_I_runtime_host_api_service.cpp
+0000000000011e80 0000000000000024 t isaac::runtime::RelaySlotHookAdapter::IsInstalled(isaac::runtime::HookId) const
+0000000000011eb0 0000000000000004 t isaac::runtime::RelaySlotHookAdapter::~RelaySlotHookAdapter()
+0000000000011eb0 0000000000000004 t isaac::runtime::RelaySlotHookAdapter::~RelaySlotHookAdapter()
+0000000000011ec0 00000000000000a4 t isaac::runtime::RelaySlotHookAdapter::Install(isaac::runtime::HookId, isaac::runtime::HookTarget const&)
+0000000000011f70 0000000000000008 t isaac::runtime::RelaySlotHookAdapter::~RelaySlotHookAdapter()
+0000000000011f80 0000000000000024 t isaac::runtime::EntryRelayHookAdapter::IsInstalled(isaac::runtime::HookId) const
+0000000000011fb0 0000000000000004 t isaac::runtime::EntryRelayHookAdapter::~EntryRelayHookAdapter()
+0000000000011fb0 0000000000000004 t isaac::runtime::EntryRelayHookAdapter::~EntryRelayHookAdapter()
+0000000000011fc0 0000000000000008 t isaac::runtime::EntryRelayHookAdapter::~EntryRelayHookAdapter()
+0000000000011fd0 0000000000000198 t isaac::runtime::EntryRelayHookAdapter::Install(isaac::runtime::HookId, isaac::runtime::HookTarget const&)
+0000000000012170 0000000000000038 t isaac::runtime::RegisterEntryRelayCallbacks()
+00000000000121b0 0000000000000024 t isaac::runtime::EntryRelayFallbackEntry(isaac::runtime::HookId)
+00000000000121e0 0000000000000008 t isaac::runtime::EntryRelayHookAdapter::LastFailureCode() const
+00000000000121f0 0000000000000024 t isaac::runtime::GotSlotHookAdapter::IsInstalled(isaac::runtime::HookId) const
+0000000000012220 0000000000000004 t isaac::runtime::GotSlotHookAdapter::~GotSlotHookAdapter()
+0000000000012220 0000000000000004 t isaac::runtime::GotSlotHookAdapter::~GotSlotHookAdapter()
+0000000000012230 00000000000000a4 t isaac::runtime::GotSlotHookAdapter::Install(isaac::runtime::HookId, isaac::runtime::HookTarget const&)
+00000000000122e0 0000000000000008 t isaac::runtime::GotSlotHookAdapter::~GotSlotHookAdapter()
+00000000000122f0 00000000000000f4 t isaac::runtime::ManifestSelectorAdapter::Select(char const*, unsigned long, isaac::runtime::ModManifest*)
+00000000000123f0 000000000000000c t isaac::runtime::ManifestSelectorAdapter::SelectFunction()
+0000000000012400 000000000000007c t isaac::runtime::RuntimeStateMachine::Apply(isaac::runtime::RuntimeContext&, isaac::runtime::RuntimeEvent)
+0000000000012480 000000000000000c t isaac::runtime::ApiCatalog::Default()
+0000000000012490 0000000000000024 t isaac::runtime::ApiCatalog::At(unsigned long) const
+00000000000124c0 0000000000000040 t isaac::runtime::ApiCatalog::Find(unsigned int) const
+0000000000012500 00000000000000a4 t isaac::runtime::ColorIndex(lua_State*)
+00000000000125a4 0000000000000118 t isaac::runtime::ColorNewIndex(lua_State*)
+00000000000126bc 00000000000001ac t isaac::runtime::CreateColorHandle(lua_State*)
+0000000000012868 00000000000000dc t isaac::runtime::KColorClassIndex(lua_State*)
+0000000000012944 000000000000006c t isaac::runtime::(anonymous namespace)::RequireLoadedFont(lua_State*, void*, char const*)
+00000000000129b0 000000000000006c t isaac::runtime::(anonymous namespace)::ResolveFont(lua_State*, char const*, void**) [clone .constprop.0]
+0000000000012a1c 00000000000000bc t isaac::runtime::(anonymous namespace)::FontIsLoaded(lua_State*)
+0000000000012ad8 00000000000003f8 t isaac::runtime::(anonymous namespace)::DrawStringVariant(lua_State*, char const*, bool, bool)
+0000000000012ed0 0000000000000014 t isaac::runtime::(anonymous namespace)::FontDrawStringScaledUTF8(lua_State*)
+0000000000012ee4 0000000000000014 t isaac::runtime::(anonymous namespace)::FontDrawStringUTF8(lua_State*)
+0000000000012ef8 0000000000000014 t isaac::runtime::(anonymous namespace)::FontDrawStringScaled(lua_State*)
+0000000000012f0c 0000000000000014 t isaac::runtime::(anonymous namespace)::FontDrawString(lua_State*)
+0000000000012f20 0000000000000084 t isaac::runtime::(anonymous namespace)::FontUnload(lua_State*)
+0000000000012fa4 00000000000000e8 t isaac::runtime::(anonymous namespace)::FontGetStringWidth(lua_State*)
+000000000001308c 00000000000000e8 t isaac::runtime::(anonymous namespace)::FontGetStringWidthUTF8(lua_State*)
+0000000000013174 00000000000000b8 t isaac::runtime::(anonymous namespace)::FontGetLineHeight(lua_State*)
+000000000001322c 00000000000000b8 t isaac::runtime::(anonymous namespace)::FontGetBaselineHeight(lua_State*)
+00000000000132e4 0000000000000100 t isaac::runtime::(anonymous namespace)::FontGetCharacterWidth(lua_State*)
+00000000000133e4 00000000000000d4 t isaac::runtime::(anonymous namespace)::FontSetMissingCharacter(lua_State*)
+00000000000134b8 0000000000000010 W std::char_traits<char>::compare(char const*, char const*, unsigned long)
+00000000000134c8 0000000000000068 W std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::basic_string(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&&)
+00000000000134c8 0000000000000068 W std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::basic_string(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&&)
+0000000000013530 0000000000000044 W std::basic_string_view<char, std::char_traits<char> >::substr(unsigned long, unsigned long) const
+0000000000013574 00000000000000bc W std::basic_string_view<char, std::char_traits<char> >::find(char const*, unsigned long, unsigned long) const
+0000000000013630 0000000000000034 W std::basic_string_view<char, std::char_traits<char> >::find(char const*, unsigned long) const
+0000000000013664 000000000000006c W std::basic_string_view<char, std::char_traits<char> >::rfind(char const*, unsigned long, unsigned long) const
+00000000000136d0 00000000000000c4 W std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::find(char const*, unsigned long) const
+0000000000013794 00000000000000a8 W std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::compare(unsigned long, unsigned long, char const*) const
+000000000001383c 00000000000000e0 t isaac::runtime::CreateFontHandle(lua_State*)
+000000000001391c 0000000000000060 t isaac::runtime::DestroyFontHandle(lua_State*)
+000000000001397c 0000000000000020 t isaac::runtime::AttachFontMethods(lua_State*)
+000000000001399c 00000000000000c8 t isaac::runtime::RecordFontLoadForProbe(std::basic_string_view<char, std::char_traits<char> >, bool)
+0000000000013a64 0000000000000050 W std::basic_string_view<char, std::char_traits<char> >::compare(std::basic_string_view<char, std::char_traits<char> >) const
+0000000000013ab4 000000000000003c W std::basic_string_view<char, std::char_traits<char> >::compare(unsigned long, unsigned long, char const*) const
+0000000000013af0 0000000000000024 W std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::_M_dispose()
+0000000000013b14 0000000000000020 W std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::_S_copy(char*, char const*, unsigned long)
+0000000000013b34 000000000000008c W std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::basic_string<std::basic_string_view<char, std::char_traits<char> >, void>(std::basic_string_view<char, std::char_traits<char> > const&, std::allocator<char> const&)
+0000000000013b34 000000000000008c W std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::basic_string<std::basic_string_view<char, std::char_traits<char> >, void>(std::basic_string_view<char, std::char_traits<char> > const&, std::allocator<char> const&)
+0000000000013bc0 000000000000011c W std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::_M_mutate(unsigned long, unsigned long, char const*, unsigned long)
+0000000000013cdc 0000000000000080 W std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::_M_append(char const*, unsigned long)
+0000000000013d5c 00000000000000ac t std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::operator=(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&&) [clone .isra.0]
+0000000000013e08 000000000000010c W std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::_M_replace(unsigned long, unsigned long, char const*, unsigned long)
+0000000000013f14 000000000000056c t isaac::runtime::(anonymous namespace)::NormalizeModResourcePath(char const*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&)
+0000000000014480 0000000000000194 t isaac::runtime::(anonymous namespace)::FontLoad(lua_State*)
+0000000000014614 0000000000000078 t isaac::runtime::(anonymous namespace)::SeedsGetStartSeed(lua_State*)
+000000000001468c 00000000000000c4 t isaac::runtime::(anonymous namespace)::GameIsGreedMode(lua_State*)
+0000000000014750 0000000000000080 t isaac::runtime::(anonymous namespace)::SeedsIsCustomRun(lua_State*)
+00000000000147d0 0000000000000048 t isaac::runtime::RecordApiSequence(unsigned int) [clone .part.0]
+0000000000014818 0000000000000074 t isaac::runtime::(anonymous namespace)::GameGetVictoryLap(lua_State*)
+000000000001488c 00000000000000a0 t isaac::runtime::(anonymous namespace)::GameGetSeeds(lua_State*)
+000000000001492c 0000000000000094 t isaac::runtime::(anonymous namespace)::GameGetNumPlayers(lua_State*)
+00000000000149c0 00000000000000e0 t isaac::runtime::(anonymous namespace)::GameGetRoom(lua_State*)
+0000000000014aa0 00000000000000e0 t isaac::runtime::(anonymous namespace)::GameGetItemPool(lua_State*)
+0000000000014b80 00000000000000b0 t isaac::runtime::(anonymous namespace)::GameGetLevel(lua_State*)
+0000000000014c30 0000000000000104 t isaac::runtime::(anonymous namespace)::GameIsPaused(lua_State*)
+0000000000014d34 000000000000001c t isaac::runtime::EngineReadableRegionCache::Lock() const
+0000000000014d50 00000000000000b4 t isaac::runtime::EngineGuardRememberReadable(unsigned long, unsigned long)
+0000000000014e04 0000000000000114 t isaac::runtime::(anonymous namespace)::IsEngineMemoryReadable(unsigned long, unsigned long)
+0000000000014f18 0000000000000104 t isaac::runtime::(anonymous namespace)::GameGetFrameCount(lua_State*)
+000000000001501c 0000000000000020 t isaac::runtime::AttachGameMethods(lua_State*)
+000000000001503c 0000000000000020 t isaac::runtime::AttachSeedsMethods(lua_State*)
+000000000001505c 0000000000000078 t isaac::runtime::(anonymous namespace)::CheckInputQueryArguments(lua_State*, char const*)
+00000000000150d4 0000000000000098 t isaac::runtime::(anonymous namespace)::InputGetActionValue(lua_State*)
+000000000001516c 0000000000000030 t isaac::runtime::(anonymous namespace)::InputGetButtonValue(lua_State*)
+000000000001519c 0000000000000030 t isaac::runtime::(anonymous namespace)::InputIsButtonPressed(lua_State*)
+00000000000151cc 0000000000000030 t isaac::runtime::(anonymous namespace)::InputIsButtonTriggered(lua_State*)
+00000000000151fc 0000000000000098 t isaac::runtime::(anonymous namespace)::InputIsActionTriggered(lua_State*)
+0000000000015294 00000000000000b0 t isaac::runtime::(anonymous namespace)::InputIsActionPressed(lua_State*)
+0000000000015344 0000000000000020 t isaac::runtime::AttachInputMethods(lua_State*)
+0000000000015370 000000000000003c t isaac::runtime::(anonymous namespace)::ItemConfigItemHasTags(lua_State*)
+00000000000153b0 000000000000003c t isaac::runtime::(anonymous namespace)::ItemConfigHasTags(lua_State*)
+00000000000153f0 0000000000000248 t isaac::runtime::(anonymous namespace)::IsaacRunCallback(lua_State*)
+0000000000015640 00000000000000d8 t isaac::runtime::(anonymous namespace)::PushMethodFrom(lua_State*, char const*, char const*)
+0000000000015720 0000000000000050 t isaac::runtime::(anonymous namespace)::IsaacIsInGame(lua_State*)
+0000000000015770 00000000000000f4 t isaac::runtime::(anonymous namespace)::IsaacDebugString(lua_State*)
+0000000000015870 0000000000000068 t isaac::runtime::(anonymous namespace)::IsaacGetTime(lua_State*)
+00000000000158e0 0000000000000050 t isaac::runtime::(anonymous namespace)::IsaacGetFrameCount(lua_State*)
+0000000000015930 0000000000000080 t isaac::runtime::(anonymous namespace)::ItemConfigIndex(lua_State*)
+00000000000159b0 00000000000001f0 t isaac::runtime::(anonymous namespace)::IsaacGetCallbacks(lua_State*)
+0000000000015ba0 00000000000002d4 t isaac::runtime::(anonymous namespace)::IsEngineMemoryReadable(unsigned long, unsigned long)
+0000000000015e80 00000000000002d0 t isaac::runtime::(anonymous namespace)::IsEngineMemoryReadable(unsigned long, unsigned long) [clone .constprop.0]
+0000000000016150 00000000000001e8 t isaac::runtime::(anonymous namespace)::OptionsIndex(lua_State*)
+0000000000016340 00000000000000dc t isaac::runtime::(anonymous namespace)::IsaacRenderScaledText(lua_State*)
+0000000000016420 00000000000000dc t isaac::runtime::(anonymous namespace)::IsaacSaveModData(lua_State*)
+0000000000016500 00000000000000dc t isaac::runtime::(anonymous namespace)::IsaacLoadModData(lua_State*)
+00000000000165e0 00000000000000b0 t isaac::runtime::(anonymous namespace)::ResolveRoom()
+0000000000016690 00000000000000dc t isaac::runtime::(anonymous namespace)::IsaacGetTrinketIdByName(lua_State*)
+0000000000016770 00000000000000dc t isaac::runtime::(anonymous namespace)::IsaacGetPersistentGameData(lua_State*)
+0000000000016850 0000000000000144 t isaac::runtime::(anonymous namespace)::IsaacWorldToRenderPosition(lua_State*)
+00000000000169a0 0000000000000118 t isaac::runtime::(anonymous namespace)::IsaacCountBosses(lua_State*)
+0000000000016ac0 0000000000000144 t isaac::runtime::(anonymous namespace)::IsaacWorldToScreen(lua_State*)
+0000000000016c10 000000000000011c t isaac::runtime::(anonymous namespace)::GlobalGetPtrHash(lua_State*)
+0000000000016d30 00000000000002a8 t isaac::runtime::(anonymous namespace)::IsaacGetItemConfig(lua_State*)
+0000000000016fe0 0000000000000160 t isaac::runtime::(anonymous namespace)::ValidatedItem(LuaRuntime::ItemConfigItemHandle const*)
+0000000000017140 0000000000000094 t isaac::runtime::(anonymous namespace)::ItemConfigItemIsCollectible(lua_State*)
+00000000000171e0 00000000000001f4 t isaac::runtime::(anonymous namespace)::ItemConfigItemIsAvailable(lua_State*)
+00000000000173e0 00000000000000a8 t isaac::runtime::(anonymous namespace)::EntityPlayerGetOtherTwin(lua_State*)
+0000000000017490 00000000000000b0 t isaac::runtime::(anonymous namespace)::EntityPlayerGetSmeltedTrinkets(lua_State*)
+0000000000017540 00000000000000b0 t isaac::runtime::(anonymous namespace)::EntityPlayerGetEffects(lua_State*)
+00000000000175f0 00000000000000c8 t isaac::runtime::(anonymous namespace)::EntityPlayerGetName(lua_State*)
+00000000000176c0 00000000000000c8 t isaac::runtime::(anonymous namespace)::EntityPlayerGetMainTwin(lua_State*)
+0000000000017790 00000000000000cc t isaac::runtime::(anonymous namespace)::EntityPlayerGetNumKeys(lua_State*)
+0000000000017860 00000000000000cc t isaac::runtime::(anonymous namespace)::EntityPlayerIsSubPlayer(lua_State*)
+0000000000017930 00000000000000cc t isaac::runtime::(anonymous namespace)::EntityPlayerCanPickRedHearts(lua_State*)
+0000000000017a00 00000000000000cc t isaac::runtime::(anonymous namespace)::EntityPlayerHasGoldenBomb(lua_State*)
+0000000000017ad0 00000000000000cc t isaac::runtime::(anonymous namespace)::EntityPlayerGetGlyphOfBalanceDrop(lua_State*)
+0000000000017ba0 00000000000000cc t isaac::runtime::(anonymous namespace)::EntityPlayerGetModelingClayEffect(lua_State*)
+0000000000017c70 00000000000000cc t isaac::runtime::(anonymous namespace)::EntityPlayerGetZodiacEffect(lua_State*)
+0000000000017d40 00000000000000cc t isaac::runtime::(anonymous namespace)::EntityPlayerGetPoopSpell(lua_State*)
+0000000000017e10 00000000000000cc t isaac::runtime::(anonymous namespace)::EntityPlayerGetPoopMana(lua_State*)
+0000000000017ee0 00000000000000cc t isaac::runtime::(anonymous namespace)::EntityPlayerGetBloodCharge(lua_State*)
+0000000000017fb0 00000000000000cc t isaac::runtime::(anonymous namespace)::EntityPlayerGetSoulCharge(lua_State*)
+0000000000018080 00000000000000cc t isaac::runtime::(anonymous namespace)::EntityPlayerGetHearts(lua_State*)
+0000000000018150 00000000000000cc t isaac::runtime::(anonymous namespace)::EntityPlayerGetNumCoins(lua_State*)
+0000000000018220 00000000000000cc t isaac::runtime::(anonymous namespace)::EntityPlayerGetNumBombs(lua_State*)
+00000000000182f0 00000000000000ec t isaac::runtime::(anonymous namespace)::EntityPlayerGetPill(lua_State*)
+00000000000183e0 00000000000000ec t isaac::runtime::(anonymous namespace)::EntityPlayerGetCard(lua_State*)
+00000000000184d0 000000000000010c t isaac::runtime::(anonymous namespace)::EntityPickupIsShopItem(lua_State*)
+00000000000185e0 00000000000000f0 t isaac::runtime::(anonymous namespace)::EntityPlayerGetPillRNG(lua_State*)
+00000000000186d0 00000000000000f0 t isaac::runtime::(anonymous namespace)::EntityPlayerGetCardRNG(lua_State*)
+00000000000187c0 00000000000000f4 t isaac::runtime::(anonymous namespace)::EntityPlayerGetTrinketRNG(lua_State*)
+00000000000188c0 00000000000000f0 t isaac::runtime::(anonymous namespace)::EntityPlayerGetCollectibleRNG(lua_State*)
+00000000000189b0 00000000000000f8 t isaac::runtime::(anonymous namespace)::EntityPlayerGetPlayerFormCounter(lua_State*)
+0000000000018ab0 00000000000000f8 t isaac::runtime::(anonymous namespace)::EntityPlayerHasPlayerForm(lua_State*)
+0000000000018bb0 00000000000000f8 t isaac::runtime::(anonymous namespace)::EntityPlayerHasTrinket(lua_State*)
+0000000000018cb0 0000000000000148 t isaac::runtime::(anonymous namespace)::EntityGetSprite(lua_State*)
+0000000000018e00 0000000000000178 t isaac::runtime::(anonymous namespace)::EntityToPlayer(lua_State*)
+0000000000018f80 00000000000001e8 t isaac::runtime::(anonymous namespace)::EntityToFamiliar(lua_State*)
+0000000000019170 00000000000001e8 t isaac::runtime::(anonymous namespace)::EntityToPickup(lua_State*)
+0000000000019360 00000000000001a0 t isaac::runtime::(anonymous namespace)::EntityPlayerGetEffectiveMaxHearts(lua_State*)
+0000000000019500 00000000000001ac t isaac::runtime::(anonymous namespace)::EntityPlayerGetActiveItem(lua_State*)
+00000000000196b0 00000000000002f4 t isaac::runtime::(anonymous namespace)::PushQueryResult(isaac::runtime::(anonymous namespace)::QuerySink*, unsigned long)
+00000000000199b0 0000000000000258 t isaac::runtime::(anonymous namespace)::ItemConfigIsCollectible(lua_State*)
+0000000000019c10 000000000000029c t isaac::runtime::(anonymous namespace)::ItemConfigGetEntry(lua_State*, unsigned long, unsigned long) [clone .isra.0]
+0000000000019eb0 0000000000000038 t isaac::runtime::(anonymous namespace)::ItemConfigGetCollectible(lua_State*)
+0000000000019ef0 0000000000000020 t isaac::runtime::(anonymous namespace)::ItemConfigGetTrinket(lua_State*)
+0000000000019f10 0000000000000020 t isaac::runtime::(anonymous namespace)::ItemConfigGetCard(lua_State*)
+0000000000019f30 0000000000000020 t isaac::runtime::(anonymous namespace)::ItemConfigGetPillEffect(lua_State*)
+0000000000019f50 00000000000001b0 t isaac::runtime::(anonymous namespace)::EntityPlayerGetTrinketMultiplier(lua_State*)
+000000000001a100 00000000000001c8 t isaac::runtime::(anonymous namespace)::EntityPlayerGetCollectibleNum(lua_State*)
+000000000001a2d0 00000000000004d8 t isaac::runtime::(anonymous namespace)::PushEntityField(lua_State*, unsigned long, char const*, bool)
+000000000001a7b0 00000000000001a8 t isaac::runtime::(anonymous namespace)::EntityIndex(lua_State*)
+000000000001a960 00000000000001a8 t isaac::runtime::(anonymous namespace)::EntityPlayerIndex(lua_State*)
+000000000001ab10 000000000000017c t isaac::runtime::(anonymous namespace)::EntityPlayerGetTrinket(lua_State*)
+000000000001ac90 0000000000000374 t isaac::runtime::(anonymous namespace)::PushLibcxxString(lua_State*, unsigned long, bool)
+000000000001b010 00000000000002cc t isaac::runtime::(anonymous namespace)::ItemConfigItemIndex(lua_State*)
+000000000001b2e0 00000000000003a0 t isaac::runtime::(anonymous namespace)::EntityPickupIndex(lua_State*)
+000000000001b680 00000000000001e4 t isaac::runtime::(anonymous namespace)::EntityPlayerHasCollectible(lua_State*)
+000000000001b870 00000000000002f4 t isaac::runtime::(anonymous namespace)::EntityPlayerAddCollectible(lua_State*)
+000000000001bb70 00000000000002e8 t isaac::runtime::(anonymous namespace)::IsEntityPointer(unsigned long)
+000000000001be60 000000000000036c t isaac::runtime::(anonymous namespace)::CaptureEntity(unsigned long, isaac::runtime::(anonymous namespace)::EntitySnapshot*)
+000000000001c1d0 000000000000038c t isaac::runtime::(anonymous namespace)::ReadEntityTable(unsigned long, isaac::runtime::(anonymous namespace)::EntityTableSpec const&, isaac::runtime::(anonymous namespace)::EntityTableView*)
+000000000001c560 0000000000000210 t void isaac::runtime::(anonymous namespace)::ForEachEntityInTable<isaac::runtime::(anonymous namespace)::IsaacFindInRadius(lua_State*)::{lambda(unsigned long)#1} const&>(unsigned long, isaac::runtime::(anonymous namespace)::EntityTableSpec const&, isaac::runtime::(anonymous namespace)::IsaacFindInRadius(lua_State*)::{lambda(unsigned long)#1} const&)
+000000000001c770 00000000000006cc t isaac::runtime::(anonymous namespace)::IsaacFindInRadius(lua_State*)
+000000000001ce40 0000000000000138 t void isaac::runtime::(anonymous namespace)::ForEachEntityInTable<isaac::runtime::(anonymous namespace)::IsaacFindByType(lua_State*)::{lambda(unsigned long)#1} const&>(unsigned long, isaac::runtime::(anonymous namespace)::EntityTableSpec const&, isaac::runtime::(anonymous namespace)::IsaacFindByType(lua_State*)::{lambda(unsigned long)#1} const&)
+000000000001cf80 00000000000004cc t isaac::runtime::(anonymous namespace)::IsaacFindByType(lua_State*)
+000000000001d450 0000000000000284 t isaac::runtime::(anonymous namespace)::IsaacCountEnemies(lua_State*)
+000000000001d6e0 00000000000009cc t isaac::runtime::(anonymous namespace)::PushEntityDataTable(lua_State*, unsigned long) [clone .isra.0]
+000000000001e0b0 0000000000000128 t isaac::runtime::(anonymous namespace)::EntityPlayerGetData(lua_State*)
+000000000001e1e0 0000000000000150 t isaac::runtime::(anonymous namespace)::EntityGetData(lua_State*)
+000000000001e330 000000000000058c t isaac::runtime::(anonymous namespace)::IsaacGetPlayer(lua_State*)
+000000000001e8c0 000000000000038c t isaac::runtime::ResolveEnginePlayerArray()
+000000000001ec50 00000000000005b4 t isaac::runtime::FieldApiHandler(lua_State*)
+000000000001f210 00000000000002e8 t isaac::runtime::IsLiveEntityPointer(unsigned long)
+000000000001f500 00000000000003fc t isaac::runtime::RegisterIsaacApi(lua_State*)
+000000000001f900 00000000000000ac t isaac::runtime::RegisterOptionsTable(lua_State*)
+000000000001f9b0 00000000000000cc t isaac::runtime::ShouldDispatchManagedCallbacks()
+000000000001fa7c 0000000000000040 t isaac::runtime::(anonymous namespace)::SkipWhitespace(isaac::runtime::(anonymous namespace)::DecodeCursor*)
+000000000001fabc 000000000000000c t isaac::runtime::(anonymous namespace)::SinkHeader(isaac::runtime::(anonymous namespace)::ByteSink const*)
+000000000001fac8 00000000000000e8 t isaac::runtime::(anonymous namespace)::SinkReserve(isaac::runtime::(anonymous namespace)::ByteSink*, unsigned long)
+000000000001fbb0 0000000000000054 t isaac::runtime::(anonymous namespace)::AppendRaw(isaac::runtime::(anonymous namespace)::ByteSink*, char const*, unsigned long)
+000000000001fc04 0000000000000040 t isaac::runtime::(anonymous namespace)::AppendChar(isaac::runtime::(anonymous namespace)::ByteSink*, char)
+000000000001fc44 0000000000000184 t isaac::runtime::(anonymous namespace)::AppendEscapedString(isaac::runtime::(anonymous namespace)::ByteSink*, char const*, unsigned long)
+000000000001fdc8 0000000000000114 t isaac::runtime::(anonymous namespace)::AppendNumber(isaac::runtime::(anonymous namespace)::ByteSink*, lua_State*, int)
+000000000001fedc 0000000000000424 t isaac::runtime::(anonymous namespace)::AppendEncodedValue(lua_State*, int, isaac::runtime::(anonymous namespace)::EncodeContext*)
+0000000000020300 0000000000000010 t isaac::runtime::(anonymous namespace)::FailDecode(lua_State*, isaac::runtime::(anonymous namespace)::DecodeCursor const*, char const*) [clone .isra.0]
+0000000000020310 0000000000000080 t isaac::runtime::(anonymous namespace)::ExpectLiteral(lua_State*, isaac::runtime::(anonymous namespace)::DecodeCursor*, char const*, unsigned long)
+0000000000020390 00000000000000b4 t isaac::runtime::(anonymous namespace)::ReadHexCodeUnit(lua_State*, isaac::runtime::(anonymous namespace)::DecodeCursor*, unsigned int*) [clone .constprop.0]
+0000000000020444 00000000000000a4 t isaac::runtime::(anonymous namespace)::JsonEncode(lua_State*)
+00000000000204e8 0000000000000358 t isaac::runtime::(anonymous namespace)::ParseJsonString(lua_State*, isaac::runtime::(anonymous namespace)::DecodeCursor*, isaac::runtime::(anonymous namespace)::ByteSink*)
+0000000000020840 00000000000005a0 t isaac::runtime::(anonymous namespace)::ParseJsonValue(lua_State*, isaac::runtime::(anonymous namespace)::DecodeCursor*, isaac::runtime::(anonymous namespace)::DecodeContext*, bool*)
+0000000000020de0 00000000000000d8 t isaac::runtime::(anonymous namespace)::JsonDecode(lua_State*)
+0000000000020eb8 0000000000000084 t isaac::runtime::RegisterJsonModule(lua_State*)
+0000000000020f3c 0000000000000058 t isaac::runtime::(anonymous namespace)::PersistenceErrorMessage(ModPersistence::Result)
+0000000000020f94 0000000000000058 t isaac::runtime::(anonymous namespace)::CheckModHandle(lua_State*, int, char const*)
+0000000000020fec 0000000000000090 t isaac::runtime::(anonymous namespace)::PushNamedCallbacksTable(lua_State*) [clone .isra.0]
+000000000002107c 0000000000000008 t ModPersistence::detail::WriteU32(unsigned char*, unsigned int)
+0000000000021084 0000000000000020 t ModPersistence::detail::WriteU64(unsigned char*, unsigned long)
+00000000000210a4 000000000000002c t ModPersistence::detail::ReadU32(unsigned char const*)
+00000000000210d0 000000000000002c t ModPersistence::detail::ReadU64(unsigned char const*)
+00000000000210fc 00000000000000b4 t ModPersistence::detail::RecordAt(unsigned char const*, unsigned long, unsigned long, unsigned long*, unsigned long*, unsigned long*, unsigned char*, unsigned long*)
+00000000000211b0 000000000000029c t ModPersistence::detail::LoadCache()
+000000000002144c 00000000000001ec t ModPersistence::detail::WriteCache(unsigned char const*, unsigned long, unsigned int)
+0000000000021638 0000000000000214 t ModPersistence::detail::Rewrite(unsigned long, char const*, unsigned long, bool)
+000000000002184c 0000000000000080 t isaac::runtime::(anonymous namespace)::ModSaveData(lua_State*)
+00000000000218cc 0000000000000070 t isaac::runtime::(anonymous namespace)::ModRemoveData(lua_State*)
+000000000002193c 0000000000000124 t ModPersistence::LoadModData(unsigned long, char const**, unsigned long*)
+0000000000021a60 0000000000000090 t isaac::runtime::(anonymous namespace)::ModHasData(lua_State*)
+0000000000021af0 000000000000009c t isaac::runtime::(anonymous namespace)::ModLoadData(lua_State*)
+0000000000021b8c 0000000000000020 t isaac::runtime::AttachModMethods(lua_State*)
+0000000000021bac 00000000000001a4 t isaac::runtime::RegisterNamedCallback(lua_State*, char const*)
+0000000000021d50 00000000000000a0 t isaac::runtime::PushNamedCallbacks(lua_State*, char const*)
+0000000000021df0 0000000000000204 t isaac::runtime::RunNamedCallbacks(lua_State*, char const*, int)
+0000000000021ff4 0000000000000088 t LuaRuntime::RecordCallbackRegistration(unsigned int, bool)
+000000000002207c 00000000000001d4 t isaac::runtime::(anonymous namespace)::ModAddCallback(lua_State*)
+0000000000022250 0000000000000010 t LuaRuntime::RegisteredCallbackKindMaskLow()
+0000000000022260 0000000000000010 t LuaRuntime::RegisteredCallbackKindMaskHigh()
+0000000000022270 0000000000000010 t LuaRuntime::DispatchableCallbackRegistrationCount()
+0000000000022280 0000000000000010 t LuaRuntime::UnhookedCallbackRegistrationCount()
+0000000000022290 0000000000000014 t _GLOBAL__sub_D_mod_api.cpp
+00000000000222a4 000000000000008c t isaac::runtime::(anonymous namespace)::MusicResume(lua_State*)
+0000000000022330 000000000000008c t isaac::runtime::(anonymous namespace)::MusicPause(lua_State*)
+00000000000223bc 00000000000000ac t isaac::runtime::(anonymous namespace)::MusicGetCurrentMusicId(lua_State*)
+0000000000022468 0000000000000020 t isaac::runtime::AttachMusicMethods(lua_State*)
+0000000000022490 00000000000001a0 t isaac::runtime::AttachOwnerMethods(lua_State*, char const*, isaac::runtime::LuaHandlerBinding const*, unsigned long, isaac::runtime::FieldApiRow const*, unsigned long)
+0000000000022630 000000000000015c t isaac::runtime::(anonymous namespace)::RoomGetGridIndex(lua_State*)
+000000000002278c 00000000000001b0 t isaac::runtime::(anonymous namespace)::ItemPoolGetCollectible(lua_State*)
+000000000002293c 00000000000000d4 t isaac::runtime::(anonymous namespace)::LevelGetCurrentRoom(lua_State*)
+0000000000022a10 00000000000000c4 t isaac::runtime::(anonymous namespace)::LevelIsAscent(lua_State*)
+0000000000022ad4 00000000000000c4 t isaac::runtime::(anonymous namespace)::RoomGetType(lua_State*)
+0000000000022b98 0000000000000084 t isaac::runtime::(anonymous namespace)::RoomArgumentCountIs(lua_State*, int, char const*) [clone .constprop.0]
+0000000000022c1c 0000000000000044 t isaac::runtime::(anonymous namespace)::RoomGetGridWidth(lua_State*)
+0000000000022c60 0000000000000044 t isaac::runtime::(anonymous namespace)::RoomGetGridHeight(lua_State*)
+0000000000022ca4 0000000000000044 t isaac::runtime::(anonymous namespace)::RoomGetGridSize(lua_State*)
+0000000000022ce8 0000000000000054 t isaac::runtime::(anonymous namespace)::(anonymous namespace)::PushRoomDescriptor(lua_State*, unsigned long) [clone .isra.0]
+0000000000022d3c 00000000000000c4 t isaac::runtime::(anonymous namespace)::LevelGetStage(lua_State*)
+0000000000022e00 0000000000000094 t isaac::runtime::(anonymous namespace)::RoomGetGridPath(lua_State*)
+0000000000022e94 0000000000000120 t isaac::runtime::(anonymous namespace)::IsEngineMemoryReadable(unsigned long, unsigned long)
+0000000000022fb4 0000000000000054 t isaac::runtime::(anonymous namespace)::(anonymous namespace)::ResolveLevelForDescriptor()
+0000000000023008 00000000000000c8 t isaac::runtime::(anonymous namespace)::LevelGetRooms(lua_State*)
+00000000000230d0 0000000000000068 t isaac::runtime::(anonymous namespace)::(anonymous namespace)::DescriptorCount(unsigned long)
+0000000000023138 000000000000010c t isaac::runtime::(anonymous namespace)::RoomGetRenderScrollOffset(lua_State*)
+0000000000023244 00000000000000d8 t isaac::runtime::(anonymous namespace)::GridEntityGetRng(lua_State*)
+000000000002331c 00000000000000a0 t isaac::runtime::(anonymous namespace)::GridEntityGetType(lua_State*)
+00000000000233bc 00000000000000a0 t isaac::runtime::(anonymous namespace)::GridEntityGetVariant(lua_State*)
+000000000002345c 0000000000000124 t isaac::runtime::(anonymous namespace)::ItemPoolIsPillIdentified(lua_State*)
+0000000000023580 00000000000000e8 t isaac::runtime::(anonymous namespace)::ItemPoolGetLastPool(lua_State*)
+0000000000023668 000000000000006c t isaac::runtime::(anonymous namespace)::(anonymous namespace)::ReadDescriptorU32(unsigned long, unsigned long, unsigned int*) [clone .constprop.0]
+00000000000236d4 0000000000000130 t isaac::runtime::(anonymous namespace)::RoomDescriptorListGet(lua_State*)
+0000000000023804 0000000000000084 t isaac::runtime::(anonymous namespace)::(anonymous namespace)::FindDescriptorByGridIndex(unsigned long, unsigned int)
+0000000000023888 0000000000000148 t isaac::runtime::(anonymous namespace)::LevelGetRoomByIdx(lua_State*)
+00000000000239d0 00000000000000d8 t isaac::runtime::(anonymous namespace)::LevelGetCurrentRoomDesc(lua_State*)
+0000000000023aa8 000000000000008c t isaac::runtime::(anonymous namespace)::ResolveCurrentLevel(unsigned long*) [clone .constprop.0]
+0000000000023b34 00000000000000ec t isaac::runtime::(anonymous namespace)::LevelGetAbsoluteStage(lua_State*)
+0000000000023c20 00000000000000ec t isaac::runtime::(anonymous namespace)::LevelIsNextStageAvailable(lua_State*)
+0000000000023d0c 00000000000000c0 t isaac::runtime::(anonymous namespace)::LevelGetCurrentRoomIndex(lua_State*)
+0000000000023dcc 00000000000000d0 t isaac::runtime::(anonymous namespace)::LevelIsPreAscent(lua_State*)
+0000000000023e9c 0000000000000228 t isaac::runtime::(anonymous namespace)::RoomGetWorldToScreenPosition(lua_State*)
+00000000000240c4 000000000000017c t isaac::runtime::(anonymous namespace)::RoomGetGridEntity(lua_State*)
+0000000000024240 000000000000009c t isaac::runtime::(anonymous namespace)::CallGameCurseAccessor(unsigned long, std::array<unsigned char, 16ul> const&, bool*) [clone .constprop.0]
+00000000000242dc 00000000000001a0 t isaac::runtime::(anonymous namespace)::LevelGetCurses(lua_State*)
+000000000002447c 0000000000000024 t isaac::runtime::AttachLevelMethods(lua_State*)
+00000000000244a0 0000000000000220 t isaac::runtime::RoomDescriptorIndex(lua_State*)
+00000000000246c0 0000000000000124 t isaac::runtime::RoomDescriptorListIndex(lua_State*)
+00000000000247e4 000000000000003c t isaac::runtime::AttachRoomDescriptorListMethods(lua_State*)
+0000000000024820 0000000000000020 t isaac::runtime::AttachRoomMethods(lua_State*)
+0000000000024840 0000000000000020 t isaac::runtime::AttachGridEntityMethods(lua_State*)
+0000000000024860 0000000000000020 t isaac::runtime::AttachItemPoolMethods(lua_State*)
+0000000000024880 000000000000009c t isaac::runtime::(anonymous namespace)::RngNext(lua_State*)
+000000000002491c 0000000000000108 t isaac::runtime::(anonymous namespace)::RngSetSeed(lua_State*)
+0000000000024a24 0000000000000078 t isaac::runtime::(anonymous namespace)::RngGetSeed(lua_State*)
+0000000000024a9c 0000000000000020 t isaac::runtime::AttachRngMethods(lua_State*)
+0000000000024abc 0000000000000064 t isaac::runtime::(anonymous namespace)::RecordSpriteReplaceSpritesheetForProbe(unsigned int, char const*)
+0000000000024b20 0000000000000184 t isaac::runtime::(anonymous namespace)::BuildNativeString(char const*, bool)
+0000000000024ca4 0000000000000048 t isaac::runtime::RecordApiSequence(unsigned int) [clone .part.0]
+0000000000024cec 00000000000000c4 t isaac::runtime::(anonymous namespace)::ResolveSprite(lua_State*, char const*, void**) [clone .constprop.0]
+0000000000024db0 0000000000000178 t isaac::runtime::(anonymous namespace)::SpriteReplaceSpritesheet(lua_State*)
+0000000000024f28 000000000000012c t isaac::runtime::(anonymous namespace)::SpriteLoad(lua_State*)
+0000000000025054 0000000000000084 t isaac::runtime::(anonymous namespace)::SpriteLoadGraphics(lua_State*)
+00000000000250d8 0000000000000114 t isaac::runtime::(anonymous namespace)::SpritePlay(lua_State*)
+00000000000251ec 0000000000000110 t isaac::runtime::(anonymous namespace)::SpriteSetAnimation(lua_State*)
+00000000000252fc 000000000000013c t isaac::runtime::(anonymous namespace)::SpriteSetFrame(lua_State*)
+0000000000025438 0000000000000098 t isaac::runtime::(anonymous namespace)::SpriteGetFrame(lua_State*)
+00000000000254d0 00000000000000f0 t isaac::runtime::(anonymous namespace)::SpriteSetLayerFrame(lua_State*)
+00000000000255c0 00000000000000c4 t isaac::runtime::(anonymous namespace)::SpriteGetLayerFrame(lua_State*)
+0000000000025684 0000000000000084 t isaac::runtime::(anonymous namespace)::SpriteUpdate(lua_State*)
+0000000000025708 00000000000000dc t isaac::runtime::(anonymous namespace)::SpriteIsPlaying(lua_State*)
+00000000000257e4 00000000000000dc t isaac::runtime::(anonymous namespace)::SpriteIsFinished(lua_State*)
+00000000000258c0 00000000000000c8 t isaac::runtime::(anonymous namespace)::SpritePlayRandom(lua_State*)
+0000000000025988 0000000000000078 t isaac::runtime::(anonymous namespace)::PushTexelFallback(lua_State*, unsigned int) [clone .isra.0]
+0000000000025a00 00000000000000bc t isaac::runtime::(anonymous namespace)::RequireClampVectors(lua_State*, int, LuaRuntime::VectorHandle**, LuaRuntime::VectorHandle**) [clone .isra.0]
+0000000000025abc 0000000000000110 t isaac::runtime::(anonymous namespace)::SpriteRenderLayer(lua_State*)
+0000000000025bcc 00000000000000e8 t isaac::runtime::(anonymous namespace)::SpriteRender(lua_State*)
+0000000000025cb4 0000000000000120 t isaac::runtime::(anonymous namespace)::IsEngineMemoryReadable(unsigned long, unsigned long)
+0000000000025dd4 00000000000000a4 t isaac::runtime::SpriteIsLoaded(lua_State*)
+0000000000025e78 0000000000000298 t isaac::runtime::(anonymous namespace)::SpriteGetTexel(lua_State*)
+0000000000026110 0000000000000134 t isaac::runtime::SpriteGetAnimation(lua_State*)
+0000000000026244 0000000000000088 t isaac::runtime::PushEngineEntitySpriteHandle(lua_State*, void*)
+00000000000262cc 00000000000000f8 t isaac::runtime::CreateSpriteHandle(lua_State*)
+00000000000263c4 00000000000001e4 t isaac::runtime::SpriteIndex(lua_State*)
+00000000000265a8 00000000000001a0 t isaac::runtime::SpriteNewIndex(lua_State*)
+0000000000026748 000000000000006c t isaac::runtime::DestroySpriteHandle(lua_State*)
+00000000000267b4 0000000000000020 t isaac::runtime::AttachSpriteMethods(lua_State*)
+00000000000267d4 0000000000000058 t isaac::runtime::(anonymous namespace)::PushVector(lua_State*, float, float)
+000000000002682c 000000000000000c t isaac::runtime::(anonymous namespace)::CheckVector(lua_State*, int)
+0000000000026838 00000000000000c4 t isaac::runtime::(anonymous namespace)::VectorLerp(lua_State*)
+00000000000268fc 0000000000000148 t isaac::runtime::(anonymous namespace)::VectorClamped(lua_State*)
+0000000000026a44 0000000000000140 t isaac::runtime::(anonymous namespace)::VectorClamp(lua_State*)
+0000000000026b84 000000000000008c t isaac::runtime::(anonymous namespace)::VectorCross(lua_State*)
+0000000000026c10 000000000000008c t isaac::runtime::(anonymous namespace)::VectorDot(lua_State*)
+0000000000026c9c 0000000000000094 t isaac::runtime::(anonymous namespace)::VectorDistanceSquared(lua_State*)
+0000000000026d30 0000000000000098 t isaac::runtime::(anonymous namespace)::VectorDistance(lua_State*)
+0000000000026dc8 000000000000007c t isaac::runtime::(anonymous namespace)::VectorLengthSquared(lua_State*)
+0000000000026e44 00000000000000ac t isaac::runtime::VectorFromAngle(lua_State*)
+0000000000026ef0 00000000000000e0 t isaac::runtime::(anonymous namespace)::VectorRotated(lua_State*)
+0000000000026fd0 0000000000000088 t isaac::runtime::(anonymous namespace)::VectorGetAngleDegrees(lua_State*)
+0000000000027058 0000000000000080 t isaac::runtime::(anonymous namespace)::VectorLength(lua_State*)
+00000000000270d8 000000000000007c t isaac::runtime::(anonymous namespace)::ScaledTo(LuaRuntime::VectorHandle const&, float)
+0000000000027154 00000000000000b4 t isaac::runtime::(anonymous namespace)::VectorResized(lua_State*)
+0000000000027208 0000000000000088 t isaac::runtime::(anonymous namespace)::VectorResize(lua_State*)
+0000000000027290 0000000000000094 t isaac::runtime::(anonymous namespace)::VectorNormalized(lua_State*)
+0000000000027324 0000000000000064 t isaac::runtime::(anonymous namespace)::VectorNormalize(lua_State*)
+0000000000027388 00000000000000ec t isaac::runtime::CreateVectorHandle(lua_State*)
+0000000000027474 0000000000000188 t isaac::runtime::VectorIndex(lua_State*)
+00000000000275fc 0000000000000110 t isaac::runtime::VectorNewIndex(lua_State*)
+000000000002770c 0000000000000050 t isaac::runtime::VectorAdd(lua_State*)
+000000000002775c 0000000000000050 t isaac::runtime::VectorSub(lua_State*)
+00000000000277ac 0000000000000080 t isaac::runtime::VectorMul(lua_State*)
+000000000002782c 000000000000007c t isaac::runtime::VectorDiv(lua_State*)
+00000000000278a8 000000000000003c t isaac::runtime::VectorUnaryMinus(lua_State*)
+00000000000278e4 0000000000000080 t isaac::runtime::VectorEqual(lua_State*)
+0000000000027964 0000000000000054 t isaac::runtime::VectorToString(lua_State*)
+00000000000279b8 00000000000000b8 t isaac::runtime::VectorClassIndex(lua_State*)
+0000000000027a70 0000000000000020 t isaac::runtime::AttachVectorMethods(lua_State*)
+0000000000027a90 000000000000006c t ModPersistence::detail::RawFilePort::Open(std::basic_string_view<char, std::char_traits<char> >, isaac::runtime::FileMode, void**)
+0000000000027afc 000000000000005c t ModPersistence::detail::RawFilePort::Read(void*, unsigned char*, unsigned long, unsigned long*)
+0000000000027b58 000000000000005c t ModPersistence::detail::RawFilePort::Write(void*, unsigned char const*, unsigned long, unsigned long*)
+0000000000027bb4 000000000000003c t ModPersistence::detail::RawFilePort::Close(void*)
+0000000000027bf0 00000000000000cc t (anonymous namespace)::WriteDiagnosticsGate(unsigned int)
+0000000000027cbc 0000000000000060 t (anonymous namespace)::SaltyNxDiagnosticFilePort::Read(void*, unsigned char*, unsigned long, unsigned long*)
+0000000000027d1c 0000000000000060 t (anonymous namespace)::SaltyNxDiagnosticFilePort::Write(void*, unsigned char const*, unsigned long, unsigned long*)
+0000000000027d7c 0000000000000040 t (anonymous namespace)::SaltyNxDiagnosticFilePort::Close(void*)
+0000000000027dbc 0000000000000004 t (anonymous namespace)::SaltyNxDiagnosticFilePort::~SaltyNxDiagnosticFilePort()
+0000000000027dbc 0000000000000004 t (anonymous namespace)::SaltyNxDiagnosticFilePort::~SaltyNxDiagnosticFilePort()
+0000000000027dc0 0000000000000004 t ModPersistence::detail::RawFilePort::~RawFilePort()
+0000000000027dc0 0000000000000004 t ModPersistence::detail::RawFilePort::~RawFilePort()
+0000000000027dc4 0000000000000008 t ModPersistence::detail::RawFilePort::~RawFilePort()
+0000000000027dcc 0000000000000008 t (anonymous namespace)::SaltyNxDiagnosticFilePort::~SaltyNxDiagnosticFilePort()
+0000000000027dd4 0000000000000044 T IsaacModRuntime_GetRuntimeIdentity
+0000000000027e18 0000000000000014 t std::__atomic_base<unsigned int>::operator++() [clone .isra.0]
+0000000000027e2c 00000000000000b0 t isaac::runtime::DiagnosticEventBus<4ul>::Publish(isaac::runtime::DiagnosticEvent const&) [clone .isra.0]
+0000000000027edc 00000000000000b0 t (anonymous namespace)::SaltyNxDiagnosticFilePort::Open(std::basic_string_view<char, std::char_traits<char> >, isaac::runtime::FileMode, void**)
+0000000000027f8c 0000000000000180 t isaac::runtime::DiagnosticSession::AttachFilePort(isaac::runtime::IFilePort&, std::basic_string_view<char, std::char_traits<char> >)
+000000000002810c 000000000000000c t IsaacModRuntime_PublishRuntimeSelf
+0000000000028118 0000000000000084 T IsaacModRuntime_GetDiagnosticsState
+000000000002819c 0000000000000044 t EnsureThreadTlsPointer()
+00000000000281e0 0000000000000004 t IsaacModRuntime_EnsureThreadTls
+00000000000281e4 0000000000000048 T IsaacModRuntime_SetPluginNote
+000000000002822c 0000000000000018 T IsaacModRuntime_GetFileApiSlot
+0000000000028244 00000000000000b0 T IsaacModRuntime_GetSelfJournalState
+00000000000282f4 0000000000000184 t isaac::runtime::BoundedFileJournal<4ul>::Flush()
+0000000000028478 00000000000001fc t TryAttachDiagnostics()
+0000000000028674 0000000000000004 t IsaacModRuntime_TryAttachDiagnostics
+0000000000028678 0000000000000014 t _GLOBAL__sub_D_saltynx_runtime_bridge.cpp
+000000000002868c 0000000000000118 T IsaacModRuntime_RegisterSaltyFileApi
+00000000000287b0 0000000000000030 t TestRunObserver::Mark(TestRunObserver::State, unsigned int)
+00000000000287e0 0000000000000010 t TestRunObserver::MarkDiagnosticsAttach(unsigned int)
+00000000000287f0 000000000000011c T IsaacModRuntime_GetTestRunSnapshot
+000000000002890c 00000000000000a0 t index2addr
+00000000000289ac 0000000000000008 t growstack
+00000000000289b4 00000000000000a8 t auxgetstr
+0000000000028a5c 00000000000000dc t auxsetstr
+0000000000028b38 000000000000000c t f_call
+0000000000028b44 00000000000000bc t aux_upvalue.constprop.0
+0000000000028c00 0000000000000020 t reverse.isra.0
+0000000000028c20 00000000000000a4 t lua_checkstack
+0000000000028cc4 0000000000000044 t lua_xmove
+0000000000028d08 0000000000000010 t lua_atpanic
+0000000000028d18 000000000000001c t lua_version
+0000000000028d34 0000000000000034 t lua_absindex
+0000000000028d68 000000000000001c t lua_gettop
+0000000000028d84 0000000000000048 t lua_settop
+0000000000028dcc 0000000000000058 t lua_rotate
+0000000000028e24 000000000000007c t lua_copy
+0000000000028ea0 000000000000002c t lua_pushvalue
+0000000000028ecc 0000000000000034 t lua_type
+0000000000028f00 0000000000000014 t lua_typename
+0000000000028f14 0000000000000020 t lua_isinteger
+0000000000028f34 0000000000000030 t lua_isnumber
+0000000000028f64 0000000000000028 t lua_isstring
+0000000000028f8c 000000000000005c t lua_rawequal
+0000000000028fe8 0000000000000094 t lua_compare
+000000000002907c 0000000000000038 t lua_stringtonumber
+00000000000290b4 0000000000000058 t lua_tonumberx
+000000000002910c 000000000000005c t lua_tointegerx
+0000000000029168 000000000000003c t lua_toboolean
+00000000000291a4 00000000000000b8 t lua_tolstring
+000000000002925c 000000000000007c t lua_rawlen
+00000000000292d8 0000000000000044 t lua_touserdata
+000000000002931c 000000000000002c t lua_tothread
+0000000000029348 0000000000000068 t lua_topointer
+00000000000293b0 0000000000000014 t lua_pushnil
+00000000000293c4 000000000000001c t lua_pushnumber
+00000000000293e0 000000000000001c t lua_pushinteger
+00000000000293fc 0000000000000070 t lua_pushlstring
+000000000002946c 0000000000000070 t lua_pushstring
+00000000000294dc 0000000000000050 t lua_pushvfstring
+000000000002952c 0000000000000090 t lua_pushfstring
+00000000000295bc 00000000000000ac t lua_pushcclosure
+0000000000029668 0000000000000024 t lua_pushboolean
+000000000002968c 000000000000001c t lua_pushlightuserdata
+00000000000296a8 000000000000002c t lua_pushthread
+00000000000296d4 000000000000003c t lua_getglobal
+0000000000029710 0000000000000084 t lua_gettable
+0000000000029794 0000000000000028 t lua_getfield
+00000000000297bc 00000000000000a0 t lua_geti
+000000000002985c 0000000000000044 t lua_rawget
+00000000000298a0 0000000000000050 t lua_rawgeti
+00000000000298f0 0000000000000084 t lua_createtable
+0000000000029974 000000000000007c t lua_getmetatable
+00000000000299f0 000000000000003c t lua_getuservalue
+0000000000029a2c 000000000000003c t lua_setglobal
+0000000000029a68 0000000000000028 t lua_setfield
+0000000000029a90 00000000000000d0 t lua_seti
+0000000000029b60 0000000000000088 t lua_rawset
+0000000000029be8 000000000000007c t lua_rawseti
+0000000000029c64 00000000000000c8 t lua_setmetatable
+0000000000029d2c 0000000000000068 t lua_setuservalue
+0000000000029d94 000000000000007c t lua_callk
+0000000000029e10 0000000000000100 t lua_pcallk
+0000000000029f10 00000000000000bc t lua_load
+0000000000029fcc 0000000000000030 t lua_dump
+0000000000029ffc 0000000000000008 t lua_status
+000000000002a004 0000000000000144 t lua_gc
+000000000002a148 000000000000000c t lua_error
+000000000002a154 000000000000004c t lua_next
+000000000002a1a0 0000000000000080 t lua_concat
+000000000002a220 000000000000003c t lua_len
+000000000002a25c 000000000000001c t lua_getallocf
+000000000002a278 0000000000000058 t lua_newuserdata
+000000000002a2d0 00000000000000c0 t lua_setupvalue
+000000000002a390 0000000000000018 t getS
+000000000002a3a8 0000000000000114 t findfield
+000000000002a4bc 00000000000000f0 t pushglobalfuncname
+000000000002a5ac 0000000000000068 t getF
+000000000002a614 0000000000000058 t panic
+000000000002a66c 0000000000000028 t l_alloc
+000000000002a694 00000000000000b8 t skipcomment
+000000000002a74c 0000000000000084 t errfile.isra.0
+000000000002a7d0 0000000000000070 t luaL_where
+000000000002a840 0000000000000098 t luaL_error
+000000000002a8d8 00000000000000f8 t luaL_argerror
+000000000002a9d0 0000000000000098 t resizebox
+000000000002aa68 0000000000000020 t boxgc
+000000000002aa88 000000000000009c t luaL_newmetatable
+000000000002ab24 000000000000008c t luaL_testudata
+000000000002abb0 0000000000000060 t luaL_checkstack
+000000000002ac10 0000000000000048 t luaL_checkany
+000000000002ac58 0000000000000120 t luaL_prepbuffsize
+000000000002ad78 0000000000000054 t luaL_addlstring
+000000000002adcc 0000000000000034 t luaL_addstring
+000000000002ae00 000000000000006c t luaL_pushresult
+000000000002ae6c 0000000000000010 t luaL_pushresultsize
+000000000002ae7c 0000000000000094 t luaL_addvalue
+000000000002af10 0000000000000014 t luaL_buffinit
+000000000002af24 0000000000000020 t luaL_buffinitsize
+000000000002af44 00000000000000d8 t luaL_ref
+000000000002b01c 0000000000000070 t luaL_unref
+000000000002b08c 00000000000001c4 t luaL_loadfilex
+000000000002b250 0000000000000024 t luaL_loadbufferx
+000000000002b274 0000000000000080 t luaL_getmetafield
+000000000002b2f4 00000000000000b0 t typeerror.isra.0
+000000000002b3a4 0000000000000034 t tag_error
+000000000002b3d8 0000000000000044 t luaL_checktype
+000000000002b41c 0000000000000040 t luaL_checklstring
+000000000002b45c 0000000000000078 t luaL_optlstring
+000000000002b4d4 000000000000009c t luaL_checkoption
+000000000002b570 0000000000000040 t luaL_checknumber
+000000000002b5b0 0000000000000054 t luaL_optnumber
+000000000002b604 0000000000000078 t luaL_checkinteger
+000000000002b67c 0000000000000048 t luaL_optinteger
+000000000002b6c4 0000000000000044 t luaL_checkudata
+000000000002b708 0000000000000064 t luaL_callmeta
+000000000002b76c 000000000000005c t luaL_len
+000000000002b7c8 0000000000000158 t luaL_tolstring
+000000000002b920 00000000000000a0 t luaL_setfuncs
+000000000002b9c0 000000000000008c t luaL_getsubtable
+000000000002ba4c 0000000000000104 t luaL_requiref
+000000000002bb50 0000000000000040 t luaL_newstate
+000000000002bb90 00000000000000a8 t luaL_checkversion_
+000000000002bc38 0000000000000018 t dofilecont
+000000000002bc50 0000000000000060 t luaB_type
+000000000002bcb0 0000000000000030 t luaB_tostring
+000000000002bce0 00000000000000b8 t luaB_select
+000000000002bd98 00000000000000a4 t luaB_setmetatable
+000000000002be3c 000000000000005c t luaB_rawset
+000000000002be98 0000000000000050 t luaB_rawget
+000000000002bee8 0000000000000060 t luaB_rawlen
+000000000002bf48 0000000000000050 t luaB_rawequal
+000000000002bf98 0000000000000134 t luaB_print
+000000000002c0cc 0000000000000054 t luaB_ipairs
+000000000002c120 0000000000000058 t luaB_next
+000000000002c178 00000000000000cc t generic_reader
+000000000002c244 0000000000000054 t ipairsaux
+000000000002c298 000000000000007c t luaB_error
+000000000002c314 00000000000000d4 t luaB_collectgarbage
+000000000002c3e8 0000000000000050 t finishpcall
+000000000002c438 0000000000000088 t luaB_xpcall
+000000000002c4c0 0000000000000074 t luaB_pcall
+000000000002c534 000000000000006c t load_aux
+000000000002c5a0 00000000000000fc t luaB_load
+000000000002c69c 000000000000008c t luaB_loadfile
+000000000002c728 0000000000000058 t luaB_getmetatable
+000000000002c780 0000000000000088 t luaB_dofile
+000000000002c808 0000000000000080 t luaB_assert
+000000000002c888 00000000000001f4 t luaB_tonumber
+000000000002ca7c 0000000000000094 t luaB_pairs
+000000000002cb10 0000000000000088 t luaopen_base
+000000000002cb98 000000000000015c t addk
+000000000002ccf4 0000000000000020 t freereg
+000000000002cd14 0000000000000064 t freeexps
+000000000002cd78 0000000000000054 t fixjump
+000000000002cdcc 0000000000000018 t freeexp
+000000000002cde4 0000000000000030 t getjumpcontrol.isra.0
+000000000002ce14 0000000000000068 t patchtestreg.isra.0
+000000000002ce7c 0000000000000030 t negatecondition.isra.0
+000000000002ceac 0000000000000024 t getjump.isra.0
+000000000002ced0 000000000000008c t patchlistaux
+000000000002cf5c 00000000000000e4 t luaK_code
+000000000002d040 000000000000006c t need_value
+000000000002d0ac 0000000000000050 t removevalues
+000000000002d0fc 00000000000001b0 t constfolding
+000000000002d2ac 0000000000000064 t luaK_concat
+000000000002d310 000000000000004c t luaK_jump
+000000000002d35c 0000000000000010 t luaK_getlabel
+000000000002d36c 0000000000000014 t luaK_patchtohere
+000000000002d380 000000000000001c t luaK_patchlist
+000000000002d39c 0000000000000054 t luaK_patchclose
+000000000002d3f0 0000000000000014 t luaK_codeABC
+000000000002d404 0000000000000098 t luaK_nil
+000000000002d49c 0000000000000014 t luaK_ret
+000000000002d4b0 000000000000000c t luaK_codeABx
+000000000002d4bc 000000000000006c t luaK_codek
+000000000002d528 0000000000000040 t luaK_checkstack
+000000000002d568 0000000000000030 t luaK_reserveregs
+000000000002d598 000000000000002c t luaK_stringK
+000000000002d5c4 0000000000000034 t luaK_intK
+000000000002d5f8 0000000000000070 t luaK_setreturns
+000000000002d668 0000000000000064 t luaK_setoneret
+000000000002d6cc 00000000000000c0 t luaK_dischargevars
+000000000002d78c 0000000000000130 t discharge2reg
+000000000002d8bc 0000000000000148 t exp2reg
+000000000002da04 00000000000000c0 t jumponcond
+000000000002dac4 0000000000000048 t luaK_exp2nextreg
+000000000002db0c 0000000000000070 t luaK_exp2anyreg
+000000000002db7c 0000000000000020 t luaK_exp2anyregup
+000000000002db9c 0000000000000014 t luaK_exp2val
+000000000002dbb0 00000000000000f8 t luaK_exp2RK
+000000000002dca8 00000000000000b8 t luaK_storevar
+000000000002dd60 0000000000000088 t luaK_self
+000000000002dde8 0000000000000098 t luaK_goiftrue
+000000000002de80 0000000000000084 t luaK_goiffalse
+000000000002df04 000000000000004c t luaK_indexed
+000000000002df50 0000000000000064 t luaK_infix
+000000000002dfb4 0000000000000018 t luaK_fixline
+000000000002dfcc 0000000000000180 t luaK_prefix
+000000000002e14c 0000000000000094 t codebinexpval
+000000000002e1e0 00000000000001f0 t luaK_posfix
+000000000002e3d0 0000000000000090 t luaK_setlist
+000000000002e460 0000000000000030 t luaB_yieldable
+000000000002e490 0000000000000030 t luaB_yield
+000000000002e4c0 00000000000000fc t auxresume
+000000000002e5bc 0000000000000030 t luaB_corunning
+000000000002e5ec 0000000000000054 t luaB_cocreate
+000000000002e640 0000000000000038 t luaB_cowrap
+000000000002e678 0000000000000094 t luaB_auxwrap
+000000000002e70c 0000000000000044 t getco
+000000000002e750 0000000000000098 t luaB_costatus
+000000000002e7e8 0000000000000088 t luaB_coresume
+000000000002e870 0000000000000058 t luaopen_coroutine
+000000000002e8c8 0000000000000024 t currentpc
+000000000002e8ec 0000000000000034 t currentline
+000000000002e920 0000000000000030 t swapextra
+000000000002e950 00000000000002dc t getobjname
+000000000002ec2c 0000000000000070 t kname
+000000000002ec9c 00000000000000f4 t varinfo
+000000000002ed90 0000000000000040 t lua_getstack
+000000000002edd0 00000000000003e0 t lua_getinfo
+000000000002f1b0 0000000000000064 t luaG_addinfo
+000000000002f214 0000000000000054 t luaG_errormsg
+000000000002f268 00000000000000a8 t luaG_runerror
+000000000002f310 000000000000004c t luaG_typeerror
+000000000002f35c 0000000000000028 t luaG_concaterror
+000000000002f384 0000000000000058 t luaG_opinterror
+000000000002f3dc 000000000000006c t luaG_tointerror
+000000000002f448 0000000000000064 t luaG_ordererror
+000000000002f4ac 000000000000013c t luaG_traceexec
+000000000002f5f0 00000000000000f8 t luaD_throw
+000000000002f6f0 0000000000000048 t resume_error
+000000000002f740 0000000000000114 t f_parser
+000000000002f860 0000000000000068 t luaD_rawrunprotected
+000000000002f8d0 0000000000000120 t luaD_reallocstack
+000000000002f9f0 000000000000002c t luaD_growstack.part.0
+000000000002fa20 0000000000000064 t luaD_growstack
+000000000002fa90 00000000000000b8 t luaD_shrinkstack
+000000000002fb50 0000000000000094 t luaD_inctop
+000000000002fbf0 0000000000000124 t luaD_hook
+000000000002fd20 0000000000000408 t unroll
+0000000000030130 0000000000000064 t luaD_rawrunprotected.constprop.0
+00000000000301a0 00000000000002a8 t luaD_poscall
+0000000000030450 0000000000000534 t luaD_precall
+0000000000030990 0000000000000110 t resume
+0000000000030aa0 0000000000000090 t luaD_call
+0000000000030b30 0000000000000094 t luaD_callnoyield
+0000000000030bd0 0000000000000284 t lua_resume
+0000000000030e60 0000000000000010 t lua_isyieldable
+0000000000030e70 0000000000000098 t lua_yieldk
+0000000000030f10 000000000000018c t luaD_pcall
+00000000000310a0 0000000000000244 t luaD_protectedparser
+00000000000312e4 0000000000000040 t DumpBlock
+0000000000031324 0000000000000024 t DumpByte
+0000000000031348 0000000000000024 t DumpInt
+000000000003136c 0000000000000088 t DumpString
+00000000000313f4 00000000000002ec t DumpFunction
+00000000000316e0 0000000000000104 t luaU_dump
+00000000000317e4 0000000000000034 t luaF_newCclosure
+0000000000031818 0000000000000058 t luaF_newLclosure
+0000000000031870 0000000000000074 t luaF_initupvals
+00000000000318e4 000000000000009c t luaF_findupval
+0000000000031980 0000000000000078 t luaF_close
+00000000000319f8 000000000000003c t luaF_newproto
+0000000000031a34 00000000000000bc t luaF_freeproto
+0000000000031af0 0000000000000058 t luaF_getlocalname
+0000000000031b50 0000000000000218 t reallymarkobject
+0000000000031d70 0000000000000170 t GCTM
+0000000000031ee0 0000000000000010 t dothecall
+0000000000031ef0 000000000000016c t freeobj
+0000000000032060 0000000000000144 t clearkeys.constprop.0
+00000000000321b0 000000000000014c t clearvalues
+0000000000032300 00000000000001d4 t traverseephemeron
+00000000000324e0 0000000000000760 t propagatemark
+0000000000032c40 0000000000000d7c t singlestep
+00000000000339c0 0000000000000244 t luaC_barrier_
+0000000000033c10 0000000000000020 t luaC_barrierback_
+0000000000033c30 000000000000002c t luaC_upvalbarrier_
+0000000000033c60 0000000000000028 t luaC_fix
+0000000000033c90 000000000000004c t luaC_newobj
+0000000000033ce0 0000000000000160 t luaC_checkfinalizer
+0000000000033e40 0000000000000214 t luaC_freeallobjects
+0000000000034060 000000000000018c t luaC_step
+00000000000341f0 00000000000001bc t luaC_fullgc
+00000000000343ac 0000000000000064 t check_next1
+0000000000034410 000000000000007c t luaX_init
+000000000003448c 000000000000004c t luaX_token2str
+00000000000344d8 0000000000000098 t lexerror
+0000000000034570 000000000000007c t save
+00000000000345ec 00000000000000b8 t skip_sep
+00000000000346a4 0000000000000080 t check_next2
+0000000000034724 00000000000000c0 t inclinenumber
+00000000000347e4 000000000000006c t esccheck
+0000000000034850 0000000000000080 t gethexa
+00000000000348d0 0000000000000178 t read_numeral
+0000000000034a48 0000000000000010 t luaX_syntaxerror
+0000000000034a58 00000000000000a0 t luaX_newstring
+0000000000034af8 00000000000001b8 t read_long_string
+0000000000034cb0 0000000000000ae8 t llex
+0000000000035798 000000000000007c t luaX_setinput
+0000000000035814 0000000000000050 t luaX_next
+0000000000035864 0000000000000028 t luaX_lookahead
+000000000003588c 0000000000000034 t math_rad
+00000000000358c0 0000000000000034 t math_deg
+00000000000358f4 000000000000002c t math_tan
+0000000000035920 000000000000002c t math_sqrt
+000000000003594c 000000000000002c t math_sin
+0000000000035978 0000000000000028 t math_randomseed
+00000000000359a0 000000000000013c t math_random
+0000000000035adc 000000000000008c t math_min
+0000000000035b68 0000000000000088 t math_max
+0000000000035bf0 00000000000000bc t math_log
+0000000000035cac 0000000000000048 t math_ult
+0000000000035cf4 00000000000000d8 t math_fmod
+0000000000035dcc 000000000000002c t math_exp
+0000000000035df8 000000000000002c t math_cos
+0000000000035e24 0000000000000058 t math_atan
+0000000000035e7c 000000000000002c t math_asin
+0000000000035ea8 000000000000002c t math_acos
+0000000000035ed4 0000000000000038 t pushnumint
+0000000000035f0c 000000000000006c t math_type
+0000000000035f78 0000000000000050 t math_ceil
+0000000000035fc8 0000000000000088 t math_modf
+0000000000036050 0000000000000050 t math_floor
+00000000000360a0 0000000000000058 t math_toint
+00000000000360f8 0000000000000068 t math_abs
+0000000000036160 00000000000000e0 t luaopen_math
+0000000000036240 0000000000000014 t luaM_toobig
+0000000000036254 00000000000000a0 t luaM_realloc_
+00000000000362f4 0000000000000084 t luaM_growaux_
+0000000000036378 0000000000000094 t intarith
+000000000003640c 0000000000000068 t l_str2dloc
+0000000000036474 0000000000000038 t pushstr
+00000000000364ac 0000000000000090 t numarith.isra.0
+000000000003653c 000000000000004c t luaO_int2fb
+0000000000036588 0000000000000020 t luaO_fb2int
+00000000000365a8 0000000000000030 t luaO_ceillog2
+00000000000365d8 00000000000001f4 t luaO_arith
+00000000000367cc 0000000000000028 t luaO_hexavalue
+00000000000367f4 0000000000000230 t luaO_str2num
+0000000000036a24 0000000000000064 t luaO_utf8esc
+0000000000036a88 00000000000000cc t luaO_tostring
+0000000000036b54 0000000000000064 t luaO_pushfstring
+0000000000036bb8 00000000000003f8 t luaO_pushvfstring
+0000000000036fb0 0000000000000174 t luaO_chunkid
+0000000000037124 0000000000000028 t getlocvar
+000000000003714c 000000000000002c t testnext
+0000000000037178 00000000000000a0 t newlabelentry
+0000000000037218 0000000000000084 t checklimit
+000000000003729c 0000000000000108 t newupvalue
+00000000000373a4 0000000000000024 t enterlevel
+00000000000373c8 0000000000000138 t new_localvar
+0000000000037500 0000000000000028 t new_localvarliteral_
+0000000000037528 0000000000000038 t error_expected
+0000000000037560 000000000000001c t checknext
+000000000003757c 00000000000000a0 t check_match
+000000000003761c 000000000000002c t block_follow.isra.0
+0000000000037648 00000000000000a8 t adjust_assign.isra.0
+00000000000376f0 0000000000000124 t singlevaraux
+0000000000037814 000000000000004c t adjustlocalvars.isra.0
+0000000000037860 0000000000000038 t str_checkname
+0000000000037898 0000000000000044 t checkname
+00000000000378dc 0000000000000060 t fieldsel
+000000000003793c 0000000000000094 t singlevar
+00000000000379d0 00000000000000cc t closegoto.isra.0
+0000000000037a9c 00000000000000d4 t findlabel
+0000000000037b70 0000000000000080 t gotostat
+0000000000037bf0 0000000000000084 t findgotos
+0000000000037c74 00000000000001e8 t leaveblock
+0000000000037e5c 000000000000015c t close_func
+0000000000037fb8 000000000000089c t statement
+0000000000038854 0000000000000050 t statlist
+00000000000388a4 0000000000000294 t body
+0000000000038b38 00000000000003fc t subexpr
+0000000000038f34 0000000000000008 t expr
+0000000000038f3c 0000000000000044 t yindex
+0000000000038f80 00000000000000dc t recfield
+000000000003905c 0000000000000064 t explist
+00000000000390c0 0000000000000040 t cond
+0000000000039100 0000000000000028 t exp1.isra.0
+0000000000039128 0000000000000250 t constructor
+0000000000039378 0000000000000154 t funcargs
+00000000000394cc 0000000000000158 t suffixedexp
+0000000000039624 00000000000001e4 t assignment
+0000000000039808 0000000000000054 t block
+000000000003985c 0000000000000150 t forbody
+00000000000399ac 000000000000003c t skipnoopstat
+00000000000399e8 000000000000014c t test_then_block
+0000000000039b34 00000000000001ac t luaY_parser
+0000000000039ce0 0000000000000080 t stack_init
+0000000000039d60 00000000000000d4 t f_luaopen
+0000000000039e34 0000000000000024 t luaE_setdebt
+0000000000039e58 0000000000000044 t luaE_extendCI
+0000000000039e9c 0000000000000054 t luaE_freeCI
+0000000000039ef0 000000000000003c t freestack.part.0
+0000000000039f2c 0000000000000070 t close_state
+0000000000039f9c 0000000000000178 t lua_newstate
+000000000003a114 0000000000000064 t luaE_shrinkCI
+000000000003a178 00000000000000f0 t lua_newthread
+000000000003a268 0000000000000050 t luaE_freethread
+000000000003a2b8 000000000000000c t lua_close
+000000000003a2c4 000000000000004c t luaS_eqlngstr
+000000000003a310 000000000000003c t luaS_hash
+000000000003a34c 0000000000000044 t luaS_hashlongstr
+000000000003a390 00000000000000dc t luaS_resize
+000000000003a46c 0000000000000148 t internshrstr
+000000000003a5b4 0000000000000048 t luaS_clearcache
+000000000003a5fc 0000000000000064 t luaS_init
+000000000003a660 0000000000000044 t luaS_createlngstrobj
+000000000003a6a4 0000000000000048 t luaS_remove
+000000000003a6ec 0000000000000060 t luaS_newlstr
+000000000003a74c 00000000000000ac t luaS_new
+000000000003a7f8 0000000000000058 t luaS_newudata
+000000000003a850 0000000000000114 t match_class
+000000000003a964 000000000000011c t matchbracketclass
+000000000003aa80 0000000000000038 t str_len
+000000000003aab8 0000000000000110 t unpackint
+000000000003abc8 00000000000000d4 t classend
+000000000003ac9c 00000000000000c0 t packint
+000000000003ad5c 000000000000001c t writer
+000000000003ad78 00000000000000a4 t str_upper
+000000000003ae1c 0000000000000088 t str_reverse
+000000000003aea4 00000000000000a4 t str_lower
+000000000003af48 0000000000000148 t str_rep
+000000000003b090 00000000000000a4 t gmatch
+000000000003b134 00000000000000b8 t str_char
+000000000003b1ec 0000000000000068 t addlenmod
+000000000003b254 00000000000006ac t str_format
+000000000003b900 000000000000009c t str_dump
+000000000003b99c 0000000000000018 t posrelat
+000000000003b9b4 00000000000000f8 t str_byte
+000000000003baac 00000000000000ac t str_sub
+000000000003bb58 0000000000000060 t getnum
+000000000003bbb8 0000000000000050 t getnumlimit
+000000000003bc08 00000000000001a8 t getoption
+000000000003bdb0 00000000000000fc t getdetails
+000000000003beac 00000000000000e4 t str_packsize
+000000000003bf90 0000000000000058 t copywithendian
+000000000003bfe8 000000000000026c t str_unpack
+000000000003c254 0000000000000424 t str_pack
+000000000003c678 00000000000000a8 t push_onecapture
+000000000003c720 0000000000000084 t push_captures
+000000000003c7a4 000000000000005c t singlematch.isra.0
+000000000003c800 000000000000041c t match
+000000000003cc1c 000000000000007c t start_capture
+000000000003cc98 0000000000000268 t str_find_aux
+000000000003cf00 0000000000000008 t str_match
+000000000003cf08 0000000000000008 t str_find
+000000000003cf10 0000000000000418 t str_gsub
+000000000003d328 00000000000000a0 t gmatch_aux
+000000000003d3c8 00000000000000c8 t luaopen_string
+000000000003d490 00000000000001a0 t mainposition
+000000000003d630 000000000000005c t getgeneric
+000000000003d68c 000000000000005c t countint
+000000000003d6e8 000000000000016c t luaH_next
+000000000003d854 0000000000000038 t luaH_new
+000000000003d88c 0000000000000074 t luaH_free
+000000000003d900 0000000000000070 t luaH_getint
+000000000003d970 0000000000000058 t luaH_getshortstr
+000000000003d9c8 0000000000000038 t luaH_getstr
+000000000003da00 00000000000000a0 t luaH_get
+000000000003daa0 0000000000000064 t luaH_setint
+000000000003db04 0000000000000200 t luaH_resize
+000000000003dd04 000000000000002c t luaH_resizearray
+000000000003dd30 0000000000000328 t luaH_newkey
+000000000003e058 0000000000000064 t luaH_set
+000000000003e0bc 0000000000000114 t luaH_getn
+000000000003e1d0 0000000000000038 t set2
+000000000003e208 00000000000000dc t unpack
+000000000003e2e4 0000000000000094 t pack
+000000000003e378 0000000000000078 t addfield
+000000000003e3f0 00000000000000b4 t sort_comp
+000000000003e4a4 000000000000031c t auxsort
+000000000003e7c0 00000000000000fc t checktab
+000000000003e8bc 00000000000000a8 t sort
+000000000003e964 0000000000000194 t tmove
+000000000003eaf8 00000000000000f8 t tremove
+000000000003ebf0 00000000000000ec t tinsert
+000000000003ecdc 0000000000000114 t tconcat
+000000000003edf0 0000000000000058 t luaopen_table
+000000000003ee48 0000000000000068 t luaT_init
+000000000003eeb0 0000000000000048 t luaT_gettm
+000000000003eef8 0000000000000064 t luaT_gettmbyobj
+000000000003ef5c 0000000000000094 t luaT_objtypename
+000000000003eff0 00000000000000b4 t luaT_callTM
+000000000003f0a4 0000000000000080 t luaT_callbinTM
+000000000003f124 00000000000000ec t luaT_trybinTM
+000000000003f210 000000000000005c t luaT_callorderTM
+000000000003f26c 0000000000000034 t error
+000000000003f2a0 0000000000000038 t LoadBlock
+000000000003f2d8 0000000000000020 t LoadByte
+000000000003f2f8 0000000000000020 t LoadInt
+000000000003f318 0000000000000064 t checkliteral
+000000000003f37c 00000000000000a8 t LoadString
+000000000003f424 0000000000000054 t fchecksize
+000000000003f478 00000000000003dc t LoadFunction
+000000000003f854 00000000000001dc t luaU_undump
+000000000003fa30 0000000000000090 t utf8_decode
+000000000003fac0 0000000000000058 t iter_codes
+000000000003fb18 00000000000000d0 t iter_aux
+000000000003fbe8 0000000000000058 t pushutfchar
+000000000003fc40 0000000000000098 t utfchar
+000000000003fcd8 0000000000000018 t u_posrelat
+000000000003fcf0 000000000000010c t utflen
+000000000003fdfc 000000000000015c t byteoffset
+000000000003ff58 0000000000000148 t codepoint
+00000000000400a0 0000000000000080 t luaopen_utf8
+0000000000040120 0000000000000100 t luaV_tointeger.constprop.0
+0000000000040220 00000000000000bc t luaV_tonumber_
+00000000000402e0 000000000000011c t luaV_tointeger
+0000000000040400 0000000000000140 t luaV_finishget
+0000000000040540 000000000000020c t luaV_finishset
+0000000000040750 0000000000000258 t luaV_lessthan
+00000000000409b0 0000000000000288 t luaV_lessequal
+0000000000040c40 00000000000002b0 t luaV_equalobj
+0000000000040ef0 00000000000003ac t luaV_concat
+00000000000412a0 0000000000000124 t luaV_objlen
+00000000000413d0 0000000000000054 t luaV_div
+0000000000041430 0000000000000054 t luaV_mod
+0000000000041490 0000000000000028 t luaV_shiftl
+00000000000414c0 0000000000000198 t luaV_finishOp
+0000000000041660 000000000000230c t luaV_execute
+000000000004396c 0000000000000050 t luaZ_fill
+00000000000439bc 0000000000000010 t luaZ_init
+00000000000439cc 0000000000000090 t luaZ_read
+0000000000043a60 0000000000000168 t _memregionFindRandom
+0000000000043bd0 00000000000001dc t virtmemSetup
+0000000000043db0 0000000000000014 t virtmemFindAslr
+0000000000043dd0 000000000000004c t virtmemAddReservation
+0000000000043e20 000000000000002c t virtmemRemoveReservation
+0000000000043e4c T __rtld_runtime_resolve
+0000000000043ec8 t armDCacheFlush
+0000000000043eec t armDCacheFlush_L0
+0000000000043f04 t armICacheInvalidate
+0000000000043f24 t armICacheInvalidate_L0
+0000000000043f3c t svcUnmapMemory
+0000000000043f44 t svcQueryMemory
+0000000000043f58 t svcCreateThread
+0000000000043f6c t svcStartThread
+0000000000043f74 t svcExitThread
+0000000000043f7c t svcSleepThread
+0000000000043f84 t svcCloseHandle
+0000000000043f8c t svcWaitSynchronization
+0000000000043fa0 t svcGetSystemTick
+0000000000043fa8 t svcSendSyncRequest
+0000000000043fb0 t svcOutputDebugString
+0000000000043fb8 t svcGetInfo
+0000000000043fcc t svcCreateSession
+0000000000043fe4 t svcReplyAndReceive
+0000000000043ff8 t svcMapProcessMemory
+0000000000044000 t svcUnmapProcessMemory
+0000000000044008 T exl_inline_hook_impl
+00000000000440a0 T exl_inline_float_hook_impl
+00000000000441c0 0000000000000004 t operator delete(void*, unsigned long)
+00000000000441e0 0000000000000068 t operator new(unsigned long)
+0000000000044248 0000000000000050 t std::__throw_logic_error(char const*)
+0000000000044298 0000000000000050 t std::__throw_length_error(char const*)
+00000000000442e8 0000000000000050 t std::__throw_out_of_range(char const*)
+0000000000044338 000000000000000c t std::__throw_out_of_range_fmt(char const*, ...)
+0000000000044344 0000000000000180 t std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::_M_replace_cold(char*, unsigned long, char const*, unsigned long, unsigned long)
+00000000000444e0 000000000000000c t std::bad_alloc::what() const
+0000000000044500 0000000000000014 t std::bad_alloc::~bad_alloc()
+0000000000044500 0000000000000014 t std::bad_alloc::~bad_alloc()
+0000000000044520 0000000000000020 t std::bad_alloc::~bad_alloc()
+0000000000044540 0000000000000004 t operator delete(void*)
+0000000000044560 000000000000000c t __gnu_cxx::__concurrence_lock_error::what() const
+0000000000044580 000000000000000c t __gnu_cxx::__concurrence_unlock_error::what() const
+00000000000445a0 0000000000000014 t __gnu_cxx::__concurrence_lock_error::~__concurrence_lock_error()
+00000000000445a0 0000000000000014 t __gnu_cxx::__concurrence_lock_error::~__concurrence_lock_error()
+00000000000445c0 0000000000000038 t __gnu_cxx::__concurrence_lock_error::~__concurrence_lock_error()
+0000000000044600 0000000000000014 t __gnu_cxx::__concurrence_unlock_error::~__concurrence_unlock_error()
+0000000000044600 0000000000000014 t __gnu_cxx::__concurrence_unlock_error::~__concurrence_unlock_error()
+0000000000044620 0000000000000038 t __gnu_cxx::__concurrence_unlock_error::~__concurrence_unlock_error()
+0000000000044658 0000000000000034 t __gnu_cxx::__throw_concurrence_lock_error()
+000000000004468c 0000000000000034 t __gnu_cxx::__throw_concurrence_unlock_error()
+00000000000446c0 0000000000000110 t (anonymous namespace)::pool::free(void*) [clone .constprop.0]
+00000000000447e0 00000000000000cc t (anonymous namespace)::pool::allocate(unsigned long) [clone .constprop.0]
+00000000000448c0 0000000000000058 t __cxa_allocate_exception
+0000000000044920 0000000000000028 t __cxa_free_exception
+0000000000044960 00000000000001f0 t _GLOBAL__sub_I_eh_alloc.cc
+0000000000044b60 0000000000000014 t _GLOBAL__sub_D_eh_alloc.cc
+0000000000044b80 000000000000009c t __cxa_begin_catch
+0000000000044c20 0000000000000004 t std::exception::~exception()
+0000000000044c20 0000000000000004 t std::exception::~exception()
+0000000000044c40 0000000000000044 t eh_globals_dtor(void*)
+0000000000044ca0 0000000000000080 t __cxa_get_globals
+0000000000044d20 0000000000000038 t _GLOBAL__sub_I_eh_globals.cc
+0000000000044d60 0000000000000034 t _GLOBAL__sub_D_eh_globals.cc
+0000000000044da0 000000000000007c t get_adjusted_ptr(std::type_info const*, std::type_info const*, void**)
+0000000000044e20 0000000000000138 t read_encoded_value_with_base(unsigned char, unsigned long, unsigned char const*, unsigned long*)
+0000000000044f60 0000000000000064 t base_of_encoded_value(unsigned char, _Unwind_Context*)
+0000000000044fe0 0000000000000108 t check_exception_spec(lsda_header_info*, std::type_info const*, void*, long)
+0000000000045100 00000000000000f8 t parse_lsda_header(_Unwind_Context*, unsigned char const*, lsda_header_info*)
+0000000000045200 0000000000000630 t __gxx_personality_v0
+0000000000045840 0000000000000018 t __cxxabiv1::__terminate(void (*)())
+0000000000045860 0000000000000010 t std::get_terminate()
+0000000000045870 0000000000000010 t std::terminate()
+0000000000045880 0000000000000010 t __cxxabiv1::__unexpected(void (*)())
+00000000000458a0 0000000000000010 t std::get_unexpected()
+00000000000458b0 0000000000000010 t std::unexpected()
+00000000000458c0 0000000000000058 t __gxx_exception_cleanup(_Unwind_Reason_Code, _Unwind_Exception*)
+0000000000045920 0000000000000054 t __cxa_init_primary_exception
+0000000000045980 000000000000005c t __cxa_throw
+00000000000459e0 0000000000000010 t std::get_new_handler()
+0000000000045a00 0000000000000014 t __cxxabiv1::__si_class_type_info::~__si_class_type_info()
+0000000000045a00 0000000000000014 t __cxxabiv1::__si_class_type_info::~__si_class_type_info()
+0000000000045a20 0000000000000020 t __cxxabiv1::__si_class_type_info::~__si_class_type_info()
+0000000000045a40 0000000000000194 t __cxxabiv1::__si_class_type_info::__do_dyncast(long, __cxxabiv1::__class_type_info::__sub_kind, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info::__dyncast_result&) const
+0000000000045be0 00000000000000a8 t __cxxabiv1::__si_class_type_info::__do_find_public_src(long, void const*, __cxxabiv1::__class_type_info const*, void const*) const
+0000000000045ca0 0000000000000064 t __cxxabiv1::__si_class_type_info::__do_upcast(__cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info::__upcast_result&) const
+0000000000045d20 0000000000000004 t std::type_info::~type_info()
+0000000000045d20 0000000000000004 t std::type_info::~type_info()
+0000000000045d40 0000000000000008 t std::type_info::__is_pointer_p() const
+0000000000045d40 0000000000000008 t std::type_info::__is_function_p() const
+0000000000045d60 0000000000000008 t std::logic_error::what() const
+0000000000045d60 0000000000000008 t std::runtime_error::what() const
+0000000000045d80 0000000000000074 t std::logic_error::~logic_error()
+0000000000045d80 0000000000000074 t std::logic_error::~logic_error()
+0000000000045e00 000000000000001c t std::logic_error::~logic_error()
+0000000000045e20 0000000000000014 t std::length_error::~length_error()
+0000000000045e20 0000000000000014 t std::length_error::~length_error()
+0000000000045e40 000000000000001c t std::length_error::~length_error()
+0000000000045e60 0000000000000014 t std::out_of_range::~out_of_range()
+0000000000045e60 0000000000000014 t std::out_of_range::~out_of_range()
+0000000000045e80 000000000000001c t std::out_of_range::~out_of_range()
+0000000000045ea0 00000000000000f8 t std::logic_error::logic_error(char const*)
+0000000000045ea0 00000000000000f8 t std::logic_error::logic_error(char const*)
+0000000000045fa0 0000000000000030 t std::length_error::length_error(char const*)
+0000000000045fa0 0000000000000030 t std::length_error::length_error(char const*)
+0000000000045fe0 0000000000000030 t std::out_of_range::out_of_range(char const*)
+0000000000045fe0 0000000000000030 t std::out_of_range::out_of_range(char const*)
+0000000000046020 0000000000000080 t std::string::_Rep::_S_create(unsigned long, unsigned long, std::allocator<char> const&)
+00000000000460a0 0000000000000004 t std::string::_Rep::_M_destroy(std::allocator<char> const&)
+00000000000460c0 0000000000000068 t __cxxabiv1::__class_type_info::__do_upcast(__cxxabiv1::__class_type_info const*, void**) const
+0000000000046140 0000000000000010 t __cxxabiv1::__class_type_info::__do_find_public_src(long, void const*, __cxxabiv1::__class_type_info const*, void const*) const
+0000000000046160 0000000000000014 t __cxxabiv1::__class_type_info::~__class_type_info()
+0000000000046160 0000000000000014 t __cxxabiv1::__class_type_info::~__class_type_info()
+0000000000046180 0000000000000020 t __cxxabiv1::__class_type_info::~__class_type_info()
+00000000000461a0 0000000000000090 t __cxxabiv1::__class_type_info::__do_upcast(__cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info::__upcast_result&) const
+0000000000046240 00000000000000a8 t __cxxabiv1::__class_type_info::__do_catch(std::type_info const*, void**, unsigned int) const
+0000000000046300 00000000000000ec t __cxxabiv1::__class_type_info::__do_dyncast(long, __cxxabiv1::__class_type_info::__sub_kind, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info::__dyncast_result&) const
+00000000000463ec 0000000000000044 t __cxa_call_terminate
+0000000000046440 000000000000018c t sinf
+00000000000465e0 00000000000001b0 t log
+00000000000467a0 0000000000000098 t sin
+0000000000046840 0000000000000004 t atan2
+0000000000046860 0000000000000034 t with_errno
+00000000000468a0 0000000000000018 t xflow
+00000000000468c0 000000000000000c t __math_uflow
+00000000000468e0 000000000000000c t __math_oflow
+0000000000046900 0000000000000020 t __math_divzero
+0000000000046920 0000000000000020 t __math_invalid
+0000000000046940 0000000000000014 t __math_check_uflow
+0000000000046960 0000000000000020 t __math_check_oflow
+0000000000046980 00000000000002ec t __ieee754_rem_pio2
+0000000000046c80 0000000000000498 t pow
+0000000000047120 0000000000000054 t fmod
+0000000000047180 00000000000008b8 t __kernel_rem_pio2
+0000000000047a40 0000000000000064 t acos
+0000000000047ac0 000000000000010c t scalbn
+0000000000047be0 0000000000000050 t sqrtf
+0000000000047c40 0000000000000050 t sqrt
+0000000000047ca0 0000000000000078 t log10
+0000000000047d20 000000000000009c t __kernel_sin
+0000000000047dc0 0000000000000004 t atan2f
+0000000000047de0 0000000000000090 t cos
+0000000000047e80 0000000000000034 t with_errnof
+0000000000047ec0 0000000000000020 t __math_invalidf
+0000000000047ee0 000000000000007c t frexp
+0000000000047f60 0000000000000008 t __ieee754_sqrtf
+0000000000047f80 00000000000000fc t __ieee754_log10
+0000000000048080 00000000000001b4 t cosf
+0000000000048240 0000000000000008 t __ieee754_sqrt
+0000000000048260 0000000000000238 t __ieee754_atan2
+00000000000484a0 0000000000000064 t tan
+0000000000048520 0000000000000008 t floor
+0000000000048540 0000000000000064 t asin
+00000000000485c0 0000000000000170 t exp
+0000000000048740 0000000000000484 t __ieee754_fmod
+0000000000048be0 0000000000000210 t atan
+0000000000048e00 00000000000001c8 t __ieee754_atan2f
+0000000000048fe0 000000000000022c t atanf
+0000000000049220 0000000000000130 t __kernel_cos
+0000000000049360 0000000000000284 t __ieee754_asin
+0000000000049600 0000000000000008 t fabs
+0000000000049620 00000000000002b4 t __ieee754_acos
+00000000000498e0 0000000000000008 t fabsf
+0000000000049900 000000000000000c t nan
+0000000000049920 0000000000000208 t __kernel_tan
+0000000000049b40 0000000000000298 t init_dwarf_reg_size_table
+0000000000049de0 000000000000018c t uw_install_context_1
+0000000000049f80 000000000000018c t read_encoded_value
+000000000004a120 00000000000007f8 t execute_stack_op
+000000000004a920 0000000000000334 t uw_update_context_1
+000000000004ac60 00000000000000f8 t uw_update_context
+000000000004ad60 0000000000000868 t execute_cfa_program_specialized
+000000000004b5e0 0000000000000898 t execute_cfa_program_generic
+000000000004be80 000000000000043c t uw_frame_state_for
+000000000004c2c0 000000000000036c t uw_init_context_1
+000000000004c640 0000000000000140 t _Unwind_RaiseException_Phase2
+000000000004c780 0000000000000154 t _Unwind_ForcedUnwind_Phase2
+000000000004c8e0 0000000000000050 t _Unwind_SetGR
+000000000004c940 0000000000000014 t _Unwind_GetIPInfo
+000000000004c960 0000000000000008 t _Unwind_SetIP
+000000000004c980 0000000000000008 t _Unwind_GetLanguageSpecificData
+000000000004c9a0 0000000000000008 t _Unwind_GetRegionStart
+000000000004c9c0 0000000000000008 t _Unwind_GetDataRelBase
+000000000004c9e0 0000000000000008 t _Unwind_GetTextRelBase
+000000000004ca00 0000000000000004 t _Unwind_DebugHook
+000000000004ca20 00000000000001a4 t _Unwind_RaiseException
+000000000004cbe0 000000000000012c t _Unwind_Resume
+000000000004cd20 000000000000001c t _Unwind_DeleteException
+000000000004cd40 0000000000000018 t fde_unencoded_compare
+000000000004cd60 000000000000002c t fde_unencoded_extract
+000000000004cda0 00000000000000ec t frame_downheap
+000000000004cea0 0000000000000138 t read_encoded_value_with_base
+000000000004cfe0 0000000000000220 t fde_radixsort
+000000000004d200 0000000000000124 t get_cie_encoding
+000000000004d340 00000000000000d8 t fde_mixed_encoding_extract
+000000000004d420 00000000000001e0 t classify_object_over_fdes.constprop.0
+000000000004d600 00000000000000bc t fde_single_encoding_extract
+000000000004d6c0 00000000000000a8 t fde_single_encoding_compare
+000000000004d780 000000000000010c t fde_mixed_encoding_compare
+000000000004d8a0 0000000000000234 t add_fdes.isra.0
+000000000004dae0 00000000000002e8 t linear_search_fdes
+000000000004dde0 0000000000000558 t search_object
+000000000004e340 00000000000001d0 t _Unwind_Find_FDE
+000000000004e510 0000000000000030 t __arm_za_disable
+000000000004e510 0000000000000030 t __libgcc_arm_za_disable
+000000000004e540 00000000000000a0 t __arm_tpidr2_save
+000000000004e540 00000000000000a0 t __libgcc_arm_tpidr2_save
+000000000004e5e0 0000000000000028 t srand
+000000000004e620 0000000000000038 t rand
+000000000004e660 0000000000000024 t getenv
+000000000004e6c0 00000000000000cc t strchr
+000000000004e7a0 0000000000000330 t _fread_r
+000000000004eae0 0000000000000034 t fread
+000000000004eb40 000000000000022c t memcpy
+000000000004eb40 t memmove
+000000000004ed80 0000000000000120 t _fopen_r
+000000000004eea0 000000000000002c t fopen
+000000000004eee0 0000000000000058 t sulp
+000000000004ef40 00000000000012f8 t _strtod_l
+0000000000050240 000000000000004c t strtod
+00000000000502a0 0000000000000034 t clock
+00000000000502e0 00000000000002a0 t _freopen_r
+0000000000050580 000000000000002c t freopen
+00000000000505c0 0000000000000104 t memset
+00000000000506e0 0000000000000110 t rshift
+0000000000050800 0000000000000860 t __gethex
+0000000000051060 00000000000000f8 t snprintf
+0000000000051160 00000000000001a4 t _strtoul_l.isra.0
+0000000000051320 0000000000000034 t _strtoul_r
+0000000000051360 0000000000000040 t strtoul
+00000000000513c0 000000000000012c t strcpy
+0000000000051500 0000000000000058 t strpbrk
+0000000000051560 0000000000000368 t validate_structure
+00000000000518e0 00000000000004e4 t mktime
+0000000000051de0 0000000000000418 t _strerror_r
+0000000000052200 0000000000000024 t strerror
+0000000000052240 0000000000000014 t __errno
+0000000000052260 0000000000000018 t abort
+0000000000052280 00000000000000b0 t __swhatbuf_r
+0000000000052340 00000000000000e8 t __smakebuf_r
+0000000000052440 000000000000000c t difftime
+0000000000052480 0000000000000130 t strlen
+00000000000525c0 000000000000002c t __locale_mb_cur_max
+0000000000052600 00000000000001ec t __sflush_r
+0000000000052800 00000000000000bc t _fflush_r
+00000000000528c0 000000000000003c t fflush
+0000000000052900 00000000000000a4 t _vsnprintf_r
+00000000000529c0 0000000000000048 t vsnprintf
+0000000000052a20 00000000000000f4 t _fwrite_r
+0000000000052b20 0000000000000034 t fwrite
+0000000000052b60 000000000000002c t realloc
+0000000000052ba0 0000000000000350 t localtime_r
+0000000000052f00 00000000000001b4 t strncmp
+00000000000530c0 000000000000025c t __tzcalc_limits
+0000000000053340 00000000000001c8 t memcmp
+0000000000053520 000000000000011c t _malloc_trim_r
+0000000000053640 00000000000002d8 t _free_r
+0000000000053920 0000000000000048 t strspn
+0000000000053980 000000000000001c t stdio_exit_handler
+00000000000539a0 000000000000006c t cleanup_stdio
+0000000000053a20 0000000000000128 t global_stdio_init.part.0
+0000000000053b60 000000000000000c t __sfp_lock_acquire
+0000000000053b80 000000000000000c t __sfp_lock_release
+0000000000053ba0 0000000000000130 t __sfp
+0000000000053ce0 0000000000000054 t __sinit
+0000000000053d40 00000000000002c0 t _strtol_l.part.0
+0000000000054000 0000000000000070 t _strtol_r
+0000000000054080 00000000000000ac t strncpy
+0000000000054140 0000000000000004 t _fseek_r
+0000000000054160 0000000000000014 t _tzset_unlocked
+0000000000054180 0000000000000038 t malloc
+00000000000541c0 000000000000001c t free
+00000000000541e0 000000000000000c t __gettzinfo
+0000000000054200 00000000000000f4 t _findenv_r
+0000000000054300 0000000000000018 t _getenv_r
+0000000000054320 0000000000000008 t __localeconv_l
+0000000000054340 0000000000000028 t _localeconv_r
+0000000000054380 0000000000000028 t localeconv
+00000000000543c0 000000000000004c t __sread
+0000000000054420 0000000000000008 t __seofread
+0000000000054440 0000000000000070 t __swrite
+00000000000544c0 0000000000000050 t __sseek
+0000000000054520 0000000000000008 t __sclose
+0000000000054540 0000000000000568 t _realloc_r
+0000000000054ac0 000000000000000c t __malloc_lock
+0000000000054ae0 000000000000000c t __malloc_unlock
+0000000000054b00 00000000000004c0 t _fseeko_r
+0000000000054fc0 0000000000000130 t _fclose_r
+0000000000055100 000000000000001c t fclose
+0000000000055120 0000000000000048 t time
+0000000000055180 0000000000000080 t fprintf
+0000000000055200 0000000000000008 t _user_strerror
+0000000000055208 0000000000000790 t get_arg
+0000000000055998 0000000000003a84 t _svfprintf_r
+0000000000059420 00000000000000b8 t __sflags
+0000000000059500 0000000000000134 t strcmp
+0000000000059640 00000000000000e0 t __utf8_wctomb
+0000000000059720 00000000000002a0 t gmtime_r
+00000000000599c0 0000000000000004 t strcoll
+00000000000599e0 00000000000006cc t _tzset_unlocked_r
+000000000005a0c0 000000000000003c t setjmp
+000000000005a100 0000000000000040 t longjmp
+000000000005a140 00000000000000cc t getc
+000000000005a240 00000000000000dc t memchr
+000000000005a320 0000000000000048 t __match
+000000000005a380 000000000000025c t __hexnan
+000000000005a5e0 00000000000000e4 t iso_year_adjust.isra.0
+000000000005a6e0 0000000000000fc8 t __strftime.isra.0
+000000000005b6c0 0000000000000034 t strftime
+000000000005b700 0000000000000038 t lflush
+000000000005b740 0000000000000190 t __srefill_r
+000000000005b8e0 000000000000000c t __env_lock
+000000000005b900 000000000000000c t __env_unlock
+000000000005b920 0000000000000064 t __assert_func
+000000000005b9a0 00000000000000a4 t _Balloc
+000000000005ba60 0000000000000020 t _Bfree
+000000000005ba80 0000000000000118 t __multadd
+000000000005bba0 0000000000000144 t __s2b
+000000000005bd00 0000000000000094 t __hi0bits
+000000000005bda0 0000000000000100 t __lo0bits
+000000000005bea0 000000000000004c t __i2b
+000000000005bf00 0000000000000210 t __multiply
+000000000005c120 0000000000000104 t __pow5mult
+000000000005c240 0000000000000174 t __lshift
+000000000005c3c0 0000000000000050 t __mcmp
+000000000005c420 00000000000001c4 t __mdiff
+000000000005c600 0000000000000084 t __ulp
+000000000005c6a0 0000000000000168 t __b2d
+000000000005c820 000000000000014c t __d2b
+000000000005c980 00000000000000b0 t __ratio
+000000000005ca40 0000000000000074 t __copybits
+000000000005cac0 0000000000000068 t __any_on
+000000000005cb40 000000000000000c t abs
+000000000005cb60 0000000000000098 t _fwalk_sglue
+000000000005cc00 0000000000000070 t __srget_r
+000000000005cc70 0000000000000790 t get_arg
+000000000005d400 0000000000003bd4 t _vfprintf_r
+0000000000060fd4 00000000000000cc t __sbprintf
+00000000000610a0 000000000000001c t div
+00000000000610c0 00000000000000d0 t _wcrtomb_r
+0000000000061190 0000000000000790 t get_arg
+0000000000061920 000000000000288c t _svfiprintf_r
+00000000000641c0 00000000000000c8 t __ssprint_r
+00000000000642a0 00000000000002dc t __utf8_mbtowc
+0000000000064580 0000000000000080 t fiprintf
+0000000000064600 00000000000004a4 t __sfvwrite_r
+0000000000064ac0 000000000000000c t __tz_lock
+0000000000064ae0 000000000000000c t __tz_unlock
+0000000000064b00 000000000000009c t _raise_r
+0000000000064ba0 000000000000001c t raise
+0000000000064bc0 000000000000018c t _memalign_r
+0000000000064d60 000000000000000c t labs
+0000000000064d80 00000000000000bc t _calloc_r
+0000000000064e40 0000000000000038 t __sprint_r
+0000000000064e80 0000000000000840 t _malloc_r
+00000000000656c0 00000000000001a4 t quorem
+0000000000065880 00000000000012f0 t _dtoa_r
+0000000000066b80 0000000000000010 t _wcsrtombs_r
+0000000000066ba0 00000000000000b0 t siscanf
+0000000000066c60 000000000000012c t __swsetup_r
+0000000000066da0 0000000000000188 t __ssputs_r
+0000000000066f28 0000000000000790 t get_arg
+00000000000676b8 0000000000002964 t _vfiprintf_r
+000000000006a01c 00000000000000cc t __sbprintf
+000000000006a100 0000000000000188 t _wcsnrtombs_l
+000000000006a2a0 0000000000000054 t _wcsnrtombs_r
+000000000006a300 00000000000000f8 t sniprintf
+000000000006a3f8 0000000000000074 t get_arg
+000000000006a46c 00000000000000f0 t _sungetc_r
+000000000006a55c 0000000000000070 t __ssrefill_r
+000000000006a5cc 00000000000000dc t _sfread_r
+000000000006a6a8 0000000000002700 t __ssvfiscanf_r
+000000000006cdc0 0000000000000008 t iswspace
+000000000006cde0 00000000000001a4 t _strtoull_l.isra.0
+000000000006cfa0 0000000000000034 t _strtoull_r
+000000000006cfe0 00000000000000b8 t __submore
+000000000006d0a0 00000000000000d8 t _mbrtowc_r
+000000000006d180 00000000000000d0 t __sccl
+000000000006d260 00000000000002c0 t _strtoll_l.isra.0
+000000000006d520 0000000000000034 t _strtoll_r
+000000000006d560 0000000000000048 t iswspace_l
+000000000006d5c0 0000000000000084 t category
+000000000006d660 0000000000000020 t _exit
+000000000006d680 000000000000009c t _fstat_r
+000000000006d720 0000000000000010 t _getpid_r
+000000000006d740 0000000000000020 t __getreent
+000000000006d760 0000000000000024 t _gettimeofday_r
+000000000006d7a0 00000000000000a0 t __release_handle
+000000000006d840 0000000000000130 t __alloc_handle
+000000000006d980 0000000000000060 t __get_handle
+000000000006d9e0 00000000000000f4 t _close_r
+000000000006dae0 0000000000000008 t null_write
+000000000006db00 00000000000000b8 t FindDevice
+000000000006dbc0 0000000000000008 t _isatty_r
+000000000006dbe0 0000000000000010 t _kill_r
+000000000006dc00 00000000000000a0 t _lseek_r
+000000000006dca0 000000000000006c t pthread_mutex_lock
+000000000006dd20 000000000000006c t pthread_mutex_unlock
+000000000006dda0 00000000000000d4 t pthread_once
+000000000006de80 0000000000000024 t pthread_key_create
+000000000006dec0 0000000000000018 t pthread_setspecific
+000000000006dee0 0000000000000018 t pthread_getspecific
+000000000006df00 0000000000000018 t pthread_key_delete
+000000000006df20 00000000000000f0 t _open_r
+000000000006e020 00000000000000b0 t _read_r
+000000000006e0e0 0000000000000078 t _sbrk_r
+000000000006e160 0000000000000014 t __libc_lock_acquire
+000000000006e180 0000000000000014 t __libc_lock_release
+000000000006e1a0 0000000000000014 t __libc_lock_acquire_recursive
+000000000006e1c0 0000000000000014 t __libc_lock_release_recursive
+000000000006e1e0 0000000000000018 t __libc_cond_broadcast
+000000000006e200 0000000000000018 t __libc_cond_wait
+000000000006e220 0000000000000010 t _times_r
+000000000006e240 00000000000000b0 t _write_r
+000000000006e300 0000000000000380 t __trunctfdf2
+000000000006e680 0000000000000070 t __sfp_handle_exceptions
+000000000006e6f0 t __text_end__
+000000000006e820 T __code_end__
+000000000006f010 0000000000000040 r (anonymous namespace)::kProductionLayoutPadding
+000000000006f050 0000000000000010 r kGameFileDestructorExpectedBytes
+000000000006f060 0000000000000010 r kGameFileCloseExpectedBytes
+000000000006f070 0000000000000010 r kGameFileReadExpectedBytes
+000000000006f080 0000000000000010 r kGameFileGetLengthExpectedBytes
+000000000006f090 0000000000000010 r kGameFileOpenReadExpectedBytes
+000000000006f0a0 0000000000000020 r kTargetBuildId
+000000000006f2b0 0000000000000030 r kRebuildMountPointsRelayExpectedBytes
+000000000006f2e0 0000000000000004 r kRebuildMountPointsRelayExpectedEntry
+000000000006f2e4 0000000000000010 r kRebuildMountPointsRelayExpectedOriginal
+000000000006f2f4 0000000000000010 r kManagerPresentTargetExpectedBytes
+000000000006f304 0000000000000010 r kManagerPresentStubExpectedBytes
+000000000006f314 0000000000000038 r kManagerPresentRelayExpectedBytes
+000000000006f34c 0000000000000004 r kManagerPresentCallExpectedEntry
+000000000006f350 0000000000000020 r kManagerRenderRelayExpectedBytes
+000000000006f370 0000000000000004 r kManagerRenderRelayExpectedEntry
+000000000006f374 0000000000000010 r kManagerPresentCallExpectedBytes
+000000000006f384 0000000000000020 r kManagerRelayExpectedBytes
+000000000006f3a4 0000000000000004 r kManagerRelayExpectedEntry
+000000000006f3a8 0000000000000050 r kGameStartNewRelayExpectedBytes
+000000000006f3f8 0000000000000050 r kGameStartSavedRelayExpectedBytes
+000000000006f448 0000000000000004 r kGameStartNewRelayExpectedEntry
+000000000006f44c 0000000000000004 r kGameStartSavedRelayExpectedEntry
+000000000006f450 0000000000000060 r kPreGetCollectibleRelayExpectedBytes
+000000000006f4b0 0000000000000004 r kPreGetCollectibleRelayExpectedEntry
+000000000006f4b4 0000000000000010 r kPreGetCollectibleRelayExpectedOriginal
+000000000006f4c4 0000000000000010 r kRngNextExpectedBytes
+000000000006f4d4 0000000000000010 r kRngSetSeedExpectedBytes
+000000000006f4e4 0000000000000010 r kMusicResumeExpectedBytes
+000000000006f4f4 0000000000000010 r kMusicPauseExpectedBytes
+000000000006f504 0000000000000010 r kMusicGetCurrentMusicIdExpectedBytes
+000000000006f514 0000000000000010 r kLevelIsNextStageAvailableExpectedBytes
+000000000006f524 0000000000000010 r kLevelGetAbsoluteStageExpectedBytes
+000000000006f534 0000000000000010 r kLevelIsAscentExpectedBytes
+000000000006f544 0000000000000010 r kGameIsGreedModeExpectedBytes
+000000000006f554 0000000000000010 r kGameOperatorDeleteExpectedBytes
+000000000006f564 0000000000000010 r kLibcxxStringAssignExpectedBytes
+000000000006f574 0000000000000010 r kSpriteReplaceSpritesheetExpectedBytes
+000000000006f584 0000000000000010 r kSpriteLoadGraphicsExpectedBytes
+000000000006f594 0000000000000010 r kSpriteLoadExpectedBytes
+000000000006f5a4 0000000000000010 r kSpritePlayRandomExpectedBytes
+000000000006f5b4 0000000000000010 r kSpriteRenderLayerExpectedBytes
+000000000006f5c4 0000000000000010 r kSpriteRenderExpectedBytes
+000000000006f5d4 0000000000000010 r kSpriteIsFinishedExpectedBytes
+000000000006f5e4 0000000000000010 r kSpriteIsPlayingExpectedBytes
+000000000006f5f4 0000000000000010 r kSpriteUpdateExpectedBytes
+000000000006f604 0000000000000010 r kSpriteGetTexelExpectedBytes
+000000000006f614 0000000000000010 r kSpriteGetLayerFrameExpectedBytes
+000000000006f624 0000000000000010 r kSpriteSetLayerFrameExpectedBytes
+000000000006f634 0000000000000010 r kSpriteGetFrameExpectedBytes
+000000000006f644 0000000000000010 r kSpriteSetFrameExpectedBytes
+000000000006f654 0000000000000010 r kSpriteSetFrameNamedExpectedBytes
+000000000006f664 0000000000000010 r kSpriteSetAnimationExpectedBytes
+000000000006f674 0000000000000010 r kSpritePlayExpectedBytes
+000000000006f684 0000000000000010 r kSpriteDestructorExpectedBytes
+000000000006f694 0000000000000010 r kSpriteCtorExpectedBytes
+000000000006f6a4 0000000000000010 r kFontDrawStringScaledUTF8ExpectedBytes
+000000000006f6b4 0000000000000010 r kFontDrawStringUTF8ExpectedBytes
+000000000006f6c4 0000000000000010 r kFontDrawStringScaledExpectedBytes
+000000000006f6d4 0000000000000010 r kFontDrawStringExpectedBytes
+000000000006f6e4 0000000000000010 r kFontSetMissingCharacterExpectedBytes
+000000000006f6f4 0000000000000010 r kFontGetCharacterWidthExpectedBytes
+000000000006f704 0000000000000010 r kFontGetBaselineHeightExpectedBytes
+000000000006f714 0000000000000010 r kFontGetLineHeightExpectedBytes
+000000000006f724 0000000000000010 r kFontGetStringWidthUTF8ExpectedBytes
+000000000006f734 0000000000000010 r kFontGetStringWidthExpectedBytes
+000000000006f744 0000000000000010 r kFontIsLoadedExpectedBytes
+000000000006f754 0000000000000010 r kFontUnloadExpectedBytes
+000000000006f764 0000000000000010 r kFontLoadExpectedBytes
+000000000006f774 0000000000000010 r kFontDestructorExpectedBytes
+000000000006f784 0000000000000010 r kFontCtorExpectedBytes
+000000000006f794 0000000000000010 r kManagerGetActionValueExpectedBytes
+000000000006f7a4 0000000000000010 r kManagerIsActionTriggeredExpectedBytes
+000000000006f7b4 0000000000000010 r kManagerIsActionPressedExpectedBytes
+000000000006f7c4 0000000000000010 r kGameIsPausedThunkExpectedBytes
+000000000006f7d4 0000000000000010 r kGetRenderPositionStubExpectedBytes
+000000000007e1c3 0000000000000016 r LuaRuntime::(anonymous namespace)::kStage13ModRootPrefix
+000000000007e1d9 000000000000000a r LuaRuntime::(anonymous namespace)::kModMethodsField
+000000000007e1e3 0000000000000092 r kEmbeddedLuaTestScript
+000000000007e275 0000000000000011 r LuaRuntime::kModMetatable
+000000000007e286 0000000000000014 r LuaRuntime::kSpriteMetatable
+000000000007e29a 0000000000000014 r LuaRuntime::kVectorMetatable
+000000000007e2ae 0000000000000014 r LuaRuntime::kColorMetatable
+000000000007e2c2 0000000000000012 r LuaRuntime::kFontMetatable
+000000000007e2d4 0000000000000011 r LuaRuntime::kRngMetatable
+000000000007e2e5 0000000000000013 r LuaRuntime::kMusicMetatable
+000000000007e2f8 0000000000000013 r LuaRuntime::kSeedsMetatable
+000000000007e30b 0000000000000020 r LuaRuntime::kRoomDescriptorListMetatable
+000000000007e32b 000000000000001c r LuaRuntime::kRoomDescriptorMetatable
+000000000007e347 0000000000000018 r LuaRuntime::kGridEntityMetatable
+000000000007e35f 0000000000000012 r LuaRuntime::kRoomMetatable
+000000000007e371 0000000000000016 r LuaRuntime::kItemPoolMetatable
+000000000007e387 0000000000000013 r LuaRuntime::kLevelMetatable
+000000000007e39a 0000000000000012 r LuaRuntime::kGameMetatable
+000000000007e3ac 0000000000000004 r kEntryRelayEntryStubWord1
+000000000007e3b0 0000000000000004 r kEntryRelayEntryStubWord0
+0000000000081fc8 0000000000000014 r CSWTCH.2
+0000000000081fe0 000000000000001e r isaac::runtime::kRomfsModManifestPath
+0000000000082000 0000000000000006 r isaac::runtime::kHookBackends
+0000000000082008 0000000000000010 r kContentAddMountPointExpectedBytes
+0000000000082018 0000000000000010 r kContentMountPointPathDtorExpectedBytes
+0000000000082028 0000000000000010 r kContentMountPointPathCtorExpectedBytes
+00000000000820b0 0000000000000010 r kRebuildContentMountPointsExpectedBytes
+00000000000820c0 0000000000000010 r kManagerRenderExpectedBytes
+00000000000820d0 0000000000000010 r kManagerUpdateExpectedBytes
+00000000000820e0 0000000000000036 r isaac::runtime::(anonymous namespace)::kRules
+0000000000082116 0000000000000005 r isaac::runtime::(anonymous namespace)::kFontOwner
+000000000008211b 0000000000000005 r isaac::runtime::(anonymous namespace)::kGameOwner
+0000000000082120 0000000000000006 r isaac::runtime::(anonymous namespace)::kSeedsOwner
+0000000000082126 0000000000000006 r isaac::runtime::(anonymous namespace)::kInputOwner
+0000000000082130 0000000000000070 r isaac::runtime::(anonymous namespace)::kFieldApis
+00000000000821a0 0000000000000020 r isaac::runtime::(anonymous namespace)::kEffectEntityTable
+00000000000821c0 0000000000000020 r isaac::runtime::(anonymous namespace)::kLiveEntityTable
+00000000000821e0 0000000000000010 r isaac::runtime::(anonymous namespace)::kItemConfigItemOwner
+00000000000821f0 000000000000000b r isaac::runtime::(anonymous namespace)::kItemConfigOwner
+0000000000082200 000000000000000d r isaac::runtime::(anonymous namespace)::kEntityPickupOwner
+0000000000082210 000000000000000d r isaac::runtime::(anonymous namespace)::kEntityPlayerOwner
+0000000000082220 0000000000000007 r isaac::runtime::(anonymous namespace)::kEntityOwner
+0000000000082228 0000000000000006 r isaac::runtime::(anonymous namespace)::kIsaacOwner
+0000000000082230 000000000000001d r LuaRuntime::kItemConfigItemMetatable
+0000000000082250 0000000000000018 r LuaRuntime::kItemConfigMetatable
+0000000000082268 000000000000001a r LuaRuntime::kEntityPickupMetatable
+0000000000082288 000000000000001a r LuaRuntime::kEntityPlayerMetatable
+00000000000822a8 0000000000000014 r LuaRuntime::kEntityMetatable
+00000000000822bc 0000000000000008 r CSWTCH.127
+00000000000822c4 000000000000001c r isaac::runtime::(anonymous namespace)::kNamedCallbacksRegistryKey
+00000000000822e0 0000000000000004 r isaac::runtime::(anonymous namespace)::kModOwner
+00000000000822e4 000000000000003a r ModPersistence::detail::kStatePath
+000000000008231e 0000000000000009 r ModPersistence::detail::kMagic
+0000000000082327 000000000000000d r isaac::runtime::(anonymous namespace)::kMusicOwner
+0000000000082334 0000000000000020 r isaac::runtime::kLevelFieldApis
+0000000000082354 0000000000000010 r kGameSpecialSeedBannedCursesExpectedBytes
+0000000000082364 0000000000000010 r kGameSpecialSeedPermanentCursesExpectedBytes
+0000000000082374 0000000000000004 r isaac::runtime::(anonymous namespace)::kRngOwner
+0000000000082378 0000000000000001 r isaac::runtime::(anonymous namespace)::kAnyAnimationName
+0000000000082379 0000000000000006 r isaac::runtime::(anonymous namespace)::kSpriteFlipXField
+000000000008237f 0000000000000006 r isaac::runtime::(anonymous namespace)::kSpriteColorField
+0000000000082385 0000000000000006 r isaac::runtime::(anonymous namespace)::kSpriteScaleField
+000000000008238b 0000000000000007 r isaac::runtime::(anonymous namespace)::kSpriteOwner
+0000000000082392 0000000000000007 r isaac::runtime::(anonymous namespace)::kVectorOwner
+0000000000082399 0000000000000040 r (anonymous namespace)::kDiagnosticsPath
+0000000000082418 0000000000000008 r version.0
+0000000000082420 0000000000000020 r optsnum.0
+0000000000082440 0000000000000101 r luai_ctype_
+0000000000082601 0000000000000100 r log_2.0
+0000000000082708 0000000000000010 r luaO_nilobject_
+0000000000082718 000000000000002f r luaP_opmodes
+0000000000082798 000000000000002a r priority
+0000000000082820 0000000000000020 r dummynode_
+0000000000082840 0000000000000009 r udatatypename
+000000000008284c 0000000000000010 r limits.0
+00000000000828c8 r __nx_mod0
+00000000000828e8 000000000000000d r typeinfo name for std::bad_alloc
+00000000000828f8 0000000000000027 r typeinfo name for __gnu_cxx::__concurrence_lock_error
+0000000000082920 0000000000000029 r typeinfo name for __gnu_cxx::__concurrence_unlock_error
+0000000000082950 000000000000000d r typeinfo name for std::exception
+0000000000082960 0000000000000020 r typeinfo name for __cxxabiv1::__forced_unwind
+0000000000082980 0000000000000024 r typeinfo name for __cxxabiv1::__foreign_exception
+00000000000829a8 0000000000000025 r typeinfo name for __cxxabiv1::__si_class_type_info
+00000000000829d0 000000000000000d r typeinfo name for std::type_info
+00000000000829e0 0000000000000010 r typeinfo name for std::logic_error
+00000000000829f0 0000000000000011 r typeinfo name for std::length_error
+0000000000082a08 0000000000000011 r typeinfo name for std::out_of_range
+0000000000082a20 0000000000000022 r typeinfo name for __cxxabiv1::__class_type_info
+0000000000082a50 0000000000000080 r npio2_hw
+0000000000082ad0 0000000000000108 r two_over_pi
+0000000000082be0 0000000000000040 r PIo2
+0000000000082c20 0000000000000010 r init_jk
+0000000000082c30 0000000000000060 r __inv_pio4
+0000000000082c90 00000000000000e0 r __sincosf_table
+0000000000082d70 0000000000000870 r __exp_data
+00000000000835e0 0000000000001048 r __pow_log_data
+0000000000084630 0000000000000890 r __log_data
+0000000000084ec0 0000000000000018 r CSWTCH.7
+0000000000084ed8 0000000000000018 r CSWTCH.6
+0000000000084ef0 0000000000000010 r Zero
+0000000000084f00 0000000000000020 r atanlo
+0000000000084f20 0000000000000020 r atanhi
+0000000000084f40 000000000000000c r CSWTCH.7
+0000000000084f50 000000000000000c r CSWTCH.6
+0000000000084f60 0000000000000010 r atanlo
+0000000000084f70 0000000000000010 r atanhi
+0000000000085098 0000000000000008 r terminator.0
+00000000000850a0 0000000000000001 r __aarch64_have_sme
+00000000000850a8 0000000000000014 r fpinan.0
+00000000000850c0 0000000000000014 r fpi.1
+00000000000850e0 0000000000000028 r tinytens
+0000000000085108 0000000000000100 r __hexdig
+0000000000085210 0000000000000030 r _DAYS_BEFORE_MONTH
+0000000000085240 0000000000000030 r DAYS_IN_MONTH
+0000000000085490 0000000000000010 r zeroes.0
+00000000000854a0 0000000000000010 r blanks.1
+00000000000854b0 0000000000000101 r _ctype_
+0000000000085660 0000000000000060 r __month_lengths
+00000000000856c0 000000000000000c r p05.0
+00000000000856d0 0000000000000028 r __mprec_bigtens
+00000000000856f8 00000000000000c8 r __mprec_tens
+00000000000858c0 0000000000000010 r zeroes.0
+00000000000858d0 0000000000000010 r blanks.1
+00000000000859e0 0000000000000010 r zeroes.0
+00000000000859f0 0000000000000010 r blanks.1
+0000000000085a00 000000000000006c r __action_table
+0000000000085a70 000000000000006c r __state_table
+0000000000085ae0 0000000000000100 r __chclass
+0000000000085ce0 0000000000000010 r zeroes.0
+0000000000085cf0 0000000000000010 r blanks.1
+0000000000085d70 0000000000000022 r basefix.0
+0000000000085d98 00000000000037f8 r categories
+000000000008a423 R __rela_dyn_start__
+000000000008a423 R __rel_dyn_end__
+000000000008a423 R __rel_dyn_start__
+00000000000a08c8 R __rela_dyn_end__
+00000000000a08c8 R __rela_plt_start__
+00000000000a08c8 R __rel_plt_end__
+00000000000a08c8 R __rel_plt_start__
+00000000000a0a60 R __rela_plt_end__
+00000000000a0ad0 r __eh_frame_hdr_end__
+00000000000a0ad0 r __eh_frame_hdr_start__
+00000000000a1000 a _DYNAMIC
+00000000000a1000 d __dynamic_start__
+00000000000a1180 00000000000001f8 d kSpriteBindingEntries
+00000000000a1378 0000000000000168 d kFontBindingEntries
+00000000000a14e0 0000000000000008 d (anonymous namespace)::g_ContentMountAdapter
+00000000000a1548 0000000000000028 d vtable for LuaRuntime::LuaCallbackInvoker
+00000000000a1570 0000000000000004 d LuaRuntime::(anonymous namespace)::g_RequireCacheRef
+00000000000a1578 0000000000001408 d LuaRuntime::(anonymous namespace)::g_CallbackRegistry
+00000000000a2980 0000000000000780 d LuaRuntime::(anonymous namespace)::kKeyboardConstants
+00000000000a3100 00000000000001c0 d LuaRuntime::(anonymous namespace)::kButtonActionConstants
+00000000000a32c0 00000000000001e0 d PcLuaEnumData::(anonymous namespace)::kTables
+00000000000a34a0 00000000000004a0 d PcLuaEnumData::(anonymous namespace)::kModCallbacksValues
+00000000000a3940 0000000000000640 d PcLuaEnumData::(anonymous namespace)::kCardValues
+00000000000a3f80 0000000000000070 d PcLuaEnumData::(anonymous namespace)::kEntityPartitionValues
+00000000000a3ff0 0000000000000c80 d PcLuaEnumData::(anonymous namespace)::kEffectVariantValues
+00000000000a4c70 00000000000001c0 d PcLuaEnumData::(anonymous namespace)::kGridEntityTypeValues
+00000000000a4e30 00000000000000a0 d PcLuaEnumData::(anonymous namespace)::kLevelCurseValues
+00000000000a4ed0 00000000000002f0 d PcLuaEnumData::(anonymous namespace)::kChallengeValues
+00000000000a51c0 0000000000000c30 d PcLuaEnumData::(anonymous namespace)::kTrinketTypeValues
+00000000000a5df0 00000000000000c0 d PcLuaEnumData::(anonymous namespace)::kUseFlagValues
+00000000000a5eb0 0000000000001580 d PcLuaEnumData::(anonymous namespace)::kEntityTypeValues
+00000000000a7430 0000000000000340 d PcLuaEnumData::(anonymous namespace)::kPillEffectValues
+00000000000a7770 0000000000000130 d PcLuaEnumData::(anonymous namespace)::kPillColorValues
+00000000000a78a0 00000000000002f0 d PcLuaEnumData::(anonymous namespace)::kPlayerTypeValues
+00000000000a7b90 0000000000000100 d PcLuaEnumData::(anonymous namespace)::kPlayerFormValues
+00000000000a7c90 0000000000000050 d PcLuaEnumData::(anonymous namespace)::kItemTypeValues
+00000000000a7ce0 00000000000001e0 d PcLuaEnumData::(anonymous namespace)::kPickupVariantValues
+00000000000a7ec0 0000000000000170 d PcLuaEnumData::(anonymous namespace)::kLevelStageValues
+00000000000a8030 00000000000001f0 d PcLuaEnumData::(anonymous namespace)::kRoomTypeValues
+00000000000a8220 0000000000000280 d PcLuaEnumData::(anonymous namespace)::kItemPoolTypeValues
+00000000000a84a0 0000000000002f10 d PcLuaEnumData::(anonymous namespace)::kCollectibleTypeValues
+00000000000ab3b0 0000000000000004 d (anonymous namespace)::g_StartupStatus
+00000000000ab3b8 0000000000000008 d Logging
+00000000000ab3c8 0000000000000004 d exl::util::mem_layout::s_SelfModuleIdx
+00000000000ab3d0 0000000000000018 d vtable for exl::log::SvcLogger
+00000000000ab3e8 00000000000000c0 d isaac::runtime::kHookCatalog
+00000000000ab4a8 0000000000000040 d isaac::runtime::ContentMountService::kLeaves
+00000000000ab4e8 0000000000000030 d vtable for isaac::runtime::HookRoutingAdapter
+00000000000ab518 0000000000000030 d vtable for isaac::runtime::ExlaunchHookAdapter
+00000000000ab548 0000000000000028 d vtable for isaac::runtime::EngineContentMountAdapter
+00000000000ab570 0000000000000030 d vtable for isaac::runtime::GameFileReaderAdapter
+00000000000ab5a0 0000000000000050 d vtable for isaac::runtime::EmbeddedLuaAdapter
+00000000000ab5f0 0000000000000040 d vtable for isaac::runtime::RuntimeHostApiService
+00000000000ab630 0000000000000030 d vtable for isaac::runtime::RelaySlotHookAdapter
+00000000000ab660 0000000000000030 d vtable for isaac::runtime::EntryRelayHookAdapter
+00000000000ab690 0000000000000030 d vtable for isaac::runtime::GotSlotHookAdapter
+00000000000ab6c0 0000000000000010 d isaac::runtime::(anonymous namespace)::g_defaultCatalog
+00000000000ab6d0 0000000000002850 d isaac::runtime::(anonymous namespace)::kDefaultApis
+00000000000adf20 00000000000000d8 d isaac::runtime::(anonymous namespace)::kColorConstants
+00000000000adff8 00000000000000b0 d isaac::runtime::(anonymous namespace)::kColorFields
+00000000000ae0a8 0000000000000010 d C.70.0
+00000000000ae0b8 00000000000000d0 d isaac::runtime::(anonymous namespace)::kFontHandlers
+00000000000ae188 0000000000000030 d isaac::runtime::detail::ApiSequence()::state
+00000000000ae1b8 0000000000000020 d isaac::runtime::(anonymous namespace)::kSeedsHandlers
+00000000000ae1d8 0000000000000090 d isaac::runtime::(anonymous namespace)::kGameHandlers
+00000000000ae268 0000000000000004 d isaac::runtime::EngineGuardCacheEnabledFlag()::enabled
+00000000000ae270 0000000000000060 d isaac::runtime::(anonymous namespace)::kInputHandlers
+00000000000ae2d0 0000000000000018 d C.504.0
+00000000000ae2e8 0000000000000210 d isaac::runtime::(anonymous namespace)::kItemConfigTagConstants
+00000000000ae4f8 0000000000000078 d isaac::runtime::(anonymous namespace)::kEntityIntegerFields
+00000000000ae570 0000000000001400 d isaac::runtime::(anonymous namespace)::g_EntityDataEntries
+00000000000af970 0000000000000030 d isaac::runtime::(anonymous namespace)::kItemConfigItemHandlers
+00000000000af9a0 0000000000000060 d isaac::runtime::(anonymous namespace)::kItemConfigHandlers
+00000000000afa00 0000000000000010 d isaac::runtime::(anonymous namespace)::kEntityPickupHandlers
+00000000000afa10 0000000000000050 d isaac::runtime::(anonymous namespace)::kEntityHandlers
+00000000000afa60 0000000000000240 d isaac::runtime::(anonymous namespace)::kEntityPlayerHandlers
+00000000000afca0 0000000000000130 d isaac::runtime::(anonymous namespace)::kIsaacHandlers
+00000000000afdd0 0000000000000050 d isaac::runtime::(anonymous namespace)::kModHandlers
+00000000000afe20 0000000000000030 d isaac::runtime::(anonymous namespace)::kMusicHandlers
+00000000000afe50 0000000000000030 d isaac::runtime::(anonymous namespace)::kItemPoolHandlers
+00000000000afe80 0000000000000090 d isaac::runtime::(anonymous namespace)::kRoomHandlers
+00000000000aff10 0000000000000030 d isaac::runtime::(anonymous namespace)::kGridEntityHandlers
+00000000000aff40 00000000000000b0 d isaac::runtime::(anonymous namespace)::kLevelHandlers
+00000000000afff0 0000000000000030 d isaac::runtime::(anonymous namespace)::kRngHandlers
+00000000000b0020 0000000000000120 d isaac::runtime::(anonymous namespace)::kSpriteHandlers
+00000000000b0140 0000000000000100 d isaac::runtime::(anonymous namespace)::kVectorHandlers
+00000000000b0240 0000000000000040 d vtable for ModPersistence::detail::RawFilePort
+00000000000b0280 0000000000000040 d vtable for (anonymous namespace)::SaltyNxDiagnosticFilePort
+00000000000b02c0 0000000000000008 d ModPersistence::detail::g_rawPort
+00000000000b02c8 0000000000000048 d opts.1
+00000000000b0310 0000000000000190 d base_funcs
+00000000000b04a0 0000000000000018 d ef.0
+00000000000b04b8 0000000000000080 d co_funcs
+00000000000b0538 0000000000000128 d luaX_tokens
+00000000000b0660 00000000000001c0 d mathlib
+00000000000b0820 0000000000000120 d strlib
+00000000000b0940 0000000000000080 d tab_funcs
+00000000000b09c0 00000000000000c0 d luaT_eventname.0
+00000000000b0a80 0000000000000058 d luaT_typenames_
+00000000000b0ad8 0000000000000070 d funcs
+00000000000b0b48 0000000000000008 d DW.ref.__gxx_personality_v0
+00000000000b0b50 0000000000000018 d typeinfo for std::bad_alloc
+00000000000b0b68 0000000000000028 d vtable for std::bad_alloc
+00000000000b0b90 0000000000000018 d typeinfo for __gnu_cxx::__concurrence_lock_error
+00000000000b0ba8 0000000000000018 d typeinfo for __gnu_cxx::__concurrence_unlock_error
+00000000000b0bc0 0000000000000028 d vtable for __gnu_cxx::__concurrence_lock_error
+00000000000b0be8 0000000000000028 d vtable for __gnu_cxx::__concurrence_unlock_error
+00000000000b0c10 0000000000000010 d typeinfo for std::exception
+00000000000b0c20 0000000000000010 d typeinfo for __cxxabiv1::__forced_unwind
+00000000000b0c30 0000000000000010 d typeinfo for __cxxabiv1::__foreign_exception
+00000000000b0c40 0000000000000008 d __cxxabiv1::__unexpected_handler
+00000000000b0c48 0000000000000018 d typeinfo for __cxxabiv1::__si_class_type_info
+00000000000b0c60 0000000000000058 d vtable for __cxxabiv1::__si_class_type_info
+00000000000b0cb8 0000000000000010 d typeinfo for std::type_info
+00000000000b0cc8 0000000000000018 d typeinfo for std::logic_error
+00000000000b0ce0 0000000000000018 d typeinfo for std::length_error
+00000000000b0cf8 0000000000000018 d typeinfo for std::out_of_range
+00000000000b0d10 0000000000000028 d vtable for std::logic_error
+00000000000b0d38 0000000000000028 d vtable for std::length_error
+00000000000b0d60 0000000000000028 d vtable for std::out_of_range
+00000000000b0d88 0000000000000018 d typeinfo for __cxxabiv1::__class_type_info
+00000000000b0da0 0000000000000058 d vtable for __cxxabiv1::__class_type_info
+00000000000b0df8 0000000000000008 d __cxxabiv1::__terminate_handler
+00000000000b0e00 0000000000000290 d __global_locale
+00000000000b1090 0000000000000018 d __sglue
+00000000000b10a8 0000000000000058 d tzinfo
+00000000000b1100 0000000000000008 d _impure_ptr
+00000000000b1108 0000000000000240 d _impure_data
+00000000000b1348 0000000000000010 d _tzname
+00000000000b1358 0000000000000008 d environ
+00000000000b1360 0000000000000008 d __malloc_sbrk_base
+00000000000b1368 0000000000000008 d __malloc_trim_threshold
+00000000000b1370 0000000000000810 d __malloc_av_
+00000000000b1b80 00000000000001f8 d _C_time_locale
+00000000000b1d80 0000000000002000 d handles
+00000000000b3d80 0000000000000010 d __stderr_handle
+00000000000b3d90 0000000000000010 d __stdout_handle
+00000000000b3da0 0000000000000010 d __stdin_handle
+00000000000b3db0 0000000000000118 d devoptab_list
+00000000000b3ec8 0000000000000100 d dotab_stdnull
+00000000000b3fc8 0000000000000004 d defaultDevice
+00000000000b3fcc D __got_start__
+00000000000b4070 a _GLOBAL_OFFSET_TABLE_
+00000000000b4488 D __got_end__
+00000000000b4488 d __init_array_start
+00000000000b4488 d __preinit_array_end
+00000000000b4488 d __preinit_array_start
+00000000000b44a8 d __init_array_end
+00000000000b44d8 A __tbss_align_abs__
+00000000000b44d8 D __tbss_end__
+00000000000b44d8 D __tbss_start__
+00000000000b44d8 A __tdata_align_abs__
+00000000000b44d8 D __tdata_end__
+00000000000b44d8 D __tdata_start__
+00000000000b5000 b __bss_start__
+00000000000b5000 00000000000000d0 b exl_nx_module_runtime
+00000000000b50d0 0000000000000004 b (anonymous namespace)::g_rebuildRelayRemountFailures
+00000000000b50d4 0000000000000004 b (anonymous namespace)::g_rebuildRelayFired
+00000000000b50d8 0000000000000004 b (anonymous namespace)::g_rebuildRelayDepth
+00000000000b50e0 0000000000000004 b (anonymous namespace)::g_DeepestGameOwnerObservation
+00000000000b50e8 0000000000000008 b guard variable for ModPersistence::detail::g_rawPort
+00000000000b50f0 0000000000000008 b g_PresentGotSlotTarget
+00000000000b50f8 0000000000000008 b g_PresentGotSlotDispatchReturn
+00000000000b5100 0000000000000008 b exl::hook::impl::TrampolineHook<(anonymous namespace)::ManagerRenderHook>::OrigRef()::s_FnPtr
+00000000000b5108 0000000000000008 b exl::hook::impl::TrampolineHook<(anonymous namespace)::ManagerUpdateHook>::OrigRef()::s_FnPtr
+00000000000b5110 0000000000000450 b (anonymous namespace)::g_ContentMountService
+00000000000b5560 0000000000100000 b (anonymous namespace)::g_DefaultEntry
+00000000001b5560 0000000000080000 b (anonymous namespace)::g_DefaultManifest
+0000000000235560 0000000000000030 b (anonymous namespace)::g_DefaultManifestBindings
+0000000000235590 0000000000000004 b (anonymous namespace)::g_DefaultPersistenceGate
+0000000000235594 0000000000000004 b (anonymous namespace)::g_DefaultCallbackGate
+0000000000235598 0000000000000004 b (anonymous namespace)::g_DefaultManifestFailureWord
+000000000023559c 0000000000000004 b (anonymous namespace)::g_DefaultManifestFailureDetail
+00000000002355a0 0000000000000004 b (anonymous namespace)::g_DefaultManifestState
+00000000002355a8 0000000000000008 b (anonymous namespace)::g_LuaGameIsPausedThunk
+00000000002355b0 0000000000000008 b (anonymous namespace)::g_LuaGameOwnerSlot
+00000000002355b8 0000000000000004 b (anonymous namespace)::g_RenderPresentRelayEntries
+00000000002355bc 0000000000000004 b (anonymous namespace)::g_RenderPresentRelayState
+00000000002355c0 0000000000000004 b (anonymous namespace)::g_RenderCallbackEntries
+00000000002355c4 0000000000000004 b (anonymous namespace)::g_UpdateCallbackEntries
+00000000002355c8 0000000000000040 b (anonymous namespace)::g_HookInstallResults
+0000000000235608 0000000000000008 b (anonymous namespace)::g_RenderFrameManager
+0000000000235610 0000000000000004 b (anonymous namespace)::g_HookEnabled
+0000000000235614 0000000000000004 b isaac::runtime::HookInstallFailureCode()::value
+0000000000235618 0000000000000004 b isaac::runtime::HookInstallFailureSlot()::value
+000000000023561c 0000000000000004 b isaac::runtime::HookInstallInstalledCount()::value
+0000000000235620 0000000000000004 b ModPersistence::detail::g_fileApiReady
+0000000000235624 0000000000000004 b LuaRuntime::(anonymous namespace)::g_PendingGameStarted
+0000000000235628 0000000000000008 b LuaRuntime::(anonymous namespace)::g_RequireCurrentModuleLength
+0000000000235630 0000000000000040 b LuaRuntime::(anonymous namespace)::g_RequireCurrentModule
+0000000000235670 0000000000000004 b LuaRuntime::(anonymous namespace)::g_RequireFailureTotal
+0000000000235678 0000000000000008 b LuaRuntime::(anonymous namespace)::g_RequireLastFailureName
+0000000000235680 0000000000000004 b LuaRuntime::(anonymous namespace)::g_RequireLastFailureCode
+0000000000235688 0000000000000008 b LuaRuntime::(anonymous namespace)::g_RequireFirstFailureName
+0000000000235690 0000000000000004 b LuaRuntime::(anonymous namespace)::g_RequireFirstFailureCode
+0000000000235698 0000000000000008 b LuaRuntime::(anonymous namespace)::g_RequireErrorTail
+00000000002356a0 0000000000000004 b LuaRuntime::(anonymous namespace)::g_RequireFailureDetail
+00000000002356a4 0000000000000001 b LuaRuntime::(anonymous namespace)::g_RequireAvailable
+00000000002356a5 0000000000000001 b LuaRuntime::(anonymous namespace)::g_Stage13Mode
+00000000002356a8 0000000000000008 b LuaRuntime::(anonymous namespace)::g_Stage13RequireDepth
+00000000002356b0 0000000000000008 b LuaRuntime::(anonymous namespace)::g_Stage13ModRootLength
+00000000002356b8 0000000000100000 b LuaRuntime::(anonymous namespace)::g_Stage13RequireSource
+00000000003356b8 0000000000000400 b LuaRuntime::(anonymous namespace)::g_Stage13ModRoot
+0000000000335ab8 0000000000000030 b LuaRuntime::(anonymous namespace)::g_Stage13Bindings
+0000000000335ae8 0000000000000008 b LuaRuntime::(anonymous namespace)::g_GameOperatorDelete
+0000000000335af0 0000000000000008 b LuaRuntime::(anonymous namespace)::g_LibcxxStringAssign
+0000000000335af8 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteReplaceSpritesheet
+0000000000335b00 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteLoadGraphics
+0000000000335b08 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteLoad
+0000000000335b10 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpritePlayRandom
+0000000000335b18 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteRenderLayer
+0000000000335b20 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteRender
+0000000000335b28 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteIsFinished
+0000000000335b30 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteIsPlaying
+0000000000335b38 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteUpdate
+0000000000335b40 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteGetTexel
+0000000000335b48 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteGetLayerFrame
+0000000000335b50 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteSetLayerFrame
+0000000000335b58 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteGetFrame
+0000000000335b60 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteSetFrame
+0000000000335b68 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteSetFrameNamed
+0000000000335b70 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteSetAnimation
+0000000000335b78 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpritePlay
+0000000000335b80 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteDestructor
+0000000000335b88 0000000000000008 b LuaRuntime::(anonymous namespace)::g_SpriteCtor
+0000000000335b90 0000000000000008 b LuaRuntime::(anonymous namespace)::g_FontDrawStringScaledUTF8
+0000000000335b98 0000000000000008 b LuaRuntime::(anonymous namespace)::g_FontDrawStringUTF8
+0000000000335ba0 0000000000000008 b LuaRuntime::(anonymous namespace)::g_FontDrawStringScaled
+0000000000335ba8 0000000000000008 b LuaRuntime::(anonymous namespace)::g_FontDrawString
+0000000000335bb0 0000000000000008 b LuaRuntime::(anonymous namespace)::g_FontSetMissingCharacter
+0000000000335bb8 0000000000000008 b LuaRuntime::(anonymous namespace)::g_FontGetCharacterWidth
+0000000000335bc0 0000000000000008 b LuaRuntime::(anonymous namespace)::g_FontGetBaselineHeight
+0000000000335bc8 0000000000000008 b LuaRuntime::(anonymous namespace)::g_FontGetLineHeight
+0000000000335bd0 0000000000000008 b LuaRuntime::(anonymous namespace)::g_FontGetStringWidthUTF8
+0000000000335bd8 0000000000000008 b LuaRuntime::(anonymous namespace)::g_FontGetStringWidth
+0000000000335be0 0000000000000008 b LuaRuntime::(anonymous namespace)::g_FontIsLoaded
+0000000000335be8 0000000000000008 b LuaRuntime::(anonymous namespace)::g_FontUnload
+0000000000335bf0 0000000000000008 b LuaRuntime::(anonymous namespace)::g_FontLoad
+0000000000335bf8 0000000000000008 b LuaRuntime::(anonymous namespace)::g_FontDestructor
+0000000000335c00 0000000000000008 b LuaRuntime::(anonymous namespace)::g_FontCtor
+0000000000335c08 0000000000000008 b LuaRuntime::(anonymous namespace)::g_InputGetActionValue
+0000000000335c10 0000000000000008 b LuaRuntime::(anonymous namespace)::g_InputIsActionTriggered
+0000000000335c18 0000000000000008 b LuaRuntime::(anonymous namespace)::g_InputIsActionPressed
+0000000000335c20 0000000000000008 b LuaRuntime::(anonymous namespace)::g_RngNext
+0000000000335c28 0000000000000008 b LuaRuntime::(anonymous namespace)::g_RngSetSeed
+0000000000335c30 0000000000000008 b LuaRuntime::(anonymous namespace)::g_MusicResume
+0000000000335c38 0000000000000008 b LuaRuntime::(anonymous namespace)::g_MusicPause
+0000000000335c40 0000000000000008 b LuaRuntime::(anonymous namespace)::g_MusicGetCurrentMusicId
+0000000000335c48 0000000000000008 b LuaRuntime::(anonymous namespace)::g_GetRenderPosition
+0000000000335c50 0000000000000008 b LuaRuntime::(anonymous namespace)::g_ItemPoolGetCollectible
+0000000000335c58 0000000000000008 b LuaRuntime::(anonymous namespace)::g_LevelIsNextStageAvailable
+0000000000335c60 0000000000000008 b LuaRuntime::(anonymous namespace)::g_LevelGetAbsoluteStage
+0000000000335c68 0000000000000008 b LuaRuntime::(anonymous namespace)::g_LevelIsAscent
+0000000000335c70 0000000000000008 b LuaRuntime::(anonymous namespace)::g_GameIsGreedMode
+0000000000335c78 0000000000000008 b LuaRuntime::(anonymous namespace)::g_GameIsPausedThunk
+0000000000335c80 0000000000000008 b LuaRuntime::(anonymous namespace)::g_GameOwnerSlot
+0000000000335c88 0000000000000008 b LuaRuntime::(anonymous namespace)::g_EngineModuleBase
+0000000000335c90 0000000000000004 b LuaRuntime::(anonymous namespace)::g_PreparationStatus
+0000000000335c94 0000000000000004 b LuaRuntime::(anonymous namespace)::g_PreparationStep
+0000000000335c98 0000000000000004 b LuaRuntime::(anonymous namespace)::g_PostUpdateCount
+0000000000335ca0 0000000000000008 b LuaRuntime::(anonymous namespace)::g_CurrentCallbackManager
+0000000000335ca8 0000000000000001 b LuaRuntime::(anonymous namespace)::g_InPreGetCollectibleDispatch
+0000000000335cac 0000000000000004 b LuaRuntime::(anonymous namespace)::g_LastLuaErrorLength
+0000000000335cb0 0000000000000100 b LuaRuntime::(anonymous namespace)::g_LastLuaErrorText
+0000000000335db0 0000000000000004 b LuaRuntime::(anonymous namespace)::g_InManagedCallbackDispatch
+0000000000335db4 0000000000000004 b LuaRuntime::(anonymous namespace)::g_CallbackError
+0000000000335db8 0000000000000004 b LuaRuntime::(anonymous namespace)::g_Ready
+0000000000335dbc 0000000000000001 b LuaRuntime::(anonymous namespace)::g_ModRegistered
+0000000000335dc0 0000000000000008 b LuaRuntime::(anonymous namespace)::g_LuaState
+0000000000335dc8 0000000000000004 b isaac::runtime::EngineGuardDispatchActive()::active
+0000000000335dd0 0000000000000098 b isaac::runtime::EngineGuardRegionCache()::cache
+0000000000335e68 0000000000000004 b (anonymous namespace)::g_WorkerHandle
+0000000000336000 0000000000004000 b (anonymous namespace)::g_WorkerStack
+000000000033a000 0000000000000004 b (anonymous namespace)::g_RuntimeState
+000000000033a008 0000000000000028 b exl::patch::impl::s_Storage
+000000000033a030 0000000002000000 b __fake_heap
+000000000233a030 0000000000000004 b exl::util::impl::s_UserVersion
+000000000233a034 0000000000000004 b exl::util::proc_handle::(anonymous namespace)::s_Handle
+000000000233a038 0000000000000008 b exl::util::impl::mem_layout::s_ModuleBitset
+000000000233a040 00000000000003a8 b exl::util::impl::mem_layout::s_ModuleInfos
+000000000233a3e8 0000000000000010 b exl::util::mem_layout::s_Stack
+000000000233a3f8 0000000000000010 b exl::util::mem_layout::s_Aslr
+000000000233a408 0000000000000010 b exl::util::mem_layout::s_Heap
+000000000233a418 0000000000000010 b exl::util::mem_layout::s_Alias
+000000000233a428 0000000000000028 b exl::hook::nx64::s_HookJit
+000000000233a450 0000000000000028 b exl::hook::nx64::s_InlineHookJit
+000000000233a478 0000000000000004 b isaac::runtime::relay::(anonymous namespace)::s_ArenaReady
+000000000233a480 0000000000000004 b isaac::runtime::relay::(anonymous namespace)::s_ArenaClaimed
+000000000233a488 0000000000000008 b isaac::runtime::relay::(anonymous namespace)::s_InstalledCount
+000000000233a490 0000000000000008 b isaac::runtime::relay::(anonymous namespace)::s_NextSlot
+000000000233a498 0000000000000004 b isaac::runtime::relay::(anonymous namespace)::s_LastFailure
+000000000233a4a0 0000000000000028 b isaac::runtime::relay::(anonymous namespace)::EntryRelayArena
+000000000233a4c8 0000000000000050 b isaac::runtime::RuntimeKernel::Instance()::kernel
+000000000233a518 0000000000000008 b isaac::runtime::(anonymous namespace)::g_PostUpdateDispatchCount
+000000000233a520 0000000000000008 b isaac::runtime::(anonymous namespace)::g_sessionService
+000000000233a528 0000000000000001 b isaac::runtime::(anonymous namespace)::g_engineCallsResolved
+000000000233a530 0000000000000028 b isaac::runtime::(anonymous namespace)::g_engineCalls
+000000000233a558 0000000000000090 b isaac::runtime::(anonymous namespace)::g_hostApiService
+000000000233a5f0 0000000000000030 b isaac::runtime::(anonymous namespace)::g_fallbackEntries
+000000000233a620 0000000000000030 b isaac::runtime::(anonymous namespace)::g_hookCallbacks
+000000000233a650 0000000000000004 b isaac::runtime::(anonymous namespace)::g_LastFontLoadWord
+000000000233a654 0000000000000004 b isaac::runtime::g_FontDrawAlpha
+000000000233a658 0000000000000004 b isaac::runtime::g_FontIsLoadedResult
+000000000233a65c 0000000000000004 b isaac::runtime::g_FontIsLoadedCalls
+000000000233a660 0000000000000004 b isaac::runtime::g_FontLoadResult
+000000000233a664 0000000000000004 b isaac::runtime::g_FontLoadCalls
+000000000233a668 0000000000000004 b isaac::runtime::g_FontDrawBytes
+000000000233a66c 0000000000000004 b isaac::runtime::g_FontDrawCalls
+000000000233a670 0000000000000004 b isaac::runtime::g_LastNumPlayers
+000000000233a674 0000000000000004 b isaac::runtime::g_LastIsPaused
+000000000233a678 0000000000000004 b isaac::runtime::g_LastCountEnemies
+000000000233a67c 0000000000000001 b isaac::runtime::(anonymous namespace)::g_EntityDataEpochValid
+000000000233a680 0000000000000008 b isaac::runtime::(anonymous namespace)::g_EntityDataEpochList
+000000000233a688 0000000000000008 b isaac::runtime::(anonymous namespace)::g_EntityDataEpochRoom
+000000000233a690 0000000000000008 b isaac::runtime::(anonymous namespace)::g_EntityDataEpoch
+000000000233a698 0000000000000008 b isaac::runtime::(anonymous namespace)::g_EntityDataClock
+000000000233a6a0 0000000000000008 b isaac::runtime::(anonymous namespace)::g_QuerySeenCount
+000000000233a6b0 0000000000008000 b isaac::runtime::(anonymous namespace)::g_QuerySeen
+00000000023426b0 0000000000000008 b isaac::runtime::(anonymous namespace)::g_ResolverEnd
+00000000023426b8 0000000000000008 b isaac::runtime::(anonymous namespace)::g_ResolverBegin
+00000000023426c0 0000000000000004 b isaac::runtime::(anonymous namespace)::g_EnginePlayerLookupCount
+00000000023426c8 0000000000000008 b isaac::runtime::(anonymous namespace)::g_EnginePlayerLookupVtable
+00000000023426d0 0000000000000008 b isaac::runtime::(anonymous namespace)::g_EnginePlayerLookupFirst
+00000000023426d8 0000000000000004 b isaac::runtime::(anonymous namespace)::g_EnginePlayerLookupStage
+00000000023426e0 0000000000000004 b isaac::runtime::(anonymous namespace)::g_FindInRadiusLastRadius
+00000000023426e8 0000000000000004 b isaac::runtime::(anonymous namespace)::g_FindInRadiusLastMask
+00000000023426f0 0000000000000004 b isaac::runtime::(anonymous namespace)::g_FindInRadiusFingerprint
+00000000023426f8 0000000000000004 b isaac::runtime::(anonymous namespace)::g_FindInRadiusRoomOk
+0000000002342700 0000000000000004 b isaac::runtime::(anonymous namespace)::g_FindInRadiusEffects
+0000000002342708 0000000000000004 b isaac::runtime::(anonymous namespace)::g_FindInRadiusPlayers
+0000000002342710 0000000000000004 b isaac::runtime::(anonymous namespace)::g_FindInRadiusLive
+0000000002342718 0000000000000004 b isaac::runtime::(anonymous namespace)::g_FindInRadiusResults
+0000000002342720 0000000000000004 b isaac::runtime::(anonymous namespace)::g_FindInRadiusCalls
+0000000002342728 0000000000000004 b isaac::runtime::(anonymous namespace)::g_GetPlayerFailure
+0000000002342730 0000000000000004 b isaac::runtime::(anonymous namespace)::g_GetPlayerSuccess
+0000000002342738 0000000000000008 b isaac::runtime::(anonymous namespace)::g_RunCallbackDepth
+0000000002342740 0000000000000008 b isaac::runtime::(anonymous namespace)::g_StubWarned
+0000000002342748 0000000000000004 b isaac::runtime::g_GetItemConfigProbe
+0000000002342750 0000000000000004 b isaac::runtime::g_LastFrameCountResult
+0000000002342758 0000000000000004 b isaac::runtime::g_LastEntitySpawnFrame
+0000000002342760 0000000000000004 b isaac::runtime::g_LastGameFrameCount
+0000000002342768 0000000000000004 b isaac::runtime::g_FrameCountPositive
+0000000002342770 0000000000000004 b isaac::runtime::g_FrameCountProbeReads
+0000000002342778 0000000000000004 b isaac::runtime::g_LastEntityPickupTouchedRaw
+0000000002342780 0000000000000004 b isaac::runtime::g_EntityPickupTouchedTrue
+0000000002342788 0000000000000004 b isaac::runtime::g_EntityPickupTouchedReads
+0000000002342790 0000000000000008 b isaac::runtime::g_LastEntityStringFieldHead
+0000000002342798 0000000000000004 b isaac::runtime::g_EntityStringFieldReads
+00000000023427a0 0000000000000004 b isaac::runtime::g_LastEntitySubTypeValue
+00000000023427a8 0000000000000004 b isaac::runtime::g_LastEntityVariantValue
+00000000023427b0 0000000000000004 b isaac::runtime::g_LastEntityTypeValue
+00000000023427b8 0000000000000004 b isaac::runtime::g_EntityTypeFieldReads
+00000000023427bc 0000000000000004 b LuaRuntime::(anonymous namespace)::g_Unhooked
+00000000023427c0 0000000000000004 b LuaRuntime::(anonymous namespace)::g_Dispatchable
+00000000023427c8 0000000000000008 b LuaRuntime::(anonymous namespace)::g_RegisteredHigh
+00000000023427d0 0000000000000008 b LuaRuntime::(anonymous namespace)::g_RegisteredLow
+00000000023427d8 0000000000004018 b ModPersistence::detail::g_cache
+00000000023467f0 0000000000000008 b ModPersistence::detail::g_filePort
+00000000023467f8 0000000000000004 b isaac::runtime::(anonymous namespace)::g_ProbeCursesReads
+00000000023467fc 0000000000000004 b isaac::runtime::(anonymous namespace)::g_ProbeCursesFlags
+0000000002346800 0000000000000004 b isaac::runtime::(anonymous namespace)::g_ProbeBannedCurses
+0000000002346804 0000000000000004 b isaac::runtime::(anonymous namespace)::g_ProbePermanentCurses
+0000000002346808 0000000000000004 b isaac::runtime::(anonymous namespace)::g_ProbeRawCurses
+000000000234680c 0000000000000004 b isaac::runtime::(anonymous namespace)::g_ReplaceSpritesheetCalls
+0000000002346810 0000000000000008 b isaac::runtime::(anonymous namespace)::g_ReplaceSpritesheetNameHead
+0000000002346818 0000000000000004 b isaac::runtime::(anonymous namespace)::g_ReplaceSpritesheetNameLength
+0000000002346820 0000000000000008 b isaac::runtime::(anonymous namespace)::g_nativeStringCursor
+0000000002346828 0000000000001c00 b isaac::runtime::(anonymous namespace)::g_nativeStrings
+0000000002348428 0000000000000008 b isaac::runtime::(anonymous namespace)::RequireClampVectors(lua_State*, int, LuaRuntime::VectorHandle**, LuaRuntime::VectorHandle**)::zero
+0000000002348430 0000000000000008 b isaac::runtime::(anonymous namespace)::g_SpriteGetTexelLastWord
+0000000002348438 0000000000000004 b isaac::runtime::(anonymous namespace)::g_SpriteGetTexelLastReason
+000000000234843c 0000000000000004 b isaac::runtime::(anonymous namespace)::g_SpriteGetTexelFallbacks
+0000000002348440 0000000000000004 b isaac::runtime::(anonymous namespace)::g_SpriteGetTexelCalls
+0000000002348444 0000000000000020 b g_pluginNote
+0000000002348470 0000000000000200 b self_journal::g_threadTlsBlock
+0000000002348670 0000000000000018 b self_journal::g_lastResults
+0000000002348688 0000000000000004 b self_journal::g_tlsState
+000000000234868c 0000000000000004 b self_journal::g_serviceState
+0000000002348690 0000000000000004 b self_journal::g_lastMarker
+0000000002348694 0000000000000004 b self_journal::g_totalRecords
+0000000002348698 0000000000000010 b self_journal::g_records
+00000000023486a8 0000000000000010 b self_journal::g_attempts
+00000000023486b8 0000000000000008 b g_runtimeSelfAddress
+00000000023486c0 0000000000000160 b (anonymous namespace)::g_diagnosticSessionStorage
+0000000002348820 00000000000000c8 b (anonymous namespace)::g_diagnosticPortStorage
+00000000023488e8 0000000000000004 b (anonymous namespace)::g_diagnosticHandshake
+00000000023488ec 0000000000000004 b (anonymous namespace)::g_diagnosticRegistrationCalls
+00000000023488f0 0000000000000001 b (anonymous namespace)::g_diagnosticGateStoppedEarly
+00000000023488f1 0000000000000001 b (anonymous namespace)::g_diagnosticSessionCreated
+00000000023488f8 0000000000000020 b (anonymous namespace)::g_diagnosticFileApi
+0000000002348918 0000000000000020 b ModPersistence::detail::g_rawFunctions
+0000000002348938 0000000000000004 b (anonymous namespace)::g_diagnosticsAttach
+0000000002348940 0000000000000004 b (anonymous namespace)::g_sequence
+0000000002348948 0000000000000008 b (anonymous namespace)::g_stateDetail
+0000000002348950 0000000000000001 b g_IsLegacyKernel
+0000000002348958 0000000000000008 b g_Reservations
+0000000002348960 0000000000000010 b g_StackRegion
+0000000002348970 0000000000000010 b g_AslrRegion
+0000000002348980 0000000000000010 b g_HeapRegion
+0000000002348990 0000000000000010 b g_AliasRegion
+00000000023489a0 0000000000000028 b (anonymous namespace)::emergency_pool
+00000000023489c8 0000000000000004 b init
+00000000023489cc 0000000000000001 b __eh_globals_init::_S_init
+00000000023489d0 0000000000000010 b (anonymous namespace)::eh_globals
+00000000023489e0 0000000000000008 b (anonymous namespace)::__new_handler
+00000000023489e8 0000000000000020 b std::string::_Rep::_S_empty_rep_storage
+0000000002348a08 0000000000000004 b once_regsizes.0
+0000000002348a10 0000000000000062 b dwarf_reg_size_table
+0000000002348a78 000000000000000c b object_mutex
+0000000002348a88 0000000000000008 b seen_objects
+0000000002348a90 0000000000000008 b unseen_objects
+0000000002348a98 0000000000000008 b __sfp_recursive_mutex
+0000000002348aa0 0000000000000228 b __sf
+0000000002348cc8 0000000000000008 b __stdio_exit_handler
+0000000002348cd0 0000000000000008 b __malloc_recursive_mutex
+0000000002348cd8 0000000000000008 b prev_tzenv
+0000000002348ce0 000000000000000c b __tzname_dst
+0000000002348cf0 000000000000000c b __tzname_std
+0000000002348d00 0000000000000008 b __env_recursive_mutex
+0000000002348d08 0000000000000008 b _timezone
+0000000002348d10 0000000000000004 b _daylight
+0000000002348d14 0000000000000004 b __tz_mutex
+0000000002348d18 0000000000000008 b initial_env
+0000000002348d20 0000000000000050 b __malloc_current_mallinfo
+0000000002348d70 0000000000000008 b __malloc_max_total_mem
+0000000002348d78 0000000000000008 b __malloc_max_sbrked_mem
+0000000002348d80 0000000000000008 b __malloc_top_pad
+0000000002348d88 0000000000000004 b __hndl_lock
+0000000002348d90 0000000000000008 b fake_heap_start
+0000000002348d98 0000000000000008 b fake_heap_end
+0000000002348da0 0000000000000004 b __pthread_once_cv
+0000000002348da4 0000000000000004 b __pthread_once_lock
+0000000002348da8 0000000000000008 b heap_start.0
+0000000002348db0 b __bss_end__
+0000000002349000 b __argdata__
+0000000002349000 A __end__

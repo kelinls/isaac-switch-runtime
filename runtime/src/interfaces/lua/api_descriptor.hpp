@@ -33,6 +33,10 @@ enum class ApiDomain : std::uint8_t {
     Isaac = 14,
     // `Seeds`（`Game:GetSeeds()` 的返回值）是独立对象家族，与 `Game` 分开计域。
     Seed = 15,
+    // `RuntimeMods`（2026-09-16）：**运行时自己的**模组开关控制面，不是 PC 的 Lua API。
+    // 单独一个域的理由：PC 上模组开关在游戏菜单里、Lua 看不到模组清单，我们**没有**可对齐的
+    // PC 语义；把它混进 `Global`/`Mod` 会让"PC 覆盖率"这类口径悄悄失真。
+    ModMenu = 16,
 };
 
 // How much evidence exists for an API. Persistence stays Experimental until the

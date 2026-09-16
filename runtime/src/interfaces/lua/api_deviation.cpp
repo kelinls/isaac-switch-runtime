@@ -127,6 +127,22 @@ constexpr ApiDeviation kApiDeviations[] = {
      "偏离后果：读语义与 PC 逐值相同（`GetSeed`/`Next`/`RandomInt` 在取到的那一刻完全一致，"
      "EID 的 `spikes:GetRNG():GetSeed()` 正属此类）；只有在'从返回的 RNG 上改状态、并期待实体"
      "跟着变'这种用法上才与 PC 不同 —— 那类用法目前没有任何模组在用。"},
+
+
+    // ---- `ItemConfig_Item:IsAvailable()` 的 flags（2026-09-16，兼容层定义）------------------
+    {0x0E010055,
+     ApiDeviationKind::Partial,
+     "`Item::IsAvailable(long flags, uint)` 的 `flags` 由我们定：bit1（成就解锁）+ bit2（tags/"
+     "当前局阻挡）+ bit3（模组提供的物品）= `0xE`。原因：引擎里 `Item`/`Card`/`PillEffect` 三个 "
+     "`IsAvailable` 在镜像中**没有任何调用点**（也不在虚表里），是 Switch 版编译掉 Lua API 后留下的"
+     "死代码，参数无法从游戏自己的用法学到。取舍依据：PC 文档 `ItemConfig_Item.md:35-38` 把"
+     "『没解锁』与『被 tags 挡掉』写在同一句里，所以这两条检查都要跑到；bit3 只在装了添加物品的"
+     "模组时才有影响，打开它是为了不把模组道具误判成不可用。"
+     "**未覆盖的 PC 语义**：bit0（按 `Type` 分流的主动/跟班/饰品专用检查）、第三个参数（反汇编里"
+     "四个分支都没读到它，这里传 0）、以及各分支内部还有若干与楼层/贪心模式/特定道具 id 相关的"
+     "特例条件 —— 我们没有逐条复现，只保证「这两类检查跑到」。"
+     "偏离后果：极少数依赖『类型专用检查』或特例道具的道具，可用性判断与 PC 可能不同；"
+     "EID 的用途（Spindown Dice / 背包合成跳过未解锁道具）不受影响。"},
 };
 
 constexpr std::size_t kApiDeviationCount = sizeof(kApiDeviations) / sizeof(kApiDeviations[0]);

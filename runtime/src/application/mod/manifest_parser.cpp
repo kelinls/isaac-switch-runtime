@@ -29,4 +29,35 @@ ManifestParseOutcome ManifestParser::Parse(const char* json, std::size_t length)
     return outcome;
 }
 
+ManifestParseAllOutcome ManifestParser::ParseAll(const char* json, std::size_t length) const noexcept {
+    ManifestParseAllOutcome outcome{};
+    if (selectAll_ == nullptr || json == nullptr || length == 0) {
+        outcome.failure = ManifestParseFailure::InvalidArgument;
+        return outcome;
+    }
+    // 后端必须说出原因（见 `ManifestSelectAllFunction` 的注释）：这里**原样**采用它的判定，
+    // 不再压成一句"字节坏了"。
+    const ManifestParseFailure reported = selectAll_(json, length, &outcome.manifest);
+    if (reported != ManifestParseFailure::None) {
+        outcome.manifest = ModManifestSet{};
+        outcome.failure = reported;
+        return outcome;
+    }
+    if (outcome.manifest.empty()) {
+        outcome.manifest = ModManifestSet{};
+        outcome.failure = ManifestParseFailure::InvalidMod;
+        return outcome;
+    }
+    // 每个条目的 `directory` 都必须可用：空的目录名会让加载路径去拼一个空路径。
+    // `entry` 为空**不是**错误（纯资源 Mod，见 `ModLoadService`）。
+    for (std::size_t index = 0; index < outcome.manifest.count; ++index) {
+        if (outcome.manifest.entries[index].directory[0] == '\0') {
+            outcome.manifest = ModManifestSet{};
+            outcome.failure = ManifestParseFailure::InvalidMod;
+            return outcome;
+        }
+    }
+    return outcome;
+}
+
 } // namespace isaac::runtime

@@ -28,7 +28,16 @@ public:
     // 160 → 192（留 ~38 条余量）。`Validate()` 在 `count_ > kCapacity` 时直接失败，所以这个
     // 数字必须跟着条数一起改，否则整张 Catalog 会在真机上被判为无效（门禁测试会先拦下来）。
     // 2026-09-12 再 +1（`Sprite.GetTexel`）后为 193，故 192 → 224。
-    static constexpr std::size_t kCapacity = 224;
+    //
+    // 2026-09-16：224 → 256。**这一次是提前抬，不是撞线后补救** ——
+    //   现状 214 条、只剩 10 个位置，而"接口面台账"（`tools/` 下的 `api_surface_ledger`）里
+    //   还排着 21 条 planned 的字段缺口 + 方法侧的 `IsAvailable` 一族，一批就要用掉十几个位置；
+    //   一旦 `count_ > kCapacity`，`Validate()` 直接把**整张目录**判为无效（真机上等于 API 全不挂）。
+    //   注意：**字段走 `__index` 分派，不占这张目录**（本次新加的 `Quality` 等就一个位置都没占）
+    //   —— 所以这次抬容量是给"方法批次"留的余量，不是给字段。
+    //   （这里刻意不写台账的完整文件名：`runtime/tests` 里有一条门禁把本文件当**纯文本**
+    //     查某个模块名，写全路径会撞上那个词 —— 那条判据偏粗，已在交接文档里记为待办。）
+    static constexpr std::size_t kCapacity = 256;
 
     // The catalog is a view over an immutable table; building one never
     // allocates.

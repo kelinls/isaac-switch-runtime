@@ -79,6 +79,54 @@ inline constexpr std::array<u8, 16> kManagerGetLanguageCodeExpectedBytes = {
 // 所以 EID 的 `game:GetFrameCount() < 10*30`（开局警告）不保证能命中。
 inline constexpr uintptr_t kGameFrameCountOffset = 0x24F99C;
 
+// --- `Game` 的四个 Lua 字段（2026-09-16 静态取证；NRO 文件偏移 = 运行时模块偏移）------------
+//
+// 四个都落在已知簇里：`Game+0x24F998` 起是一组计数器/计时器（`FrameCount` 在 0x24F99C），
+// `Game+0x26FA88` 起是挑战状态，`Game+0x2F0028` 是难度。每条都有**两处不同函数**的指令证据。
+
+// `game.Challenge`：`eChallenge` 枚举原值（int32，4 字节）。
+//   * `Game::Start(ePlayerType, eChallenge, Seeds, eDifficulty) @ 0x34E570`：`str w2,[x21]`，
+//     其中 x21 = this+0x26FA88（`0x34E548 mov w8,#0xfa88` / `movk w8,#0x26,lsl#16` / `add x21,x0,x8`），
+//     w2 就是第 2 个参数 eChallenge；
+//   * `Game::GetChallengeParams() const @ 0x34EA9C`：`ldr w1,[x8]`（x8 = this+0x26FA88）后尾跳到
+//     `Manager::GetChallengeParams(eChallenge)`；
+//   * 旁证：`Game::Init @ 0x34DD7C` 归零、`Game::SaveState @ 0x350678` / `RestoreState @ 0x34F10C`
+//     在 GameState+0x00 来回抄。
+inline constexpr uintptr_t kGameChallengeOffset = 0x26FA88;
+
+// `game.Difficulty`：`eDifficulty`（0=NORMAL/1=HARD/2=GREED/3=GREEDIER，int32）。
+//   * `Game::Start @ 0x34E56C`：`str w4,[x10]`（x10 = this+0x2F0028，w4 = 第 4 个参数 eDifficulty）；
+//   * `Game::IsHardMode() const @ 0x3501EC`：`ldr w8,[x0,#0x2F0028]` + `and w8,w8,#0xfffffffd`
+//     + `cmp w8,#0x1` + `cset w0,eq`；同址的 `Game::IsGreedMode() @ 0x350208`（**正是本项目已在打补丁
+//     的那条函数**）用 `and #0xfffffffe; cmp #2` —— 两条 `and`/`cmp` 与 PC 枚举逐值吻合，互为印证。
+inline constexpr uintptr_t kGameDifficultyOffset = 0x2F0028;
+
+// `game.TimeCounter`：**有符号** int32，30 fps 帧钟（PC 文档："same as FrameCounter but can be
+// modified, mostly used for timed events"）。
+//   * `Game::Update @ 0x352114-0x352120`：`ldp w8,w9,[x24,#0x4]` / `add …,#1` / `add …,#1` /
+//     `stp w8,w9,[x24,#0x4]`（x24 = Game+0x24F998）⇒ 每帧与 `FrameCount`(0x24F99C) **一起** +1；
+//   * 控制台 `time` 命令 @0x3EF48：`ldrsw x8,[x8,x9]`（x9 = 0x24F9A0）后除以 30 输出秒 ⇒ 有符号；
+//   * 旁证：`ScoreSheet::Calculate @ 0x49C504`（`scvtf` + `/30`）、`Minimap::Render @ 0x41E00C`
+//     （SPEED 挑战倒计时 `28800 - 它`）、`Room::TrySpawnBossRushDoor @ 0x466B1C`（日志 "Mom clear time"）。
+inline constexpr uintptr_t kGameTimeCounterOffset = 0x24F9A0;
+
+// `game.ScreenShakeOffset`：`Vector`（两个 float，8 字节）——**与既有 `kGameToScreenAdjustOffset`
+// 是同一个字段**（那条是结构名、这是 PC 名），这里只加别名，**不要**新增第二个偏移。
+// 语义证据（2026-09-16 补）：
+//   * `Game::Update @ 0x3518EC-0x35191C`：震动帧数 `Game+0x24F9AC` 递减到**恰好 0** 的那一帧，
+//     用 `Vector2::operator=` 把它设成 `KAGE::Math::Vector2::Zero`；
+//   * `Camera::update_drag2 @ 0x34164` / `update_ultrasmooth @ 0x33C78`：震动分支（读 0x24F9AC 与
+//     0x24F99C 生成 `RandomUnitVector`）之后把结果写进它；
+//   * `Room::Render @ 0x47FD60`、`FXLayers::render @ 0x348DAC`、`HUD::Render @ 0x3AC814` 把它
+//     加进/读进渲染坐标；
+//   * 模组侧佐证：EID 的 `eid_api.lua:2207`
+//     `room:WorldToScreenPosition(Vector(0,0)) - room:GetRenderScrollOffset() - game.ScreenShakeOffset`
+//     —— 减掉的两项正好是本仓库已取证的那两项（Room 的 0x1938 与 Game 的 0x24F9B0）。
+inline constexpr uintptr_t kGameScreenShakeOffsetOffset = 0x24F9B0;
+// 顺带取证（同一簇，供后续用）：屏幕震动的剩余帧数 —— `Game::ShakeScreen(int) @ 0x355BD0`
+// `str w1,[x0,#0x24F9AC]`，`Game::Update @ 0x3518EC` 每帧 -1。
+inline constexpr uintptr_t kGameShakeTimerOffset = 0x24F9AC;
+
 // Entity 基类（顺序与 `Entity::Init` 的 `stp w1,w2,[x0,#0x38]; str w3,[x0,#0x40]` 一致）。
 // 陷阱：`Entity + 0x3E8` 是**生成种子**而不是 `Index`（236 处引用多为 `ldr w1,[x,#0x3e8]; bl RNG::RNG`）。
 inline constexpr uintptr_t kEntityTypeOffset = 0x38;                      // u32，ENTITY_PLAYER == 1
@@ -87,6 +135,39 @@ inline constexpr uintptr_t kEntitySubTypeOffset = 0x40;                   // u32
 inline constexpr uintptr_t kEntityPositionOffset = 0x310;                 // Vector2（两个 float）
 inline constexpr uintptr_t kEntityVelocityOffset = 0x334;                 // Vector2
 inline constexpr uintptr_t kEntitySizeOffset = 0x344;                     // float 半径
+// `Entity.Parent`（`Entity*`，8 字节，可为 0）—— 多段实体的主段、跟班挂主人、分段子段回指：
+//   * 写：`Entity::SetParent @ 0x59164`：`0x5917C add x21,x0,#0x390` + `0x59234 str x19,[x21]`
+//     （x19 = 形参 x1；同函数还维护"父+0x3B8 的 std::set<Entity*>"子集合）；
+//   * 读：`Entity::GetLastParent @ 0x58BE8`：`ldr x0,[x0,#0x390]` + `cbnz`（沿本字段上溯到顶）；
+//   * 读：`Entity::HasCommonParentWithEntity @ 0x58F40/0x58F54`（两条父链各自上溯后比较）；
+//   * 空判：`Entity::ClearReferences @ 0x5D410/0x5D418`（`ldr` 后直接 `cbz`）⇒ 合法取值为 0。
+inline constexpr uintptr_t kEntityParentOffset = 0x390;
+// `Entity.PositionOffset`（`Vector2`，两个 float）—— 引擎把它叠加在 `Position(0x310)` 上算绘制位置：
+//   * `Entity::Render @ 0x624FC`：`0x62534 add x0,x19,#0x310` / `0x62538 add x1,x19,#0x320` /
+//     `bl Vector2::operator+`；
+//   * `Entity_Player::render_player_sprite @ 0x2D9398`：`0x2D9520 ldr x8,[x19,#0x320]`（存栈）→
+//     临时置零 → 渲染时用 `Position + 它` → 还原；
+//   * 出生清零：`Entity::Init @ 0x598A8`（`add x0,x19,#0x320` + `Vector2::operator=`）。
+//   ⚠️ 命名辨析：PC 另有 `SpriteOffset`（也是 Vector）。0x320 与 Position(0x310)、插值旧位置(0x318)
+//   连续构造、并被引擎当"位置偏移"用 ⇒ 判为 `PositionOffset`；**不要**拿它当 `SpriteOffset`。
+inline constexpr uintptr_t kEntityPositionOffsetOffset = 0x320;          // Vector2（两个 float）
+// `Entity.DropSeed`（4 字节整数；**命名为推断**，偏移是硬的）：
+//   * 实体基类**只有这一个 RNG 成员**，就在 `this+0x3D8`（构造 `Entity::Entity @ 0x58978 add x0,x19,#0x3d8`
+//     + `bl RNG::RNG()`；析构 `0x589FC` 同址 `bl RNG::~RNG()`）；
+//   * `RNG::SetSeed @ 0x44E3C0`：`str w1,[x0]` ⇒ 种子就是该 RNG 对象头 4 字节；
+//   * `Room::save_entity @ 0x4550FC`：`ldr w8,[x20,#0x3d8]` → 按 **32 位整数**存进存档
+//     （同函数 0x4550F4 存的是 `0x3E8`=InitSeed，与既有常量互证）；
+//   * `Room::restore_entity @ 0x4556AC`：`add x0,x19,#0x3d8` + `bl RNG::SetSeed` 回灌。
+//   ⚠️ 这是"种子/状态字"：`RNG::Next @ 0x44E4B0` 会把新状态写回同一个字 ⇒ 取随机数会变。
+inline constexpr uintptr_t kEntityDropSeedOffset = 0x3D8;                // uint32（RNG 的种子/状态字）
+// `EntityFamiliar.Player`（`Entity_Player*`，8 字节）：
+//   * 写：`Entity_Familiar::SetPlayer @ 0xD8C10`：`0xD8C98/0xD8CE8 str x20,[x19,#0x400]`；
+//   * 读：`Entity_Familiar::player_can_fire @ 0xC0104`：`ldr x0,[x0,#0x400]` 直接喂
+//     `Entity_Player::IsExtraAnimationFinished()`；
+//   * 读：`Entity_Familiar::Render @ 0xD1174`：`ldr x0,[x0,#0x400]` → `ldr w8,[x0,#0x1738]`
+//     （0x1738 正是已知的 `Entity_Player.PlayerType` ⇒ 证明这一格存的是玩家实体）。
+//   ⚠️ 引擎这几处读点都不判空，我们自己读之前必须先判 0。
+inline constexpr uintptr_t kEntityFamiliarPlayerOffset = 0x400;          // Entity_Player*
 inline constexpr uintptr_t kEntityPlayerIndexOffset = 0x19F0;             // Entity_Player 在 players 里的下标
 inline constexpr uintptr_t kEntityPlayerTypeOffset = 0x1738;              // PlayerType（没有 GetPlayerType 方法）
 inline constexpr uintptr_t kEntityPlayerCollectibleBeginOffset = 0x1AB8;  // 每收藏品计数数组（步长 4）
@@ -282,6 +363,55 @@ inline constexpr uintptr_t kEntityPickupShopItemIdOffset = 0x56C;  // u32
 // 错误文本为 `eid_data.lua:1215: attempt to perform arithmetic on a nil value (local 'luck')`。
 inline constexpr uintptr_t kEntityPlayerLuckOffset = 0x1920;  // int32
 
+// --- `Entity_Player` 的战斗属性与两个状态字段（2026-09-16 静态取证）------------------------
+//
+// 这四个属性都只以 `ldr s0/str s0`（float）出现；命名链是引擎自己的
+// `PlayerUtils::Get{Speed,TearDelay,Damage,Range}Rating(float)`：`PauseScreen::Show @ 0x43274C`
+// 连续读这五个偏移做暂停菜单的属性显示（0x194C→速度、0x1834→射速、0x1844→伤害、0x1854→射程、
+// 0x1838→弹速），`Entity_Player::AddCollectible @ 0x292A74` 里同一组。默认值也自证：
+// `Entity_Player::Init @ 0x278D94` 写 `+0x194C = 1.0f`、`+0x1854 = 260.0f`（= 6.5×40），
+// `EvaluateItems @ 0x280804` 里 `+0x1834` 用 10.0f、`+0x1844` 用 3.5f —— 正好是 Isaac 的
+// 基础速度/射程/射速/伤害。
+//
+// `Damage`（float）：
+//   * `Entity_Player::GetTearHitParams @ 0x2AD63C`：`0x2AD6D4 ldr s0,[x20,#0x1844]` → 乘倍率后
+//     写进 `TearParams::Damage`（`0x2AD6DC str s0,[x26,#0x48]!`）；
+//   * `EvaluateItems` 的 CACHE_DAMAGE 分支：先 `str wzr,[x19,#0x1844]` 清零再累加，
+//     收尾 `fmov s10,#3.5`（`0x2830FC str s0,[x19,#0x1844]`）。
+inline constexpr uintptr_t kEntityPlayerDamageOffset = 0x1844;          // float
+// `MoveSpeed`（float）：
+//   * `Entity_Player::Init`：`0x279698 mov w8,#0x194c` + `0x27969C mov w9,#0x3f800000`(1.0f)
+//     + `0x2796A0 str x9,[x19,x8]`（默认 1.0）；
+//   * `Entity_Player::control_movement @ 0x2B14B4`：`0x2B1748 ldr s0,[x19,#0x194c]` → `fmul`/`fadd`。
+inline constexpr uintptr_t kEntityPlayerMoveSpeedOffset = 0x194C;        // float
+// `MaxFireDelay`（float；**Switch 侧是 float，PC AB+ 文档写 int —— 按 float 读**）：
+//   * `EvaluateItems`：`0x28BB0C bl PlayerUtils::GetTearDelayFromRating` → `0x28BB10 str s0,[x19,#0x1834]`；
+//   * `Entity_Player::control_shooting @ 0x2B260C`：`0x2B4150 ldr w9,[x19,#0x1834]` → 抄进每个武器
+//     （`0x2B4154 str w9,[x8,#0x1c]`，同一段重复 5 次，对应 +0x1758/1760/1768/1770/1778 五个武器槽）。
+inline constexpr uintptr_t kEntityPlayerMaxFireDelayOffset = 0x1834;     // float
+// `TearRange`（float，原始射程单位，默认 260 = 6.5×40）：
+//   * `Entity_Player::Init`：`0x2796B8 mov w8,#0x43820000`(260.0f) → `0x2796BC str w8,[x19,#0x1854]`；
+//   * `Entity_Player::FireDelayedBrimstone @ 0x2FB24C`：`0x2FB3C8 ldr s0,[x19,#0x1854]` → 算激光长度；
+//   * `Entity_Player::FireTear @ 0x2A991C`：`0x2A9BA8 ldr w8,[x19,#0x1854]` → 写进新子弹的射程字段。
+inline constexpr uintptr_t kEntityPlayerTearRangeOffset = 0x1854;        // float
+// `CanFly`（**1 字节** bool，0/1）：
+//   * `Entity_Player::GetFlyingOffset @ 0x2BB9F0`：`0x2BBA20 mov w8,#0x1954` + `0x2BBA24 ldrb w8,[x19,x8]`
+//     + `cbz`（置位时返回 `Vector2(0,-4)` 的飞行视觉偏移）；
+//   * `Entity_Player::AddMinisaac @ 0x2AC1F4`：读同一个字节，按"能否飞"给小以撒定运动层 5/3；
+//   * `PlayerManager::ReplacePlayer @ 0x4428DC` 把它从旧玩家拷到新玩家。
+//   ⚠️ **只改这一格不会立刻改变碰撞层**：决定"能否飞过石头/坑"的是 `+0x1E0`
+//   （`Entity::IsFlying @ 0x5C744` = `[+0x1E0] < 4`），它由引擎在缓存重算时按本字段同步
+//   —— PC 侧同样要求"只在 `MC_EVALUATE_CACHE` 里改"，行为一致。
+inline constexpr uintptr_t kEntityPlayerCanFlyOffset = 0x1954;           // bool(1 byte)
+inline constexpr uintptr_t kEntityFlyingLayerOffset = 0x1E0;             // int32（派生量，非 Lua 字段）
+// `ControlsCooldown`（**有符号 int32**；EID 会**写**它来抑制按键连发）：
+//   * `Entity_Player::UsePill @ 0x2DFC04` 的麻痹药丸分支：`0x2E1C2C mov w8,#0xf0`(240) /
+//     `0x2E1C30 mov w9,#0x78`(120) / `csel` / `0x2E1C3C str w8,[x20,#0x404]`；
+//   * `Entity_Player::Update @ 0x2BBCDC` 每帧递减到 0（`ldr w8,[x19,#0x404]` / `subs #1` / `b.lt` / `str`）；
+//   * `control_shooting @ 0x2B265C`：`ldr w10,[x19,#0x404]` + `cmp #0` + `b.le`（>0 就不让射击）。
+//   ⚠️ `+0x408` 是**另一个**字段（`SetShootingCooldown @ 0x2FB994`，取 max），不是本字段。
+inline constexpr uintptr_t kEntityPlayerControlsCooldownOffset = 0x404;  // int32
+
 // `Entity_Player` 的主动道具/饰品/婴儿皮肤（"批次 4 顺带确认的小偏移"）。
 inline constexpr uintptr_t kEntityPlayerActiveItemOffset = 0x1964;      // 每槽步长 0x1C
 inline constexpr uintptr_t kEntityPlayerActiveItemStride = 0x1C;
@@ -413,6 +543,113 @@ inline constexpr uintptr_t kItemConfigItemDescriptionOffset = 0x20;
 // （`0x3B5860` 的 `add x21, x27, #0x8`），与上面两条常量互为交叉验证。
 // 形态与 `Name`/`Description` 相同：24 字节 libc++ 串占 `+0x38`..`+0x4F`，数据指针在 `+0x48`。
 inline constexpr uintptr_t kItemConfigItemGfxFileNameOffset = 0x38;
+// `Quality`（PC 文档 `ItemConfig_Item.Quality`，LuaDocs 里是 `int` 字段）在 `+0xC8`；
+// `CraftingQuality`（同族，`ItemConfig_Item.CraftingQuality`）在 `+0xCC`。
+//
+// 问什么要这两个：EID 拿 `EID.itemConfig:GetCollectible(id).Quality` 算道具品质
+// （`features/eid_api.lua:2702`），`main.lua:663` 用它拼 `{{QualityN}}` 图标；读不到 nil 时
+// 被 `and desc.Quality` 短路 ⇒ **品质图标静默不显示**（不报错、无日志）。这正是
+// "缺口只统计过方法、字段从没被枚举过"的典型案例，见 `docs/错误复盘.md` 2026-09-16。
+//
+// 偏移来源与 `gfx` 同一条链 —— `items.xml` 解析器 `ItemConfig::Load`（`0x3B50E0`）的属性分派：
+//   * `0x3B5A64` `adrp x1, 0x891000` + `0x3B5A68` `add x1, x1, #0x642`（=> `0x891642` = `"quality"`）
+//     `strcmp` 命中后 `0x3B5A70` 的 `cbz w0` 跳到 `0x3B623C`；该分支 `bl atoi`（`0x3B6248`）之后
+//     就是 **`str w0, [x27, #0xc8]`（`0x3B624C`）** ⇒ `Quality` = 32 位整数，落在 `+0xC8`；
+//   * `0x3B5A78` `adrp x1, 0x8AA000` + `0x3B5A7C` `add x1, x1, #0x1a9`（=> `0x8AA1A9` = `"craftquality"`）
+//     命中后跳到 `0x3B62A0`，同样是 `atoi` 之后 **`str w0, [x27, #0xcc]`（`0x3B62B0`）**
+//     ⇒ `CraftingQuality` = `+0xCC`。
+//   * **互证**：同一函数的收尾段 `0x3B6308..0x3B631C` 先 `ldr w8,[x27,#0xcc]` 与哨兵
+//     `0x8FFFFFFF`（`mov w9, #-0x70000001`）比较，相等就把 `ldr w8,[x27,#0xc8]` 写回 `+0xcc`
+//     ⇒ **`items.xml` 没写 `craftquality` 时默认等于 `quality`**，与 PC 文档语义一致，
+//     两个偏移互相印证（这一条也说明实现里不该自己编"缺省值"）。
+//   * 与既有常量同源：同一分派链里 `id → +0x04`（`0x3B5AE8` 的 `str w0, [x27, #0x4]`），
+//     布尔类属性走 `string2bool` 后写**单字节**（`0x3B6234` 的 `strb w8, [x27, #0xb7]`）
+//     —— 两个 32 位整数落在 `+0xC8`/`+0xCC` 这一段，与它们都不冲突。
+inline constexpr uintptr_t kItemConfigItemQualityOffset = 0xC8;
+inline constexpr uintptr_t kItemConfigItemCraftingQualityOffset = 0xCC;
+// `CraftingQuality` 在 `items.xml` 未指定时的哨兵值（见上面 `0x3B630C` 的 `mov w9, #-0x70000001`）。
+inline constexpr std::uint32_t kItemConfigItemCraftingQualityUnset = 0x8FFFFFFFu;
+
+// 同一张 `items.xml` 属性分派表里的另外四个字段（2026-09-16 批次：字段缺口台账的 planned 项）。
+//
+// 取证方法与 `quality` 完全一样 —— 从 `ItemConfig::Load`（`0x3B50E0`）的 `strcmp` 链往下看
+// 每个属性分支落点的那条 `str`：
+//   * `achievement`：`0x3B58C4` 的 `strcmp` 命中 → `0x3B5B78`；`bl atoi`（`0x3B5B84`）之后
+//     **`str w0, [x27, #0x50]`（`0x3B5B88`）** ⇒ `AchievementID` = `+0x50`；
+//   * `tags`：`0x3B5A90` 的 `strcmp` 命中 → `0x3B5D48`；`bl atoi`（`0x3B5D54`）之后
+//     **`str w0, [x27, #0x58]`（`0x3B5D58`）** ⇒ `Tags` = `+0x58`；
+//   * `maxcharges`：`0x3B5978` 的 `strcmp` 命中 → `0x3B5E50`；`bl atoi`（`0x3B5E5C`）之后
+//     **`str w0, [x27, #0x74]`（`0x3B5E60`）** ⇒ `MaxCharges` = `+0x74`；
+//   * `chargetype`：`0x3B59F0` 的 `strcmp` 命中 → `0x3B5F60`，该分支**先按字符串取枚举**：
+//     `"normal"` → `0x3B6038` 的 **`str wzr, [x27, #0xb0]`**（=0）、`"timed"` → `0x3B60C8`
+//     （=1）、`"special"` → `0x3B615C` 的 `mov w8,#2; str w8,[x27, #0xb0]`（=2）
+//     ⇒ `ChargeType` = `+0xB0`，且三个取值**正好等于** PC 的
+//     `ItemConfig.CHARGE_NORMAL(0) / CHARGE_TIMED(1) / CHARGE_SPECIAL(2)`
+//     （`analysis/isaacdocs-snapshot/docs/enums/ItemConfig.md:22-24`）—— 三值互证，不是按顺序猜的。
+//
+// 类型按 PC 文档定（`analysis/isaacdocs-snapshot/docs/ItemConfig_Item.md`）：
+//   * `AchievementID` 是 **int** 且"默认可解锁时返回 -1" ⇒ 必须**有符号**读，否则 -1 会变成 4294967295，
+//     EID 的 `item.AchievementID == -1`（`features/eid_api.lua:2003`）就永远不成立；
+//   * `MaxCharges` / `ChargeType` 也是 int ⇒ 有符号读；
+//   * `Tags` 文档写 int，但语义是**位掩码**（EID 用 `item.Tags & ItemConfig.TAG_QUEST`）⇒ 按
+//     无符号读（零扩展），这样第 31 位不会被符号扩展污染成高 32 位全 1。
+inline constexpr uintptr_t kItemConfigItemAchievementIdOffset = 0x50;
+inline constexpr uintptr_t kItemConfigItemTagsOffset = 0x58;
+inline constexpr uintptr_t kItemConfigItemMaxChargesOffset = 0x74;
+inline constexpr uintptr_t kItemConfigItemChargeTypeOffset = 0xB0;
+// `Hidden`（2026-09-16，字段缺口台账 planned 里证据最足的一条）：
+//   * `bool`，**1 字节**（`ldrb`，不是 4 字节整数）；
+//   * 证据：`ItemConfig::Item::IsAvailable`（`0x3C101C`，见下面那组常量）的**第一条指令**就是
+//     `ldrb w8, [x0, #0xb7]`，随后非零直接返回 false —— 与 PC 文档
+//     （`ItemConfig_Item.md`：`boolean Hidden`；"HIDDEN 的道具不会出现在死亡证明房间"）吻合；
+//   * EID 用法：`features/eid_api.lua:2008` 的 `if item.Hidden then`（隐藏道具不出描述）与
+//     `eid_api.lua:1927` Spindown Dice 预测里的 `not item.Hidden`（缺它这一半恒真）。
+inline constexpr uintptr_t kItemConfigItemHiddenOffset = 0xB7;
+// `MimicCharge`（卡牌 / 胶囊各一个，2026-09-16 取证）。EID 用它给"模仿胶囊/卡牌"补一句说明
+// （`features/eid_modifiers.lua:731`）。两个结构都由 `ItemConfig::LoadPocketItems @ 0x3BE42C`
+// 从 cards.xml / pills.xml 建出来，"XML 属性名 → 结构体偏移"在指令层面直接可读：
+//   * `"mimiccharge"` 这一支在 `0x3BE96C-0x3BE978`（`add x1,x1,#0xf16` + `strcmp` + `cbz`），
+//     处理体 `0x3BED08 bl atoi` → `0x3BED0C str w0,[sp,#0x68]`（该栈槽整函数只有这一处属性写入）；
+//   * 卡：`0x3BEE88 str w8,[x23,#0x64]`（x23 = `operator new(0x78)` 出来的 Card）；
+//   * 胶囊：`0x3BEF5C stp w9,w8,[x23,#0x44]`（x23 = `operator new(0x58)`；STP 先写低地址 ⇒
+//     w9→+0x44 announcerdelay、**w8→+0x48 mimiccharge**）。
+// 消费侧（第二处独立证据）：`Entity_Player::UseActiveItem @ 0x30653C` 在
+//   * `0x3106E8 ldr w9,[x0,#0x64]` → `0x3106EC str w9,[x8,#0x197C]`（卡；前置 `cmp #0x107` = CLEAR_RUNE、
+//     且卡类型 `[card+0x58]==2` = rune）；
+//   * `0x312A4C ldr w9,[x0,#0x48]` → `0x312A50 str w9,[x8,#0x197C]`（胶囊；前置 `cmp #0x15c` = PLACEBO）。
+// 类型：写入来自 `atoi`、读出用 `ldr w` ⇒ 4 字节 int。
+inline constexpr uintptr_t kItemConfigCardMimicChargeOffset = 0x64;        // ItemConfig::Card
+inline constexpr uintptr_t kItemConfigPillEffectMimicChargeOffset = 0x48;  // ItemConfig::PillEffect
+// `eChargeType`（同一份 enums 文档）：`0x3B6038`/`0x3B60C8`/`0x3B615C` 三个落点分别写 0/1/2。
+inline constexpr std::int32_t kItemChargeTypeNormal = 0;
+inline constexpr std::int32_t kItemChargeTypeTimed = 1;
+inline constexpr std::int32_t kItemChargeTypeSpecial = 2;
+
+// --- `IsAvailable` 一族（2026-09-16，取证见 `docs/问题与解决记录.md` 续十二）------------------
+//
+// **地址以动态符号表为准**：交接文档早先记的 `0x3C0F9C` / `0x3C1B5C` / `0x3C1C48` 是错的
+// （各偏低 0x80 / 0x140 / 0x100），实测如下三条：
+//   * `ItemConfig::Item::IsAvailable(long, uint)` const  @ `0x3C101C`
+//   * `ItemConfig::Card::IsAvailable()` const            @ `0x3C1C9C`
+//   * `ItemConfig::PillEffect::IsAvailable()` const      @ `0x3C1D48`
+inline constexpr uintptr_t kItemConfigItemIsAvailableOffset = 0x3C101C;
+inline constexpr uintptr_t kItemConfigCardIsAvailableOffset = 0x3C1C9C;
+inline constexpr uintptr_t kItemConfigPillEffectIsAvailableOffset = 0x3C1D48;
+// 入口 4 字节按小端整字存（与 `kEntityPlayerAddCollectibleEntryWord` 同口径），调用前核对一次。
+// ⚠️ Card 与 PillEffect 两条**序言同构**（都是 `stp x29,x30,[sp,#-0x20]!`）⇒ 指纹只能证明
+// "这里是一条符合预期的序言"；**区分谁是谁靠句柄里的 `beginOffset`**，不靠指纹。
+inline constexpr std::uint32_t kItemConfigItemIsAvailableEntryWord = 0xD10143FFU;
+inline constexpr std::uint32_t kItemConfigCardIsAvailableEntryWord = 0xA9BE7BFDU;
+inline constexpr std::uint32_t kItemConfigPillEffectIsAvailableEntryWord = 0xA9BE7BFDU;
+// `Item::IsAvailable` 的 flags 取值 —— **这是我们的兼容层定义**（三个函数在镜像里没有任何调用点，
+// 参数无法从游戏自己的用法学到）。依据两条：
+//   ① PC 文档 `analysis/isaacdocs-snapshot/docs/ItemConfig_Item.md:35-38`：
+//      "true = 已解锁；false = 没解锁 **或被 tags 挡掉**"；
+//   ② `0x3C101C` 反汇编读出的位语义：bit1 = 成就解锁（读 `+0x50` 的 `AchievementID`，-1 直接 true）、
+//      bit2 = tags/当前局阻挡、bit3 = 模组提供的物品、bit0 = 按 `Type` 分流。
+// 已按此在 `api_deviation.cpp` 登记偏离（含未覆盖的 PC 语义）。
+inline constexpr std::int64_t kItemIsAvailableFlags = 0x2 | 0x4 | 0x8;
+
 // `eItemType`（冻结文档 `analysis/isaacdocs-snapshot/docs/enums/ItemType.md`）。
 inline constexpr std::uint32_t kItemTypeNull = 0;
 inline constexpr std::uint32_t kItemTypePassive = 1;
@@ -601,6 +838,53 @@ inline constexpr uintptr_t kSpriteAnimationNameOffset = 0x38;
 inline constexpr uintptr_t kSpriteAnimationStateOffset = 0x60;
 // `ANM2+0x54`：在播标志（同一个 `IsPlaying` 读到的第二个条件）。
 inline constexpr uintptr_t kSpritePlayingFlagOffset = 0x54;
+
+// ---------------------------------------------------------------------------
+// `Sprite` 的三个**可写**属性在 `ANM2` 里的落点（2026-09-16）
+// ---------------------------------------------------------------------------
+// 这三条是"引擎写通道"的第一批落点：PC 的 `Sprite.Scale` / `Sprite.Color` / `Sprite.FlipX`
+// 在 PC 上就是写 `ANM2` 的成员，之前我们只把值缓存进句柄（渲染时读不到差别），现在按下面
+// 两条互不相同的证据写进原生对象。
+//
+// **证据一：`ANM2::Reset`（`0x65B8`）—— 构造/复位时写的默认值，本身就把语义钉住了**
+//   * `0x670C add x0,x19,#0xdc` → `bl Vector2::operator=(Vector2 const&)`，右操作数是
+//     `KAGE::Math::Vector2::One`（`0x6708 ldr x1,[…] ; _ZN4KAGE4Math7Vector23OneE`）
+//     ⇒ `ANM2+0xDC` 是**缩放向量**，默认 `(1,1)`；
+//   * `0x6704/0x6708` 前一条同类指令是 `0x66E4 add x0,x19,#0xd4` → 同一个 `operator=`
+//     但右操作数是 `Vector2::Zero`（`_ZN4KAGE4Math7Vector24ZeroE`）⇒ `+0xD4` 是另一个
+//     向量（渲染里加在位置上的那个，本轮不用，仅登记）；
+//   * `0x6714 add x0,x19,#0xe8` → `bl ColorMod::Reset()` ⇒ `ANM2+0xE8` 是一个 `ColorMod`
+//     （精灵自身的颜色），`0x6720 add x20,x19,#0x114` → 又一次 `ColorMod::Reset()` ⇒ 第二个
+//     `ColorMod` 落在 `0x114` ⇒ **第一个 `ColorMod` 占 `0xE8..0x114`，共 0x2C 字节**；
+//   * `0x6754 strh wzr,[x19,#0x140]` ⇒ `0x140`/`0x141` 是**两个相邻的字节标志**，默认 0。
+//
+// **证据二：`ANM2::AnimationLayer::GetDestQuad`（`0x9790`）—— 渲染时怎么用这三格**
+//   （该函数第 6 个参数 `x6` 就是 `ANM2 const*`，函数符号自带 `…, ANM2 const*)`）
+//   * `0x9824 ldr x8,[x26,#0xdc]!`（`x26` = `ANM2`）一次性读 **8 字节** = 缩放向量的
+//     `X@0xDC`/`Y@0xE0`，随后与图层缩放一起进 `Vector2::operator*`（`0x9834`）；
+//   * `0x97DC ldrb w23,[x6,#0x140]` 与 `0x97C4 ldrb w8,[x6,#0x141]` 读那两个字节，
+//     用于决定四边形是否镜像 ⇒ 就是 PC 的 `FlipX`/`FlipY`；
+//   * `0x97D0 ldr w11,[x3,#0x90]`＋`0x97F8 orr w24,w11,w10`（`w10=[ANM2+0x150]`）是把
+//     图层标志与 `ANM2+0x150` 合起来判混合模式，与颜色无关（旁证：`0x150` 不是颜色）。
+//
+// **`ColorMod` 自己的布局（写颜色要知道哪 4 个 float 是 tint）**
+//   * `ColorMod::Reset`（`0x37830`）：`0x37834 stp x8,x8,[x0]`（`x8` = `0x3f8000003f800000`
+//     = 两个 `1.0f`）+ `0x37838 str xzr,[x0,#0x20]` + `0x3783C str wzr,[x0,#0x28]` +
+//     `0x37840 stp xzr,xzr,[x0,#0x10]` ⇒ 头 8 字节 = 两个 1.0f（tint），`0x10..0x1C` 清零（偏移量）；
+//   * `ColorMod::SetTint`（`0x37848`）：`str s0,[x0]` / `str s1,[x0,#0x4]` / `str s2,[x0,#0x8]` /
+//     `str s3,[x0,#0xc]` ⇒ **tint 的 R/G/B/A 就在 `+0x00/+0x04/+0x08/+0x0C`**；紧随其后的
+//     `0x3785C` 起同样四条 `str` 打在 `+0x10/+0x14/+0x18/+0x1C`（偏移量四元组）；
+//   * `ColorMod::operator*=`（`0x37BEC`）：`+0x00..+0x0C` 走 `fmul`（相乘），`+0x10..+0x1C`
+//     走 `fadd`/平均（叠加）⇒ 与 PC `Color` 的"RGB 乘、Offset 加"一致。
+inline constexpr uintptr_t kSpriteScaleOffset = 0xDC;    // Vector2（缩放 X@+0xDC、Y@+0xE0）
+inline constexpr uintptr_t kSpriteColorOffset = 0xE8;    // ColorMod：tint 在 +0x00..+0x0C
+inline constexpr uintptr_t kSpriteFlipXOffset = 0x140;   // u8（+0x141 是 FlipY，本轮不用）
+// `ColorMod` 内部偏移：tint 的 R/G/B/A 与"偏移量"四元组的起点。
+inline constexpr uintptr_t kColorModTintOffset = 0x00;
+inline constexpr uintptr_t kColorModShiftOffset = 0x10;
+inline constexpr std::size_t kColorModSize = 0x2C;
+// PC `Color` 的第 5/6/7 个分量（`RO/GO/BO`）在我们的 `KColor` 句柄里也有对应字段
+// （`lua_object_handles.hpp` 的 `ColorHandle::offsetRed/Green/Blue`），所以一并写进去。
 
 // `Sprite`（引擎侧 `IsaacRepentance::ANM2`）第一步用到的入口：全部是 `char const*`/数值参数，
 // 不涉及 `std::string`，因此没有 ABI 风险。对象尺寸见 `kSpriteObjectSize` 的注释。
@@ -835,6 +1119,26 @@ inline constexpr std::array<u8, 16> kLevelIsNextStageAvailableExpectedBytes = {
     0xFD, 0x7B, 0xBC, 0xA9, 0xF8, 0x5F, 0x01, 0xA9,
     0xFD, 0x03, 0x00, 0x91, 0xF6, 0x57, 0x02, 0xA9,
 };
+// `Room::GetFrameCount()`（2026-09-16 补，PC：`Room:GetFrameCount()` ——
+// "Returns the amount of frames the room has been active for. Resets to 0 when the player leaves
+// the room or the run is exited."）。
+//
+//   * 符号：`_ZN15IsaacRepentance4Room13GetFrameCountEv`，文件偏移 **`0x470B0C`**，arity 0（只有 `this`）；
+//     来源 `analysis/lua-api-inventory/inventory.json`（`match_kind: exact_class`、
+//     `match_confidence: high`、`thunk_readiness: ready`），16 字节守卫也取自同一条目。
+//   * 语义证据（我们自己的指令级记录，见本文件 `kGameFrameCountOffset` 的注释）：
+//     引擎里 `Room::GetFrameCount` 与 `Entity::GetFrameCount` 同形 ——
+//     `ldr w8,[Game+0x24F99C]; sub w0,w8,[this+进入房间时的帧号]`
+//     ⇒ "本局帧计数 − 进房间那一刻的帧号"，所以离开房间会归零。
+//   * EID 用法：`features/eid_bagofcrafting.lua:967` 的 `game:GetRoom():GetFrameCount() < 2`
+//     （刚进房间前两帧不显示合成结果）、`eid_bagofcrafting_search.lua:166`、`eid_debugging.lua:202`。
+//     **缺它时**：背包合成那条渲染路径**每帧抛错**（`attempt to call a nil value (method
+//     'GetFrameCount')`），EID 的描述渲染整段被打断 —— 这是 2026-09-16 真机上暴露出来的。
+inline constexpr uintptr_t kRoomGetFrameCountOffset = 0x470B0C;
+inline constexpr std::array<u8, 16> kRoomGetFrameCountExpectedBytes = {
+    0x08, 0x00, 0x40, 0x39, 0x48, 0x01, 0x00, 0x34,
+    0xE8, 0x31, 0x00, 0x90, 0x08, 0x4D, 0x43, 0xF9,
+};
 inline constexpr uintptr_t kManagerMusicOffset = 0x36068;
 inline constexpr uintptr_t kMusicGetCurrentMusicIdOffset = 0x426C38;
 inline constexpr std::array<u8, 16> kMusicGetCurrentMusicIdExpectedBytes = {
@@ -1065,6 +1369,21 @@ inline constexpr std::array<u8, 80> kStage128SaveDataManagerRelayLoadExpectedByt
 };
 inline constexpr std::uint32_t kTargetModuleScanAttemptLimit = 300;
 inline constexpr std::int64_t kTargetModuleScanIntervalNanoseconds = 100'000'000;
+// `ModuleWorker` 一进来就等多久（秒），由构建开关 `WORKER_STARTUP_DELAY_SECONDS` 决定。
+//
+// **默认 0 = 生产形状**：worker 建好就开始干活（2026-08-23 起就是这样，门禁
+// `test_worker_does_not_depend_on_fixed_sdk_initialization_delay` 也钉着这条）。
+// 真机实验包用 `WORKER_STARTUP_DELAY_SECONDS=5` 打开：把"我们自己的启动期动作"
+// （扫内存找游戏模块、装挂点、自校验、读模组文件）挪到"系统装载游戏本体模块"那个窗口之后。
+//
+// 为什么不在 `exl_main` 里等：入口是被游戏**同步等待**的（记录续十六 §二：不做延迟不到 1 秒就崩、
+// 延迟 8 秒版就"约 8 秒"崩、栈一模一样），在入口等等于直接给开机加秒数。
+// 背景、实测数字与取舍见 `docs/问题与解决记录.md` 2026-09-16 续十六 与 `docs/改动日志-20260916.md`。
+#if !defined(EXL_WORKER_STARTUP_DELAY_SECONDS)
+#define EXL_WORKER_STARTUP_DELAY_SECONDS 0
+#endif
+inline constexpr std::int64_t kWorkerStartupDelayNanoseconds =
+    static_cast<std::int64_t>(EXL_WORKER_STARTUP_DELAY_SECONDS) * 1'000'000'000LL;
 inline constexpr std::array<u8, 0x20> kTargetBuildId = {
     0x91, 0xC7, 0x3F, 0xDD, 0x57, 0x50, 0x61, 0x31,
     0x8D, 0x68, 0x88, 0x63, 0x16, 0xAF, 0xEA, 0xC7,
@@ -1383,6 +1702,286 @@ inline constexpr std::array<u8, 16> kContentAddMountPointExpectedBytes = {
     0xFD, 0x7B, 0xBB, 0xA9, 0xFA, 0x67, 0x01, 0xA9,
     0xFD, 0x03, 0x00, 0x91, 0xF8, 0x5F, 0x02, 0xA9,
 };
+
+// ---------------------------------------------------------------------------
+// 目录枚举与文件写入：**引擎自己**的文件层（2026-09-16 取证，当前无调用方）
+// ---------------------------------------------------------------------------
+//
+// ★ 下面这组常量**现在没有调用方** —— 它们是"方案 A（运行时自己发现模组、清单降级成可选）"
+//   的取证结果。2026-09-16 用户裁定"先不做"，所以探针代码已删除，**证据留在这里**：
+//   下一轮要做的时候不必再从头 argv 一遍（而且门禁会继续用 NRO 逐字节核对这些守卫字节）。
+//   完整经过与真机读数见 `docs/问题与解决记录.md` 续三十/续三十一。
+//
+// 背景：我们模块自己起 `sm`/`fs` 会话是**死的**（`svcConnectToNamedPort("sm:")` 在内核层返回
+// `0x10801` OutOfResource，`fsInitialize` 因此 `0xE401`，12 秒后重试不变；见
+// `docs/SaltyNX文件服务与自建方案研究.md`）。但引擎自己那套 `KAGE::Filesys` 用的是**游戏进程
+// 已经建好的 fs 会话**（游戏靠它写存档、读 romfs，我们的模组挂载点也是靠它生效的）。
+//
+// 真机结论（`dist/gdb-read-20260916-171017.txt`）：
+//   * `isaac_mods/mods` 列得出来，`count = 2`，两个条目就是卡上的两个模组目录，
+//     名字读回来分别是 "external item de…" 与 "multimod-probe" ⇒ **覆盖层里的目录看得见**；
+//   * 返回的指针是**第一个条目**的地址（条目数走出参给），条目 0x10 字节：
+//     `+0x00` 标志字节、`+0x08` 名字指针；标志 `0x06` = 目录 + 自己拥有名字串；
+//   * ⚠️ **只对 `isaac_mods/mods` 这种路径安全**：对子目录（`…/multimod-probe`）再调一次会
+//     触发**引擎内部断言**（崩溃报告 `01789549162`）。
+//
+// 下面这些偏移的守卫字节仍由门禁逐字节核对（`*ExpectedBytes` 的既有机制）。
+
+// `KAGE::Filesys::IContentManager::GetDirectoryEntries(char const* path, unsigned& count)`
+//   * 符号：`.dynsym` 里函数体在 `0x4C23C4`（名字见 `tools/nro_symbols.py` 的查询结果）；
+//   * 行为（反汇编逐条读出）：`x1` = 路径（相对**应用根**，与 `AddMountPoint` 同一口径，
+//     内部会先过 `KAGE::Util::Path::CreateCleanPath`），`x2` = 出参 `unsigned& count`；
+//     返回一个 `new[]` 出来的块：`[0]` 是条目数（8 字节），条目紧跟其后、**每项 0x10 字节**；
+//   * 释放：那块内存是引擎的 `operator new[]`（`_Znam`）分配的 ⇒ 必须用引擎的
+//     `operator delete[]`（`_ZdaPv`，GOT 槽见下）释放，用我们的 `free` 会踩坏游戏堆。
+inline constexpr uintptr_t kContentGetDirectoryEntriesOffset = 0x4C23C4;
+inline constexpr std::array<u8, 16> kContentGetDirectoryEntriesExpectedBytes = {
+    0xFF, 0x83, 0x01, 0xD1, 0xFD, 0x7B, 0x02, 0xA9,
+    0xFD, 0x83, 0x00, 0x91, 0xF7, 0x1B, 0x00, 0xF9,
+};
+// `KAGE::Filesys::DirectoryEntry`（0x10 字节一项）：
+//   * `+0x00` 标志字节：bit0 = 是文件、bit1 = 是目录。证据 = 引擎自己的两个内联访问器
+//     `DirectoryEntry::IsFile()`（`0x4C2730`：`ldrb w8,[x0]` + `and w0,w8,#0x1`）与
+//     `DirectoryEntry::IsDirectory()`（`0x4C273C`：`ldrb w8,[x0]` + `ubfx w0,w8,#1,#1`）；
+//   * `+0x08` `char const* Name`。证据 = `DirectoryEntry::GetName()`（`0x4C2748`：`ldr x0,[x0,#0x8]`）；
+//   * 每项 0x10：`GetDirectoryEntries` 里那条 `asr x8, x8, #4`（按 16 字节算条目数）与拷贝循环
+//     里的 `add x21, x21, #0x10`。
+inline constexpr std::size_t kDirectoryEntrySize = 0x10;
+inline constexpr std::size_t kDirectoryEntryNameOffset = 0x08;
+inline constexpr unsigned kDirectoryEntryFileBit = 0;
+inline constexpr unsigned kDirectoryEntryDirectoryBit = 1;
+
+// 引擎的 `operator delete[]`（`_ZdaPv`）**GOT 槽**：NRO 的重定位表里 `_ZdaPv` 只有一条
+// `R_AARCH64_JUMP_SLOT`（`0xA9DD30`），运行期槽内就是真正要调用的地址。取槽里的值再调用，
+// 既不必自己解析 PLT，也不会用到我们模块的 `free`。证据 = `tools/nro_symbols.py` 的
+// `parse_dynamic_relocations()` 输出（`_ZdaPv: slots=['0xa9dd30'] type=[1026]`）。
+inline constexpr uintptr_t kEngineArrayDeleteGotOffset = 0xA9DD30;
+
+// `KAGE::Filesys::File`（引擎自己的文件类）—— 写文件用：
+//   * 构造 `File::File()`（`0x4CCBC0`）：内部调 `BufferedFileStream` 的构造、写 vtable 到
+//     `+0x00`/`+0x38`、清 `+0x50` 起两个 8 字节 ⇒ 对象至少 0x58 字节（调用方留 0x80 更稳）；
+//   * `bool File::OpenWrite(char const* name)`（`0x4CCE38`）：路径会拼在
+//     `g_SaveDataManager.GetMountPoint()` 后面（`0x4CCE48` 取全局 `g_SaveDataManager` 槽、
+//     `0x4CCE54` 调 `SaveDataManager::GetMountPoint`），也就是**写进游戏的存档目录**，
+//     不是任意 `sdmc:` 路径 —— 想要"模组的开关状态"这类持久化，这里正好是合适的位置；
+//   * `File::Write(char const* data, int count, int elementSize)`（`0x4CD190`，尾调到
+//     `BufferedStreamBase::WriteToBuffer`），底层是 `nn::fs::WriteFile`；
+//   * `bool File::Close()`（`0x4CD00C`）。
+inline constexpr uintptr_t kFilesysFileCtorOffset = 0x4CCBC0;
+inline constexpr std::array<u8, 16> kFilesysFileCtorExpectedBytes = {
+    0xFD, 0x7B, 0xBE, 0xA9, 0xF3, 0x0B, 0x00, 0xF9,
+    0xFD, 0x03, 0x00, 0x91, 0xF3, 0x03, 0x00, 0xAA,
+};
+inline constexpr uintptr_t kFilesysFileOpenWriteOffset = 0x4CCE38;
+inline constexpr std::array<u8, 16> kFilesysFileOpenWriteExpectedBytes = {
+    0xFD, 0x7B, 0xBE, 0xA9, 0xF4, 0x4F, 0x01, 0xA9,
+    0xFD, 0x03, 0x00, 0x91, 0xF4, 0x03, 0x00, 0xAA,
+};
+// `File::Write`（`0x4CD190`）是**虚函数覆盖**，尾调到 `BufferedStreamBase::WriteToBuffer`
+// —— 写进的是缓冲，真机实测"打开成功但写入失败"（缓冲没 `Create` 过）。真正直连
+// `nn::fs::WriteFile` 的是 `File::write_stream_data`（`0x4CD220`，2026-09-16 第二轮改用）：
+// `0x4CD230` 先查 `[x0+0x40] == 1`（打开模式必须是"写"）、`0x4CD24C` 取 `[x0+0x50]` 的句柄，
+// `0x4CD26C` 调 `nn::fs::WriteFile(handle, offset, data, size, option)`。
+// `bool File::open_write(char const* name, char const* mount)`（`0x4CCEB0`）：**带自定义挂载点**的
+// 打开写入口。⚠️ 2026-09-16 第二轮更正：**自定义挂载点并不等于"能写到任意位置"** —— 挂载点只是
+// 拼在名字前面的前缀，最终仍由 `nn::fs::OpenFile` 在**游戏进程已挂载的那张表**里解析。游戏只挂了
+// `rom`（`0x4CC6C8` 传字面量 `"rom"`）与存档（`"sdmc"`，见下文 `GetMountPoint`），**没有挂真 SD 卡**
+// （它连 `nn::fs::MountSdCard` 都没导入）⇒ 传 `"sdmc:/SaltySD/…"` 只会落进存档分区。第一轮三个探针
+// 文件因此全部"打开失败"（真机读数 + 上面的静态证据两条对得上）。
+//
+// 反汇编（逐条读出）：`w3 = 6`（`nn::fs` 的 `Write|AllowAppend`）；`x0 = this`、`x1 = name`、
+// `x2 = mount` 原样传给 `File::open_file_handle`；成功后再尾调
+// `BufferedFileStream::OpenWrite(name)`（建立缓冲层，也会把 `[this+0x40]` 置成"写"状态 ——
+// `write_stream_data` 的前置检查就是它）。**注意**：这个返回值是"两步都对"才为真，
+// 所以第一轮读数里的"打开失败"也可能来自第二步（缓冲层）。
+inline constexpr uintptr_t kFilesysFileOpenWriteWithMountOffset = 0x4CCEB0;
+inline constexpr std::array<u8, 16> kFilesysFileOpenWriteWithMountExpectedBytes = {
+    0xFD, 0x7B, 0xBE, 0xA9, 0xF4, 0x4F, 0x01, 0xA9,
+    0xFD, 0x03, 0x00, 0x91, 0xC3, 0x00, 0x80, 0x52,
+};
+// `bool File::open_file_handle(char const* name, char const* mount, int mode)`（`0x4CD2D4`）：
+//   * `x1` = 文件名、`x2` = 挂载点前缀、`w3` = `nn::fs::OpenMode`；
+//   * 长度上限 `w23 = (mode & 2) ? 0x104 : 0x40`（写路径 260 字节）；
+//   * `0x4CD358 bl KAGE::Util::Path::CreateCleanPath(name, mount, false, false)` ⇒ **拼路径**；
+//   * `0x4CD374 bl nn::fs::OpenFile(&handle@this+0x50, 拼好的路径, mode)` ⇒ 用的是**游戏自己的
+//     fs 会话**（这就是"我们模块自己起不了 sm/fs、但引擎能写"的原因）。
+inline constexpr uintptr_t kFilesysFileOpenFileHandleOffset = 0x4CD2D4;
+inline constexpr std::array<u8, 16> kFilesysFileOpenFileHandleExpectedBytes = {
+    0xFD, 0x7B, 0xBC, 0xA9, 0xF8, 0x5F, 0x01, 0xA9,
+    0xFD, 0x03, 0x00, 0x91, 0xF6, 0x57, 0x02, 0xA9,
+};
+// `File` 对象尺寸 = **0x60 字节**：证据 = `SaveDataManagerBase::OpenSaveFileForWriting`（`0x4CC278`）
+// 里 `mov w0, #0x60; bl _Znwm; bl File::File()`（`0x4CC2C8`/`0x4CC2D0`/`0x4CC2D4`），
+// 之后 `ldr x8,[x20]; ldr x8,[x8,#0x60]; blr x8` 就是引擎自己的"创建/打开写"虚调用。
+inline constexpr std::size_t kFilesysFileObjectSize = 0x60;
+// `File::Write`（`0x4CD190`）是**虚函数覆盖**，尾调到 `BufferedStreamBase::WriteToBuffer`
+// —— 写进的是缓冲（真机第一轮"打开成功但写入失败"就是它）。本探针把两条路都试一遍，
+// 所以这个入口也要有守卫。
+inline constexpr uintptr_t kFilesysFileWriteOffset = 0x4CD190;
+inline constexpr std::array<u8, 16> kFilesysFileWriteExpectedBytes = {
+    0x5C, 0xCB, 0x06, 0x14, 0x00, 0xE0, 0x00, 0xD1,
+    0x5A, 0xCB, 0x06, 0x14, 0x20, 0x00, 0xA0, 0x52,
+};
+inline constexpr uintptr_t kFilesysFileWriteStreamDataOffset = 0x4CD220;
+inline constexpr std::array<u8, 16> kFilesysFileWriteStreamDataExpectedBytes = {
+    0xFD, 0x7B, 0xBD, 0xA9, 0xF5, 0x0B, 0x00, 0xF9,
+    0xFD, 0x03, 0x00, 0x91, 0xF4, 0x4F, 0x02, 0xA9,
+};
+inline constexpr uintptr_t kFilesysFileCloseOffset = 0x4CD00C;
+inline constexpr std::array<u8, 16> kFilesysFileCloseExpectedBytes = {
+    0xFD, 0x7B, 0xBE, 0xA9, 0xF4, 0x4F, 0x01, 0xA9,
+    0xFD, 0x03, 0x00, 0x91, 0xF3, 0x03, 0x00, 0xAA,
+};
+// 探针写完就删：`g_SaveDataManager` 的全局槽（`File::OpenWrite` 用的就是它）+
+// `SaveDataManager::DeleteSaveFile(char const*)`（`0x4CDD18`）。
+inline constexpr uintptr_t kSaveDataManagerGlobalSlotOffset = 0xAAC940;
+inline constexpr uintptr_t kSaveDataDeleteFileOffset = 0x4CDD18;
+inline constexpr std::array<u8, 16> kSaveDataDeleteFileExpectedBytes = {
+    0xFD, 0x7B, 0xBD, 0xA9, 0xF5, 0x0B, 0x00, 0xF9,
+    0xFD, 0x03, 0x00, 0x91, 0xF4, 0x4F, 0x02, 0xA9,
+};
+
+// ---- 读回来的那半条通道 + "存档分区叫什么名字"（2026-09-16 第二轮探针新增）----
+//
+// `bool File::OpenRead(char const* path)`（`0x4CCD58`）：与 `OpenWrite` **不对称** ——
+// `0x4CCD64` 把挂载点写成空串字面量（`0x8AED62`，编目里就是某个字符串的结尾那个 NUL，
+// 链接器合并出来的空串），于是 `CreateCleanPath` 只返回原样路径 ⇒ **这里要传完整路径**
+// （`"sdmc:/<名字>"`），不能像 `OpenWrite` 那样只传相对名字。之后同样尾调
+// `BufferedFileStream::OpenRead`。
+inline constexpr uintptr_t kFilesysFileOpenReadOffset = 0x4CCD58;
+inline constexpr std::array<u8, 16> kFilesysFileOpenReadExpectedBytes = {
+    0xFD, 0x7B, 0xBE, 0xA9, 0xF4, 0x4F, 0x01, 0xA9,
+    0xFD, 0x03, 0x00, 0x91, 0x02, 0x1F, 0x00, 0xD0,
+};
+// `int File::read_stream_data(char* dest, int count, int elementSize)`（`0x4CD1B0`）：
+//   * `0x4CD1BC ldr w9,[x0,#0x40]; cbz` ⇒ 打开模式必须是"读"（`0x4CD1C4` 返回 0 = 失败）；
+//   * `0x4CD1D4 mul w9, w3, w2` ⇒ 字节数 = `count * elementSize`（与写侧同形）；
+//   * `0x4CD1EC ldp x1,x2,[x0,#0x50]` 取句柄与偏移、`0x4CD1FC bl nn::fs::ReadFile`；
+//   * `0x4CD204 ldr x0,[x29,#0x18]` ⇒ **返回值就是读到的字节数**（0 = 失败）。
+inline constexpr uintptr_t kFilesysFileReadStreamDataOffset = 0x4CD1B0;
+inline constexpr std::array<u8, 16> kFilesysFileReadStreamDataExpectedBytes = {
+    0xFD, 0x7B, 0xBE, 0xA9, 0xF3, 0x0B, 0x00, 0xF9,
+    0xFD, 0x03, 0x00, 0x91, 0x09, 0x40, 0x40, 0xB9,
+};
+// `int File::GetLength() const`（`0x4CD104`）：取 `[x0+0x50]` 的句柄问长度。
+inline constexpr uintptr_t kFilesysFileGetLengthOffset = 0x4CD104;
+inline constexpr std::array<u8, 16> kFilesysFileGetLengthExpectedBytes = {
+    0xFF, 0x83, 0x00, 0xD1, 0xFD, 0x7B, 0x01, 0xA9,
+    0xFD, 0x43, 0x00, 0x91, 0xFF, 0x07, 0x00, 0xF9,
+};
+// `char const* SaveDataManager::GetMountPoint() const`（`0x4CDD9C`）—— **游戏存档分区的真实挂载点**。
+// 这个名字来自它的函数体（两条独立证人）：
+//   ① `0x4CDD9C adrp x0, 0x892000; 0x4CDDA0 add x0, x0, #0x7E3` ⇒ 返回字面量 `0x8927E3`，
+//      `Repentance.nro` 该处逐字节为 `"sdmc:/"`；
+//   ② `SaveDataManager::Initialize`（`0x4CD95C`）把同一个虚函数槽（`ldr x8,[x19]; ldr x8,[x8,#0x30]`
+//      ⇒ `R_AARCH64_JUMP_SLOT` 指向本函数）取回来的字符串用 `strstr(…, ":/")` 截断成 `"sdmc"`，
+//      再 `0x4CDA54/0x4CDA74 bl nn::fs::MountSaveData(截断后的名字, uid)`。
+// **由此可知**：游戏嘴里的 `sdmc:` **不是真 SD 卡**，而是它自己的存档分区 —— 我们第一轮探针把
+// `"sdmc:/SaltySD/plugins/<title>/"` 当挂载点传进去，路径实际落在了存档里，所以三个用例全"打开失败"。
+// 顺带解释了更早那次 `nn::fs::OpenFile` 上的 `nn::diag::Abort`（结果码 `0x2EE802`）：
+// 那是 `fs::ResultInvalidCharacter`（6004，非法路径字符）——把一个带 `:` 的完整路径当相对名字传了。
+inline constexpr uintptr_t kSaveDataManagerGetMountPointOffset = 0x4CDD9C;
+inline constexpr std::array<u8, 16> kSaveDataManagerGetMountPointExpectedBytes = {
+    0x20, 0x1E, 0x00, 0xB0, 0x00, 0x8C, 0x1F, 0x91,
+    0xC0, 0x03, 0x5F, 0xD6, 0xFD, 0x7B, 0xBF, 0xA9,
+};
+// 两个 `nn::fs` 的 **导入跳板**（我们没有 `nn::fs` 的符号表，只有游戏自己的 `.got` 槽与跳板）：
+//   * `0x680200` = `bool nn::fs::IsMounted(char const* mountName)`（槽 `0xAA6068`）；
+//   * `0x680220` = `Result nn::fs::CommitSaveData(char const* mountName)`（槽 `0xAA6078`）。
+// 证据：`tools/nro_symbols.py` 的 `parse_dynamic_relocations()` 给出这两个槽的
+// `R_AARCH64_JUMP_SLOT` 记录（符号名即上面两条），跳板本身是
+// `adrp x16, …; ldr x17, [x16, #imm]; add x16, x16, #imm; br x17`（16 字节，见下面的守卫字节）。
+// `CommitSaveData` 这一步不是可选的：Switch 的存档是"提交式"的，写完不提交，重启后可能什么都看不到
+// （游戏自己的 `SaveDataManager::commit_save_data()`（`0x4CDD94`）就是 `ldr x0,[x0,#0x10]`（挂载名）
+// 之后 `b 0x680220`）。
+inline constexpr uintptr_t kFilesysIsMountedThunkOffset = 0x680200;
+inline constexpr std::array<u8, 16> kFilesysIsMountedThunkExpectedBytes = {
+    0x30, 0x21, 0x00, 0xD0, 0x11, 0x36, 0x40, 0xF9,
+    0x10, 0xA2, 0x01, 0x91, 0x20, 0x02, 0x1F, 0xD6,
+};
+inline constexpr uintptr_t kFilesysCommitSaveDataThunkOffset = 0x680220;
+inline constexpr std::array<u8, 16> kFilesysCommitSaveDataThunkExpectedBytes = {
+    0x30, 0x21, 0x00, 0xD0, 0x11, 0x3E, 0x40, 0xF9,
+    0x10, 0xE2, 0x01, 0x91, 0x20, 0x02, 0x1F, 0xD6,
+};
+
+// ---- 直连 `nn::fs` 的整组导入跳板（2026-09-16 第三轮探针新增）----
+//
+// 为什么直连：走引擎 `File` 类要跟它的缓冲/流模式语义打交道（第二轮 `Close()` 的返回类型其实是
+// `void`，我们把它的垃圾返回值当 bool 读，才得出假的"关闭失败"）；直连 `nn::fs` 每一步都有
+// `Result` 码（0 = 成功），没有缓冲层，也没有对象状态。
+//
+// 每个函数的名字与签名都由**引擎自己的调用点**反推（不是猜的）：
+//   * `OpenFile(FileHandle* out, char const* path, int mode)`（`0x4CD374`，`0x4CCD78`：读传 1、写传 6）；
+//   * `CreateFile(char const* path, s64 size)`（`0x4CD384`：`x0 = 拼好的路径`、`x1 = 1`）；
+//   * `WriteFile(FileHandle, s64 offset, void const* data, size_t size, WriteOption const& option)`
+//     （`0x4CD26C`：`x4 = 栈上清零的 4 字节 option`）；
+//   * `SetFileSize(FileHandle, s64)`（`0x4CD2AC`：写完把位置当新长度设回去，所以第二轮
+//     `GetLength()` 才等于 27）；
+//   * `ReadFile(u64* outSize, FileHandle, s64 offset, void* buffer, size_t size)`（`0x4CD1FC`）；
+//   * `GetFileSize(s64* outSize, FileHandle)`、`FlushFile(FileHandle)`、`CloseFile(FileHandle)`
+//     （`File::Exists` 用过 `CloseFile`：`0x4CCD30`）。
+// 槽地址与跳板地址的对应关系来自 `tools/nro_symbols.py` 的 `parse_dynamic_relocations()`。
+inline constexpr uintptr_t kFilesysOpenFileThunkOffset = 0x680060;
+inline constexpr std::array<u8, 16> kFilesysOpenFileThunkExpectedBytes = {
+    0x30, 0x21, 0x00, 0xB0, 0x11, 0xCE, 0x47, 0xF9,
+    0x10, 0x62, 0x3E, 0x91, 0x20, 0x02, 0x1F, 0xD6,
+};
+inline constexpr uintptr_t kFilesysCreateFileThunkOffset = 0x680110;
+inline constexpr std::array<u8, 16> kFilesysCreateFileThunkExpectedBytes = {
+    0x30, 0x21, 0x00, 0xB0, 0x11, 0xFA, 0x47, 0xF9,
+    0x10, 0xC2, 0x3F, 0x91, 0x20, 0x02, 0x1F, 0xD6,
+};
+inline constexpr uintptr_t kFilesysWriteFileThunkOffset = 0x6800F0;
+inline constexpr std::array<u8, 16> kFilesysWriteFileThunkExpectedBytes = {
+    0x30, 0x21, 0x00, 0xB0, 0x11, 0xF2, 0x47, 0xF9,
+    0x10, 0x82, 0x3F, 0x91, 0x20, 0x02, 0x1F, 0xD6,
+};
+inline constexpr uintptr_t kFilesysReadFileThunkOffset = 0x6800E0;
+inline constexpr std::array<u8, 16> kFilesysReadFileThunkExpectedBytes = {
+    0x30, 0x21, 0x00, 0xB0, 0x11, 0xEE, 0x47, 0xF9,
+    0x10, 0x62, 0x3F, 0x91, 0x20, 0x02, 0x1F, 0xD6,
+};
+inline constexpr uintptr_t kFilesysSetFileSizeThunkOffset = 0x680100;
+inline constexpr std::array<u8, 16> kFilesysSetFileSizeThunkExpectedBytes = {
+    0x30, 0x21, 0x00, 0xB0, 0x11, 0xF6, 0x47, 0xF9,
+    0x10, 0xA2, 0x3F, 0x91, 0x20, 0x02, 0x1F, 0xD6,
+};
+inline constexpr uintptr_t kFilesysFlushFileThunkOffset = 0x6800C0;
+inline constexpr std::array<u8, 16> kFilesysFlushFileThunkExpectedBytes = {
+    0x30, 0x21, 0x00, 0xB0, 0x11, 0xE6, 0x47, 0xF9,
+    0x10, 0x22, 0x3F, 0x91, 0x20, 0x02, 0x1F, 0xD6,
+};
+inline constexpr uintptr_t kFilesysGetFileSizeThunkOffset = 0x6800D0;
+inline constexpr std::array<u8, 16> kFilesysGetFileSizeThunkExpectedBytes = {
+    0x30, 0x21, 0x00, 0xB0, 0x11, 0xEA, 0x47, 0xF9,
+    0x10, 0x42, 0x3F, 0x91, 0x20, 0x02, 0x1F, 0xD6,
+};
+inline constexpr uintptr_t kFilesysCloseFileThunkOffset = 0x680070;
+inline constexpr std::array<u8, 16> kFilesysCloseFileThunkExpectedBytes = {
+    0x30, 0x21, 0x00, 0xB0, 0x11, 0xD2, 0x47, 0xF9,
+    0x10, 0x82, 0x3E, 0x91, 0x20, 0x02, 0x1F, 0xD6,
+};
+// `nn::fs::DeleteFile(char const* path)`（跳板 `0x680210`，槽 `0xAA6070`）：
+// 删掉存档里的一个文件。游戏自己不用它（它用 `SaveDataManager::DeleteSaveFile`），
+// 但我们清理探针/过期状态文件时需要"按完整路径删"这一个入口。
+inline constexpr uintptr_t kFilesysDeleteFileThunkOffset = 0x680210;
+inline constexpr std::array<u8, 16> kFilesysDeleteFileThunkExpectedBytes = {
+    0x30, 0x21, 0x00, 0xD0, 0x11, 0x3A, 0x40, 0xF9,
+    0x10, 0xC2, 0x01, 0x91, 0x20, 0x02, 0x1F, 0xD6,
+};
+// `nn::fs::OpenMode`：读 = 1、写 = 6（`Write|AllowAppend`，引擎两个打开点用的就是这两个值）。
+inline constexpr int kVfsOpenModeRead = 1;
+inline constexpr int kVfsOpenModeWrite = 6;
+// `File` 里那个 `FileStream` 子对象的**流模式**字段：`FileStream` 子对象从 `File+0x38` 开始，
+// 它的 `+0x08` 就是模式 ⇒ 在 `File` 里的偏移 = `0x38 + 0x08` = `0x40`。
+// 取值：`OpenRead` 写 0、`OpenWrite` 写 1、`Close` 写 2（证据：`FileStream::OpenRead 0x4CD47C`
+// 的 `str wzr,[x0,#0x8]`、`FileStream::OpenWrite 0x4CD4B4` 的 `mov w8,#0x1; str w8,[x0,#0x8]`、
+// `FileStream::Close 0x4CD500` 的 `mov w8,#0x2; str w8,[x0,#0x8]`）。
+// `write_stream_data`/`read_stream_data` 的前置检查（`0x4CD230 cmp w9,#0x1`、`0x4CD1C0 cbz w9`）
+// 正好按这个字段判方向 —— 所以"写完再读"必须换一个**新构造**的 `File`。
+inline constexpr std::size_t kFilesysFileStreamModeOffset = 0x40;
+
 // The engine clears and rebuilds the whole table on content reload, so a Mod mount
 // point has to be re-registered every time this function returns.
 inline constexpr uintptr_t kRebuildContentMountPointsOffset = 0x3B3510;

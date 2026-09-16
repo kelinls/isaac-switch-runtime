@@ -24,6 +24,25 @@ enum class LuaInitResult : u32 {
 LuaInitResult Initialize();
 LuaInitResult InitializeFromBuffer(const char* script, std::size_t length, const char* chunkName);
 #if !defined(EXL_DIAGNOSTIC_STAGE) || EXL_DIAGNOSTIC_STAGE == 13
+// 把**运行时与自带菜单**建起来，但不加载任何模组。
+//
+// 为什么需要它（2026-09-16 真机暴露的设计缺口）：菜单脚本原先搭在"第一个模组初始化"里跑，
+// 于是**把所有模组都关掉之后**就没有模组可加载、Lua 状态根本不会被创建 —— 菜单自己也进不去，
+// 用户被锁在"关掉的模组打不开、菜单也打不开"的死角里。模组加载失败（脚本报错）时同理。
+// 这里把"建立运行时"与"加载模组"解耦：幂等，已经有状态就直接成功。
+LuaInitResult EnsureRuntimeWithMenu() noexcept;
+
+// 把**内嵌的模组开关菜单**当成"第一个模组"加载：走与真实模组**完全相同**的路径
+// （`SetStage13Context(modRoot, bindings)` → 建/复用 Lua 状态 → 执行入口脚本 → 登记回调）。
+//
+// 为什么不让它走"只有菜单的运行时"那条特殊路径（2026-09-16 真机结论）：那条路径**没有模组上下文**
+// （不设 stage13 上下文与文件绑定），而真机上恰好只有"开机一个模组都没加载"时才会走到它 ——
+// 那一条件下的症状是**退出对局时 nnSdk 堆断言崩溃**（`Game::Exit → AnmCache::FreeUnreferencedImages`
+// → 堆 free 断言），把模块整个移走则不崩。所以这里改成让菜单和真实模组共用同一条初始化路径，
+// 顺带把"模组全关时菜单也得能用"这件事用同一套机制满足。
+LuaInitResult InitializeEmbeddedMenuMod(const char* modRoot,
+                                        const GameFileReader::Bindings& bindings) noexcept;
+
 LuaInitResult InitializeManifestMod(const char* entry, std::size_t entryLength,
                                     const char* chunkName, const char* modRoot,
                                     const GameFileReader::Bindings& bindings);
@@ -43,6 +62,17 @@ void SetLevelIsAscentBinding(uintptr_t method);
 //   一次发布，两个都是"可选能力"——任一个为 0 时对应 handler 报"绑定不可用"，
 //   绝不返回编造的值（`Level:GetAbsoluteStage()` 编个 0 会让 Mod 以为"在第一层"）。
 void SetLevelGetAbsoluteStageBinding(uintptr_t method);
+// 2026-09-16：`Room:GetFrameCount()` 的引擎函数入口（`Room::GetFrameCount @ 0x470B0C`，
+// 安装期用 16 字节守卫校验）。与 `SetLevelGetAbsoluteStageBinding` 同一形态：
+// 0 = 不可用，handler 会明说"绑定不可用"，不编造帧数。
+void SetRoomGetFrameCountBinding(uintptr_t method);
+#if !defined(__SWITCH__)
+// 宿主注入钩子（设备构建里不存在）：设备侧这条走"校验 16 字节入口 + 调引擎函数"，
+// 宿主上没有引擎映像，所以用注入的实现替代。类型是"房间指针进、帧数出"。
+using RoomFrameCountHostFunction = std::int32_t (*)(const void* room);
+void SetRoomGetFrameCountHostFunction(RoomFrameCountHostFunction function) noexcept;
+[[nodiscard]] RoomFrameCountHostFunction GetRoomGetFrameCountHostFunction() noexcept;
+#endif
 // `Room:WorldToScreenPosition()` 用的引擎函数（PLT 桩）。宿主上由注入的实现替代。
 [[nodiscard]] uintptr_t GetRenderPositionThunk() noexcept;
 void SetGetRenderPositionBinding(uintptr_t method);

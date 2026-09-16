@@ -45,7 +45,7 @@ DEVIATIONS = ROOT / "runtime" / "src" / "interfaces" / "lua" / "api_deviation.cp
 #: （理由见 `api_deviation.cpp` 那一整段：网格实体随时销毁，而句柄只存实体地址、拿不到网格
 #: 下标，做不到"每次访问重新解析并校验"）。同批的 `ItemPool:IsPillIdentified`（`0x05010003`）
 #: 与 `RNG:GetSeed`（`0x07010003`）都是真读引擎字段/自身句柄，**不**记偏离。
-EXPECTED_DEVIATIONS = 22
+EXPECTED_DEVIATIONS = 23
 
 #: 允许的偏离种类（与 `ApiDeviationKind` 一致）。
 KINDS = {"Partial", "Placeholder", "NotInEngine"}

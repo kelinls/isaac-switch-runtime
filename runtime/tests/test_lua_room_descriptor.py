@@ -76,7 +76,13 @@ constexpr std::uint32_t kCurrentIndex = 84;
 constexpr std::uint32_t kCurrentDimension = 0;
 constexpr std::uint32_t kRooms[3] = {84, 97, 71};      // 起始房间 / 宝箱房 / 普通房
 constexpr std::uint32_t kTypes[3] = {1, 4, 1};         // ROOM_DEFAULT / ROOM_TREASURE / ROOM_DEFAULT
-constexpr std::uint32_t kClearFlag[3] = {1, 0, 0};     // 起始房间本来就没敌人（真机实测 = 1）
+// `+0x50` 现在按 PC 的 `RoomDescriptor.Flags`（32 位位掩码）读：`Clear` 只是它的**第 0 位**。
+//   * 槽 0（起始/当前房间）：`0x401` = bit0(FLAG_CLEAR) + bit10(FLAG_RED_ROOM) ⇒ `Clear` 真、`Flags` 1025；
+//   * 槽 1（宝箱房）：`0x8` = 只有 bit3(FLAG_CHALLENGE_DONE) ⇒ `Clear` **假**、`Flags` 8。
+//     这一条正是"语义收窄"的判别用例：旧实现按"非零即真"会把槽 1 也报成清房（会红）。
+constexpr std::uint32_t kClearFlag[3] = {0x401, 0x8, 0};
+// `Data + 0x5C` = `RoomConfigRoom.Shape`（PC `RoomShape` 枚举）。1 = 1x1、9 = LTL、8 = 2x2。
+constexpr std::uint32_t kShapes[3] = {1, 9, 8};
 constexpr std::uint32_t kVisited[3] = {2, 1, 1};
 constexpr std::uint32_t kArrayBase = 0x18;
 constexpr std::uint32_t kStride = 0x100;
@@ -103,7 +109,8 @@ void PublishFakeEngine() {
     g_GamePointerBytes.assign(sizeof(std::uint64_t), 0);
     // Level 对象要覆盖到描述符数组、当前索引/维度、以及元素个数所在的 +0x21510。
     g_LevelBytes.assign(0x21520, 0);
-    g_ConfigBytes.assign(0x20, 0);
+    // 每个房间配置块 0x60 字节（`Shape` 在 +0x5C、占 4 字节 ⇒ 块至少要 0x60），三块互不重叠。
+    g_ConfigBytes.assign(0x60 * 3, 0);
 
     // 两条取 Game 的路径都要自洽（真机上它们是同一个槽地址）：
     //   ① `*(模块 + 偏移)` → owner → `*(owner)` → Game（`ReadGameCurses` 那条链）
@@ -119,10 +126,11 @@ void PublishFakeEngine() {
         WriteAt<std::uint32_t>(g_LevelBytes, base + 0x00, kRooms[slot]);
         WriteAt<std::uint32_t>(g_LevelBytes, base + 0x04, kRooms[slot]);
         WriteAt<std::uint32_t>(g_LevelBytes, base + 0x08, static_cast<std::uint32_t>(slot));
-        WriteWord(g_LevelBytes, base + 0x10, AddressOf(g_ConfigBytes) + slot * 0x08);
+        WriteWord(g_LevelBytes, base + 0x10, AddressOf(g_ConfigBytes) + slot * 0x60);
         WriteAt<std::uint32_t>(g_LevelBytes, base + 0x4C, kVisited[slot]);
         WriteAt<std::uint32_t>(g_LevelBytes, base + 0x50, kClearFlag[slot]);
-        WriteAt<std::uint32_t>(g_ConfigBytes, slot * 0x08 + 0x08, kTypes[slot]);
+        WriteAt<std::uint32_t>(g_ConfigBytes, slot * 0x60 + 0x08, kTypes[slot]);
+        WriteAt<std::uint32_t>(g_ConfigBytes, slot * 0x60 + 0x5C, kShapes[slot]);
     }
     LuaRuntime::SetEngineModuleBase(AddressOf(g_ModuleBytes));
 }
@@ -150,7 +158,9 @@ int main(int argc, char** argv) {
             " print('LIST='..tostring(d.ListIndex))"
             " print('VISITED='..tostring(d.VisitedCount))"
             " print('CLEAR='..tostring(d.Clear))"
+            " print('FLAGS='..tostring(d.Flags))"
             " print('TYPE='..tostring(d.Data.Type))"
+            " print('SHAPE='..tostring(d.Data.Shape))"
             " end)";
     } else if (std::strcmp(scenario, "by_index") == 0) {
         script =
@@ -159,6 +169,8 @@ int main(int argc, char** argv) {
             " local level=Game():GetLevel()"
             " print('TREASURE='..tostring(level:GetRoomByIdx(97).Data.Type))"
             " print('CURRENT_CLEAR='..tostring(level:GetRoomByIdx(-1).Clear))"
+            " print('TREASURE_FLAGS='..tostring(level:GetRoomByIdx(97).Flags))"
+            " print('TREASURE_CLEAR='..tostring(level:GetRoomByIdx(97).Clear))"
             " print('MISSING='..tostring(level:GetRoomByIdx(999)))"
             " print('NEGATIVE='..tostring(level:GetRoomByIdx(-2)))"
             " end)";
@@ -219,7 +231,12 @@ class LuaRoomDescriptorTests(unittest.TestCase):
         """逐个字段钉住偏移 —— 防"整批偏移错位"这种界面上看不出异常的错。"""
         result = self.run_scenario("fields")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        for expected in ("GRID=84", "SAFE=84", "LIST=0", "VISITED=2", "CLEAR=true", "TYPE=1"):
+        # `FLAGS` / `SHAPE`（2026-09-16 新增）：
+        #   * `+0x50` 是 32 位位掩码 ⇒ fixture 写 `0x401`（bit0 + bit10）时 `Flags` 必须回 1025、
+        #     而 `Clear` 只看 bit0（所以仍是 true）；
+        #   * `Data+0x5C` 是 `Shape`（fixture 槽 0 = 1）。
+        for expected in ("GRID=84", "SAFE=84", "LIST=0", "VISITED=2", "CLEAR=true", "FLAGS=1025",
+                         "TYPE=1", "SHAPE=1"):
             with self.subTest(expected=expected):
                 self.assertIn(expected, result.stdout)
 
@@ -233,6 +250,10 @@ class LuaRoomDescriptorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("TREASURE=4", result.stdout)
         self.assertIn("CURRENT_CLEAR=true", result.stdout)
+        # 语义收窄的判别用例：宝箱房 flags 只有 bit3（0x8）⇒ `Flags` 回 8、`Clear` 必须**假**。
+        # 旧实现按"非零即真"会把这里报成 true（这条用例就是为它写的）。
+        self.assertIn("TREASURE_FLAGS=8", result.stdout)
+        self.assertIn("TREASURE_CLEAR=false", result.stdout)
         self.assertIn("MISSING=nil", result.stdout)
         self.assertIn("NEGATIVE=nil", result.stdout)
 

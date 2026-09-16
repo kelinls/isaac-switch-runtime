@@ -201,6 +201,13 @@ void SetEntityPlayerHasCollectibleHostImplementation(
 using CurrentLanguageCodeHostImplementation = const char* (*)();
 void SetCurrentLanguageCodeHostImplementation(
     CurrentLanguageCodeHostImplementation function) noexcept;
+
+// `ItemConfig_Item:IsAvailable()` 按"条目属于哪条向量"去调**三个不同的引擎函数**
+// （`Item` / `Card` / `PillEffect`）；宿主构建没有引擎映像，那三条 `bl` 由测试注入的实现顶替。
+// `kind` 明确告诉测试"会去调哪一个"：0 = Item（带 flags）、1 = Card、2 = PillEffect。
+using ItemConfigIsAvailableHostImplementation = bool (*)(int kind, void* entry, std::int64_t flags);
+void SetItemConfigIsAvailableHostImplementation(
+    ItemConfigIsAvailableHostImplementation function) noexcept;
 #endif
 
 // 全局 `Options` 表。EID 只读 `HUDOffset` 与 `Language` 两个字段，缺了它们 EID 一加载就报错。

@@ -87,6 +87,55 @@ bool ReadEngine(std::uintptr_t address, T* value) noexcept {
     return true;
 }
 
+// 引擎字段**写**原语（2026-09-16，与上面的读原语成对）。
+//
+// 为什么不能直接 `*reinterpret_cast<float*>(address) = value`：这里的地址来自**引擎对象**
+// （`ANM2`、`Entity_Player`），任何一次"猜错的地址"都会变成对别人的内存的破坏，而且是静默的。
+// 所以写之前必须确认"这一段内存**可写**"，判据与读侧同源但要**分开缓存**：
+// 可读（`Perm_R`）绝不等于可写（`Perm_W`）—— 模块映像的代码段与只读数据段就是可读而不可写，
+// 拿读缓存给写路径放行会直接触发 `Data Abort`。写缓存见
+// `interfaces/lua/engine_memory_guard.hpp` 的 `EngineGuardWritableRegionCache`。
+bool IsEngineMemoryWritable(std::uintptr_t address, std::size_t length) noexcept {
+    if (!EngineGuardRangeUsable(address, length)) {
+        return false;
+    }
+#if defined(__SWITCH__)
+    if (EngineGuardLookupWritable(address, length)) {
+        return true;
+    }
+    const std::uint64_t syscallStart = EngineGuardSyscallBegin();
+    MemoryInfo info{};
+    u32 pageInfo = 0;
+    const std::uint32_t result = svcQueryMemory(&info, &pageInfo, address);
+    EngineGuardSyscallEnd(syscallStart);
+    if (R_FAILED(result) || info.size == 0 || info.addr > UINTPTR_MAX - info.size) {
+        return false;
+    }
+    if (address < info.addr || address + length > info.addr + info.size ||
+        (info.perm & Perm_W) == 0) {
+        return false;
+    }
+    EngineGuardRememberWritable(info.addr, info.addr + info.size);
+    return true;
+#else
+    // 宿主构建没有 `svcQueryMemory`：宿主测试里的"引擎内存"是本进程申请出来的伪造块
+    // （`runtime/tests/test_lua_sprite_write_channel.py`），本来就可写。
+    return true;
+#endif
+}
+
+// 唯一的引擎写入口。`WriteEngine` 这个名字在门禁里是**保留字**：契约测试
+// `tests/contract/test_engine_write_channel.py` 要求 `runtime/src/interfaces/lua/` 下
+// 任何"往引擎地址写"的地方都走这里，不许出现裸指针赋值或裸 `memcpy`。
+template <typename T>
+bool WriteEngine(std::uintptr_t address, const T& value) noexcept {
+    if (!IsEngineMemoryWritable(address, sizeof(T))) {
+        return false;
+    }
+    std::memcpy(reinterpret_cast<void*>(address), &value, sizeof(T));
+    return true;
+}
+
 // --- 所有权与来源（批次 5）-----------------------------------------------------
 //
 // `SpriteHandle` 有两种来源，释放语义相反（详见 `lua_object_handles.hpp` 的注释）：
@@ -259,12 +308,20 @@ VectorHandle* CheckVector(lua_State* state, int index) {
 // 在 `EID:renderIcon` 里，`main.lua:946`/`982` 的 `sprite.FlipX` 在 `EID:renderIndicator` 里），
 // 所以这一条不做，第一次画字/画图必然报错。
 //
-// **只缓存、不回写引擎**：这三个属性在 `ANM2` 里的偏移没有证据 —— `ANM2::Render`
-// （`0x9BD4`）只会把 `[this+0x30]`/`[this+0x60]` 两个指针当第 6 个参数传给
-// `AnimationLayer::RenderFrame`，而 `AnimationState::RenderLayer`（`0x9B8C`）证明那个参数是
-// `AnimationState*`/`AnimationData*` 一类的内部对象，不是 `Color`/`Scale`/`FlipX` 的落点。
-// 拿一个猜出来的偏移往对象里写，与"写引擎内存"是同一类风险（对象虽然是我们分配的，
-// 写坏它的后果一样是踩内存），所以本批次按验收口径停在"值留在句柄里、绘制路径读得到"。
+// **2026-09-16 起：真的写进引擎对象**（此前只缓存）。
+//
+// 三个属性在 `ANM2` 里的落点是**取证定位**的，不是猜的 —— 证据链写在
+// `runtime_constants.hpp` 的 `kSpriteScaleOffset` / `kSpriteColorOffset` / `kSpriteFlipXOffset`
+// 上方（两条互不相同的证据：`ANM2::Reset` 写默认值、`ANM2::AnimationLayer::GetDestQuad`
+// 在渲染时怎么读它们），以及 `ColorMod` 自身布局的三条（`Reset` / `SetTint` / `operator*=`）。
+// 写入一律经 `WriteEngine<T>`（先确认该页可写再写），拿不到可写权限就**什么都不做**并记一次
+// 拒绝计数 —— 猜地址写内存是这一类代码唯一不可接受的失败方式。
+//
+// 写入内容与 PC 的对应关系：
+//   * `Scale` → `ANM2+0xDC` 的两个 float（`X@0xDC`、`Y@0xE0`）；
+//   * `Color` → `ANM2+0xE8` 的 `ColorMod` 头 4 个 float（tint 的 R/G/B/A）加 `+0x10..+0x18`
+//     的偏移量三元组（`Color` 的第 5/6/7 个分量）；
+//   * `FlipX` → `ANM2+0x140` 的一个字节（0/1）。
 //
 // 允许的字段就是 PC 的这三个（大小写与 PC 一致）；其它字段名报错，避免把"拼错的属性名"
 // 静默吞掉（与 `Vector`/`KColor` 的 `__newindex` 同一口径）。
@@ -287,21 +344,46 @@ bool ReadVectorPair(lua_State* state, int index, float* x, float* y) {
 SpritePropertyApplyHostImplementation g_PropertyApplyHostImplementation = nullptr;
 #endif
 
-// 把句柄里缓存的三个属性交给"应用到原生对象"这一步。绘制路径（`Render`/`RenderLayer`）
-// 在调用引擎之前无条件调用它，所以"渲染确实读到了 Mod 写的值"是可验证的。
+// 把句柄里缓存的三个属性写进原生 `ANM2`。绘制路径（`Render`/`RenderLayer`）在调用引擎之前
+// 无条件调用它，所以"渲染确实读到了 Mod 写的值"在设备上是由引擎自己保证的（`GetDestQuad`
+// 直接读这些格子），在宿主上由 `runtime/tests/test_lua_sprite_write_channel.py` 断言字节变化。
+//
+// 只写"Mod 确实赋过值"的那些属性（`hasScale`/`hasColor`/`hasFlipX`）：没赋过值就不该动引擎
+// 原有的值 —— 这正是 PC 的语义（PC 的 `Sprite` 是引擎对象本身，Mod 没写就没变）。
+//
+// 写入失败（该页不可写、地址算错）不抛 Lua 错误：绘制路径上抛错会打断整条回调，而"颜色没
+// 画出来"比"描述整段消失"轻。失败只记一次拒绝计数（探针构建里可读）。
 void ApplyCachedSpriteProperties(void* sprite, const SpriteHandle* handle) noexcept {
     if (sprite == nullptr || handle == nullptr) {
         return;
     }
-#if defined(__SWITCH__)
-    // 设备侧：见上面的注释 —— 还没有 ANM2 属性偏移，所以这一步是空操作（绝不猜偏移写内存）。
-    static_cast<void>(handle);
-#else
+#if !defined(__SWITCH__)
+    // 宿主注入点：既有测试（`runtime/tests/test_lua_api_gap_batch3.py`）用它观察"渲染路径确实
+    // 读到了句柄里的值"。它只做观察，真正落盘的是下面的 `WriteEngine`，两边都跑。
     const SpritePropertyApplyHostImplementation apply = g_PropertyApplyHostImplementation;
     if (apply != nullptr) {
         apply(sprite, handle);
     }
 #endif
+    const std::uintptr_t base = reinterpret_cast<std::uintptr_t>(sprite);
+    if (handle->hasScale != 0) {
+        static_cast<void>(WriteEngine<float>(base + kSpriteScaleOffset, handle->scaleX));
+        static_cast<void>(WriteEngine<float>(base + kSpriteScaleOffset + sizeof(float), handle->scaleY));
+    }
+    if (handle->hasColor != 0) {
+        const std::uintptr_t tint = base + kSpriteColorOffset + kColorModTintOffset;
+        static_cast<void>(WriteEngine<float>(tint, handle->colorRed));
+        static_cast<void>(WriteEngine<float>(tint + sizeof(float), handle->colorGreen));
+        static_cast<void>(WriteEngine<float>(tint + 2 * sizeof(float), handle->colorBlue));
+        static_cast<void>(WriteEngine<float>(tint + 3 * sizeof(float), handle->colorAlpha));
+        const std::uintptr_t shift = base + kSpriteColorOffset + kColorModShiftOffset;
+        static_cast<void>(WriteEngine<float>(shift, handle->colorOffsetRed));
+        static_cast<void>(WriteEngine<float>(shift + sizeof(float), handle->colorOffsetGreen));
+        static_cast<void>(WriteEngine<float>(shift + 2 * sizeof(float), handle->colorOffsetBlue));
+    }
+    if (handle->hasFlipX != 0) {
+        static_cast<void>(WriteEngine<std::uint8_t>(base + kSpriteFlipXOffset, handle->flipX));
+    }
 }
 
 // 把缓存的 `Scale` 压成一张 `{X, Y}` 表？不：PC 的 `Sprite.Scale` 读出来就是 `Vector`，
@@ -321,10 +403,10 @@ void PushCachedColor(lua_State* state, const SpriteHandle* handle) {
     color->green = handle->colorGreen;
     color->blue = handle->colorBlue;
     color->alpha = handle->colorAlpha;
-    // 颜色偏移不在 `Sprite.Color` 的缓存里（见 `SpriteNewIndex`：它只取 RGBA），整块初始化干净。
-    color->offsetRed = 0.0F;
-    color->offsetGreen = 0.0F;
-    color->offsetBlue = 0.0F;
+    // 颜色偏移随 tint 一起缓存（2026-09-16 起），读回来就是 Mod 写进去的那一份。
+    color->offsetRed = handle->colorOffsetRed;
+    color->offsetGreen = handle->colorOffsetGreen;
+    color->offsetBlue = handle->colorOffsetBlue;
     luaL_getmetatable(state, kColorMetatable);
     lua_setmetatable(state, -2);
 }
@@ -1188,6 +1270,9 @@ int SpriteNewIndex(lua_State* state) {
         handle->colorGreen = color->green;
         handle->colorBlue = color->blue;
         handle->colorAlpha = color->alpha;
+        handle->colorOffsetRed = color->offsetRed;
+        handle->colorOffsetGreen = color->offsetGreen;
+        handle->colorOffsetBlue = color->offsetBlue;
         handle->hasColor = 1;
         return 0;
     }

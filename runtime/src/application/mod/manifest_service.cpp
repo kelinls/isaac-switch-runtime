@@ -45,6 +45,10 @@ Status MapParseFailure(ManifestParseFailure failure) noexcept {
             return Status{StatusCode::InvalidArgument};
         case ManifestParseFailure::NoEnabledMod:
             return Status{StatusCode::NotFound};
+        case ManifestParseFailure::TooManyMods:
+            // 清单合法、只是条数超过本运行时的上限 ⇒ 与"字节坏了"分开报（`Corrupted` 会把人
+            // 引到清单格式上去查）。
+            return Status{StatusCode::CapacityExceeded};
         case ManifestParseFailure::InvalidJson:
         case ManifestParseFailure::InvalidSchema:
         case ManifestParseFailure::InvalidMod:
@@ -123,6 +127,79 @@ Result<ResolvedManifestMod> ManifestService::Resolve(
     resolved.manifestBytes = manifestBytes;
     resolved.hasEntry = hasEntry;
     return resolved;
+}
+
+Status ManifestService::ResolveAll(std::uint8_t* manifestBuffer, std::size_t manifestCapacity,
+                                   ResolvedManifestModBatch* batch,
+                                   ModLoadFailure* failure) const noexcept {
+    if (failure != nullptr) {
+        *failure = ModLoadFailure{};
+    }
+    if (manifestBuffer == nullptr || manifestCapacity == 0 || batch == nullptr) {
+        RecordFailure(failure, ModLoadStep::Request,
+                      static_cast<std::uint32_t>(StatusCode::InvalidArgument));
+        return Status{StatusCode::InvalidArgument};
+    }
+
+    std::size_t manifestBytes = 0;
+    const Status read = content_.Read(kRomfsModManifestPath, manifestBuffer,
+                                      manifestCapacity, &manifestBytes);
+    if (!read.ok()) {
+        RecordFailure(failure, ModLoadStep::ManifestRead,
+                      static_cast<std::uint32_t>(read.code()));
+        return read;
+    }
+    if (manifestBytes == 0) {
+        RecordFailure(failure, ModLoadStep::ManifestRead,
+                      static_cast<std::uint32_t>(StatusCode::Corrupted));
+        return Status{StatusCode::Corrupted};
+    }
+
+    const ManifestParseAllOutcome parsed =
+        parser_.ParseAll(reinterpret_cast<const char*>(manifestBuffer), manifestBytes);
+    if (parsed.failure != ManifestParseFailure::None) {
+        const Status status = MapParseFailure(parsed.failure);
+        RecordFailure(failure, ModLoadStep::ManifestParse,
+                      static_cast<std::uint32_t>(status.code()));
+        return status;
+    }
+
+    // 逐条拼路径：一条失败就整批失败（半个批次更危险 —— 调用方会以为其余 Mod 是"加载成功但没内容"）。
+    for (std::size_t index = 0; index < parsed.manifest.count; ++index) {
+        const ModManifestEntry& entry = parsed.manifest.entries[index];
+        ModPathBuffers& buffers = batch->paths[index];
+        if (!JoinPath(buffers.modRoot.data(), buffers.modRoot.size(), kModRootPrefix,
+                      entry.directory.data())) {
+            RecordFailure(failure, ModLoadStep::PathBuild,
+                          static_cast<std::uint32_t>(StatusCode::CapacityExceeded));
+            batch->count = 0;
+            return Status{StatusCode::CapacityExceeded};
+        }
+        const bool hasEntry = entry.entry[0] != '\0';
+        if (hasEntry) {
+            if (!JoinPath(buffers.entryPath.data(), buffers.entryPath.size(), kManifestRootPrefix,
+                          entry.entry.data()) ||
+                !JoinPath(buffers.chunkName.data(), buffers.chunkName.size(), kChunkRootPrefix,
+                          entry.entry.data())) {
+                RecordFailure(failure, ModLoadStep::PathBuild,
+                              static_cast<std::uint32_t>(StatusCode::CapacityExceeded));
+                batch->count = 0;
+                return Status{StatusCode::CapacityExceeded};
+            }
+        } else {
+            buffers.entryPath[0] = '\0';
+            buffers.chunkName[0] = '\0';
+        }
+        ResolvedManifestMod& resolved = batch->mods[index];
+        resolved.entryPath = buffers.entryPath.data();
+        resolved.modRoot = buffers.modRoot.data();
+        resolved.chunkName = buffers.chunkName.data();
+        resolved.manifestBytes = manifestBytes;
+        resolved.hasEntry = hasEntry;
+    }
+    batch->count = parsed.manifest.count;
+    batch->manifestBytes = manifestBytes;
+    return Status{StatusCode::Ok};
 }
 
 } // namespace isaac::runtime

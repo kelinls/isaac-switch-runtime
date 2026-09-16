@@ -1,0 +1,129 @@
+{
+ "schema": "isaac-probe-spec/1",
+ "batch": "fields2-20260916",
+ "tag": "fx",
+ "note": "字段缺口第二批的两通道验收：ItemConfig::Item 上的 Quality / CraftingQuality / AchievementID / Tags / MaxCharges / ChargeType。A 通道 = EID 侧探针脚本报出来的值；B 通道 = 从游戏模块的 g_Manager 槽(0xAAC648) → Manager+0x36538(ItemConfig) → 收藏品向量 → 第 N 个条目 独立读出来的值。",
+ "anchors": [
+  "identity",
+  "exl_main",
+  "manifest_install"
+ ],
+ "chains": {
+  "item1": {
+   "label": "ItemConfig::Item[1]（收藏品 1）",
+   "steps": [
+    [
+     "game_slot_ptr",
+     "0xAAC648"
+    ],
+    [
+     "deref_ptr"
+    ],
+    [
+     "add",
+     "0x36538"
+    ],
+    [
+     "load_ptr",
+     "0x0"
+    ],
+    [
+     "vector_elem",
+     1
+    ]
+   ],
+   "dump_bytes": 320
+  },
+  "item118": {
+   "label": "ItemConfig::Item[118]（Brimstone）",
+   "steps": [
+    [
+     "game_slot_ptr",
+     "0xAAC648"
+    ],
+    [
+     "deref_ptr"
+    ],
+    [
+     "add",
+     "0x36538"
+    ],
+    [
+     "load_ptr",
+     "0x0"
+    ],
+    [
+     "vector_elem",
+     118
+    ]
+   ],
+   "dump_bytes": 320
+  }
+ },
+ "targets": [
+  {
+   "name": "Quality",
+   "chain": "item1",
+   "offset": "0xC8",
+   "width": 4,
+   "signed": false,
+   "lua_key": "1q"
+  },
+  {
+   "name": "CraftingQuality",
+   "chain": "item1",
+   "offset": "0xCC",
+   "width": 4,
+   "signed": false,
+   "lua_key": "1cq"
+  },
+  {
+   "name": "AchievementID",
+   "chain": "item1",
+   "offset": "0x50",
+   "width": 4,
+   "signed": true,
+   "lua_key": "1aid"
+  },
+  {
+   "name": "Tags",
+   "chain": "item1",
+   "offset": "0x58",
+   "width": 4,
+   "signed": false,
+   "lua_key": "1tags"
+  },
+  {
+   "name": "MaxCharges",
+   "chain": "item1",
+   "offset": "0x74",
+   "width": 4,
+   "signed": true,
+   "lua_key": "1mc"
+  },
+  {
+   "name": "ChargeType",
+   "chain": "item1",
+   "offset": "0xB0",
+   "width": 4,
+   "signed": true,
+   "lua_key": "1ct"
+  },
+  {
+   "name": "Quality118",
+   "chain": "item118",
+   "offset": "0xC8",
+   "width": 4,
+   "signed": false,
+   "lua_key": "2q"
+  },
+  {
+   "name": "ChargeType118",
+   "chain": "item118",
+   "offset": "0xB0",
+   "width": 4,
+   "signed": true,
+   "lua_key": "2ct"
+  }
+ ]
+}

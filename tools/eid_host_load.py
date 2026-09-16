@@ -473,9 +473,10 @@ void PublishInertEngineBindings() {
 // 用合成脚本驱动，不碰夹具：两个回调登记在同一个 Mod 上、第三个登记在另一个 Mod 上，
 // 派发两帧后读三个计数全局 —— 同一个 Mod 的两个都必须各自涨到 2。
 int RunCallbackProbe() {
-    // 只登记一个 Mod：本 Runtime 每个 Lua state 只支持一个 Mod（第二次 `RegisterMod`
-    // 会报 "RegisterMod accepts exactly one Mod"），所以"不同 Mod 各注册一条"在宿主机上
-    // 无法表达；同一 Mod 的两条同 id 登记才是要验证的那条契约。
+    // 只登记一个 Mod：这条探针要验证的是"**同一 Mod** 对同一 id 登记多条、派发时全部调用"。
+    // （2026-09-16 多模组加载之后，同一状态里登记多个 Mod 已经合法了 —— 见
+    // `runtime/tests/test_multi_mod_load.py`；这里保持单 Mod 是因为那个契约与本探针无关，
+    // 加进来只会让失败原因变多。）
     static constexpr char kProbeScript[] = R"lua(
 local probe = RegisterMod('Probe', 1)
 probe:AddCallback(ModCallbacks.MC_POST_UPDATE, function() PROBE_A = (PROBE_A or 0) + 1 end)

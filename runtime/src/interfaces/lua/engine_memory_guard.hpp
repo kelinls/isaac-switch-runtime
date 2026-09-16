@@ -135,6 +135,20 @@ inline EngineReadableRegionCache& EngineGuardRegionCache() noexcept {
     return cache;
 }
 
+// **写**这一侧的区间缓存（2026-09-16 新增）。
+//
+// 为什么要单独一份、而不复用读缓存：两者回答的是不同的问题。"这一页可读"（`Perm_R`）与
+// "这一页可写"（`Perm_W`）在真实映射里不是同一件事 —— 模块映像的代码段与只读数据段就是
+// 可读不可写。若把读到的可读区间拿来给写路径放行，`Sprite.Scale = 2` 这类赋值就会去写只读页，
+// 真机表现为 `Data Abort`。所以两份缓存各记各的，绝不互相查询。
+//
+// 类型沿用 `EngineReadableRegionCache`（它就是"区间表 + 自旋锁"），只是实例不同；
+// 类型名里的 Readable 是历史命名，不值得为它再引入一个逐字相同的新类型。
+inline EngineReadableRegionCache& EngineGuardWritableRegionCache() noexcept {
+    static EngineReadableRegionCache cache;
+    return cache;
+}
+
 // 派发作用域标志：只有派发期间才允许用缓存。
 //
 // 与缓存同因：写侧是游戏线程，读侧可能来自宿主插件的线程，普通 `bool` 会构成数据竞争。
@@ -159,16 +173,19 @@ inline void EngineGuardSetCacheEnabled(bool enabled) noexcept {
     EngineGuardCacheEnabledFlag().store(enabled ? 1U : 0U, std::memory_order_release);
     // 切换一定要丢掉旧条目：否则"关掉缓存"的那一相还会命中上一相留下的区间。
     EngineGuardRegionCache().Clear();
+    EngineGuardWritableRegionCache().Clear();
 }
 
 inline void EngineGuardEnterDispatch() noexcept {
     EngineGuardRegionCache().Clear();
+    EngineGuardWritableRegionCache().Clear();
     EngineGuardDispatchActive().store(1U, std::memory_order_release);
 }
 
 inline void EngineGuardLeaveDispatch() noexcept {
     EngineGuardDispatchActive().store(0U, std::memory_order_release);
     EngineGuardRegionCache().Clear();
+    EngineGuardWritableRegionCache().Clear();
 }
 
 // 调用点（设备侧）用法：
@@ -281,6 +298,26 @@ inline bool EngineGuardLookupCached(std::uintptr_t address, std::size_t length) 
 inline void EngineGuardRememberReadable(std::uintptr_t begin, std::uintptr_t end) noexcept {
     if (EngineGuardDispatchActive().load(std::memory_order_acquire) != 0 && EngineGuardCacheEnabled()) {
         EngineGuardRegionCache().Insert(begin, end);
+    }
+}
+
+// 写侧的两个入口与读侧逐条对应，只是查的是另一份缓存。
+//
+// 调用点（设备侧）用法：
+//
+//     if (!EngineGuardRangeUsable(address, length)) return false;
+//     if (EngineGuardLookupWritable(address, length)) { 直接写 }
+//     ... svcQueryMemory ...
+//     ... 判定 Perm_W 通过后 ...
+//     EngineGuardRememberWritable(info.addr, info.addr + info.size);
+inline bool EngineGuardLookupWritable(std::uintptr_t address, std::size_t length) noexcept {
+    return EngineGuardDispatchActive().load(std::memory_order_acquire) != 0 && EngineGuardCacheEnabled() &&
+           EngineGuardWritableRegionCache().Covers(address, length);
+}
+
+inline void EngineGuardRememberWritable(std::uintptr_t begin, std::uintptr_t end) noexcept {
+    if (EngineGuardDispatchActive().load(std::memory_order_acquire) != 0 && EngineGuardCacheEnabled()) {
+        EngineGuardWritableRegionCache().Insert(begin, end);
     }
 }
 

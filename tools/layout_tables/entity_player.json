@@ -1,0 +1,196 @@
+{
+  "schema": "isaac-layout-table/1",
+  "build_id": "91C73FDD575061318D68886316AFEAC72388B2AB",
+  "struct": "Entity_Player",
+  "source_table": "entity_player",
+  "note": [
+    "这张表登记 `Entity_Player` 的属性字段（PC 的 `EntityPlayer` 那几个最常用的）：每行的证据都是",
+    "『函数符号 + 该函数内一条指令地址 + 偏移/宽度 + 语义』，`--verify` 会重新反汇编核对。",
+    "",
+    "★ 与本项目既有记录的两处对齐：",
+    "  1. 同一批字段在 `runtime_constants.hpp` 里原先只有注释；本表把它们变成机器可复核的行。",
+    "  2. 条目的证据形态以**字面立即数**为主（`ldr s0, [x20, #0x1844]` ⇒ 偏移整值可核）；",
+    "     `CanFly` 一行是例外：编译器把 0x1954 先装进寄存器（`mov w8, #0x1954`）再 `ldrb w8, [x19, x8]`，",
+    "     访存指令里没有字面偏移，所以那一行的证据只能核 `mov` 上的立即数 —— `why` 里写明了真正的访存指令在哪一条。",
+    "",
+    "confidence 口径：confirmed 必须有一条**取值锚点**（本表里的四个属性都是『`Entity_Player::Init` 写进去的默认值』：",
+    "伤害 3.5f、速度 1.0f、射击延迟 10.0f、射程 260.0f；`ControlsCooldown` 是麻痹药丸分支写进去的 240/120 帧；",
+    "`CanFly` 是『读它之后决定 `Entity+0x1E0` 的层号』），拿不出取值锚点的行只能标 candidate。",
+    "",
+    "复核命令：`python3 tools/build_layout_table.py --table tools/layout_tables/entity_player.json --verify`。"
+  ],
+  "rows": [
+    {
+      "name": "Damage",
+      "kind": "float",
+      "offset": 6212,
+      "width": 4,
+      "confidence": "confirmed",
+      "semantic": "眼泪伤害（PC 的 `EntityPlayer.Damage`，float）。取值锚点：`Entity_Player::Init` 把 `0x40600000`(3.5f，Isaac 的基础伤害) 写进这一格",
+      "evidence": [
+        {
+          "kind": "access",
+          "function": "_ZN15IsaacRepentance13Entity_Player16GetTearHitParamsENS_11eWeaponTypeEfiPNS_6EntityE",
+          "address": "0x002ad6d4",
+          "offset": 6212,
+          "width": 4,
+          "why": "`ldr s0, [x20, #0x1844]` → 乘倍率后写进 `TearParams::Damage`（0x2AD6DC `str s0, [x26, #0x48]!`）⇒ 这一格是『参与伤害计算的基数』"
+        },
+        {
+          "kind": "semantic",
+          "function": "_ZN15IsaacRepentance13Entity_Player4InitENS_11eEntityTypeEjjj",
+          "address": "0x00279664",
+          "immediate": 1080033280,
+          "why": "`mov x9, #0x40600000`（低 32 位就是 3.5f；`movk x9, #0xc1be, lsl #48` 补的高 32 位是同批写的相邻字段）→ 0x279670 `str x9, [x19, x8]`，其中 x8 = 0x1844（见 0x279668 `mov w8, #0x1844`）⇒ 默认伤害 3.5"
+        }
+      ]
+    },
+    {
+      "name": "MaxFireDelay",
+      "kind": "float",
+      "offset": 6196,
+      "width": 4,
+      "confidence": "confirmed",
+      "semantic": "射击延迟（PC 的 `EntityPlayer.MaxFireDelay`）。⚠️ **Switch 侧是 float**，PC AB+ 文档写 int —— 按 float 读。取值锚点：`Entity_Player::Init` 写默认 10.0f",
+      "evidence": [
+        {
+          "kind": "access",
+          "function": "_ZN15IsaacRepentance13Entity_Player16control_shootingEv",
+          "address": "0x002b4150",
+          "offset": 6196,
+          "width": 4,
+          "why": "`ldr w9, [x19, #0x1834]` → `str w9, [x8, #0x1c]` 抄进每个武器（同一段重复 5 次，对应 +0x1758/1760/1768/1770/1778 五个武器槽）⇒ 它是每帧被武器读取的射击延迟"
+        },
+        {
+          "kind": "semantic",
+          "function": "_ZN15IsaacRepentance13Entity_Player4InitENS_11eEntityTypeEjjj",
+          "address": "0x0027962c",
+          "immediate": 1092616192,
+          "why": "`mov x9, #0x41200000`(10.0f)（`movk x9, #0x3f80, lsl #48` 补的高 32 位 1.0f 是相邻的 `+0x1838`）→ 0x279660 `str x9, [x19, x8]`，x8 = 0x1834（见 0x27964c）⇒ 默认射击延迟 10.0"
+        }
+      ]
+    },
+    {
+      "name": "TearRange",
+      "kind": "float",
+      "offset": 6228,
+      "width": 4,
+      "confidence": "confirmed",
+      "semantic": "眼泪射程（PC 的 `EntityPlayer.TearRange`，float，原始射程单位）。取值锚点：`Entity_Player::Init` 写默认 260.0f（= 6.5 × 40）",
+      "evidence": [
+        {
+          "kind": "access",
+          "function": "_ZN15IsaacRepentance13Entity_Player8FireTearERKN4KAGE4Math7Vector2ES3_jPNS_6EntityEf",
+          "address": "0x002a9ba8",
+          "offset": 6228,
+          "width": 4,
+          "why": "`ldr w8, [x19, #0x1854]` → 写进新生成子弹的射程字段 ⇒ 它是『子弹能飞多远』的输入"
+        },
+        {
+          "kind": "access",
+          "function": "_ZN15IsaacRepentance13Entity_Player4InitENS_11eEntityTypeEjjj",
+          "address": "0x002796bc",
+          "offset": 6228,
+          "width": 4,
+          "why": "`str w8, [x19, #0x1854]` —— 访问指令里就带字面偏移"
+        },
+        {
+          "kind": "semantic",
+          "function": "_ZN15IsaacRepentance13Entity_Player4InitENS_11eEntityTypeEjjj",
+          "address": "0x002796b8",
+          "immediate": 1132593152,
+          "why": "上一条 `mov w8, #0x43820000` 就是 260.0f（Isaac 的基础射程）⇒ 默认射程 260"
+        }
+      ]
+    },
+    {
+      "name": "MoveSpeed",
+      "kind": "float",
+      "offset": 6476,
+      "width": 4,
+      "confidence": "confirmed",
+      "semantic": "移动速度（PC 的 `EntityPlayer.MoveSpeed`，float）。取值锚点：`Entity_Player::Init` 写默认 1.0f",
+      "evidence": [
+        {
+          "kind": "access",
+          "function": "_ZN15IsaacRepentance13Entity_Player16control_movementEv",
+          "address": "0x002b1748",
+          "offset": 6476,
+          "width": 4,
+          "why": "`ldr s0, [x19, #0x194c]` → `fmul`/`fadd` 参与每帧位移（同函数内另有两处同址读取）"
+        },
+        {
+          "kind": "semantic",
+          "function": "_ZN15IsaacRepentance13Entity_Player4InitENS_11eEntityTypeEjjj",
+          "address": "0x0027969c",
+          "immediate": 1065353216,
+          "why": "`mov w9, #0x3f800000`(1.0f) → 0x2796a0 `str x9, [x19, x8]`，x8 = 0x194c（见 0x279698）⇒ 基础速度 1.0"
+        }
+      ]
+    },
+    {
+      "name": "CanFly",
+      "kind": "bool",
+      "offset": 6484,
+      "width": 1,
+      "confidence": "confirmed",
+      "semantic": "能否飞（PC 的 `EntityPlayer.CanFly`，**1 字节** bool）。⚠️ 只改这一格不会立刻改变碰撞层：决定能否飞过石头/坑的是 `Entity+0x1E0`（见 `entity.json` 的 `FlyingLayer`），它由引擎在缓存重算时按本字段同步 —— PC 侧同样要求只在 `MC_EVALUATE_CACHE` 里改",
+      "evidence": [
+        {
+          "kind": "semantic",
+          "function": "_ZNK15IsaacRepentance13Entity_Player15GetFlyingOffsetEv",
+          "address": "0x002bba20",
+          "immediate": 6484,
+          "why": "★ 证据形态是『寄存器合成』：`mov w8, #0x1954` 把偏移装进寄存器，**真正的访存是紧随其后的 0x2BBA24 `ldrb w8, [x19, x8]`**（该指令里没有字面立即数，工具核不到它，所以这里引的是准备寄存器那一条）。判据随后是 `cbz`，置位时函数返回 `Vector2(0, -4)` 的飞行视觉偏移（0x2BBA30 `fmov s1, #-4.00000000`）"
+        },
+        {
+          "kind": "semantic",
+          "function": "_ZN15IsaacRepentance13Entity_Player11AddMinisaacERKN4KAGE4Math7Vector2Eb",
+          "address": "0x002ac3e4",
+          "immediate": 6484,
+          "why": "同一形态的第二处：`mov w8, #0x1954` → 0x2AC3E8 `ldrb w8, [x19, x8]`"
+        },
+        {
+          "kind": "semantic",
+          "function": "_ZN15IsaacRepentance13Entity_Player11AddMinisaacERKN4KAGE4Math7Vector2Eb",
+          "address": "0x002ac3f0",
+          "immediate": 5,
+          "why": "★ 语义锚点：读到的字节 `cmp w8, #0x0` 之后 `csel` 出 `5`（或另一层号），**写进 `Entity+0x1E0`**（0x2AC3F8 `str w8, [x20, #0x1e0]`，即 `entity.json` 已证明的飞行层）⇒ 这一格就是『能否飞』"
+        }
+      ]
+    },
+    {
+      "name": "ControlsCooldown",
+      "kind": "int32",
+      "offset": 1028,
+      "width": 4,
+      "confidence": "confirmed",
+      "semantic": "按键冷却（PC 的 `EntityPlayer.ControlsCooldown`，**有符号 int32**；EID 会**写**它来抑制按键连发）。取值锚点：麻痹药丸分支把它设成 240 或 120 帧。⚠️ `+0x408` 是**另一个**字段（`SetShootingCooldown`，取 max），不是本行",
+      "evidence": [
+        {
+          "kind": "access",
+          "function": "_ZN15IsaacRepentance13Entity_Player16control_shootingEv",
+          "address": "0x002b265c",
+          "offset": 1028,
+          "width": 4,
+          "why": "`ldr w10, [x19, #0x404]` + `cmp #0` + `b.le` ⇒ 值 > 0 时不让射击（这就是『控制冷却』的用法）"
+        },
+        {
+          "kind": "access",
+          "function": "_ZN15IsaacRepentance13Entity_Player7UsePillENS_11ePillEffectENS_10ePillColorEj",
+          "address": "0x002e1c3c",
+          "offset": 1028,
+          "width": 4,
+          "why": "麻痹药丸分支 `str w8, [x20, #0x404]`：写入的是上面 `csel` 出来的帧数"
+        },
+        {
+          "kind": "semantic",
+          "function": "_ZN15IsaacRepentance13Entity_Player7UsePillENS_11ePillEffectENS_10ePillColorEj",
+          "address": "0x002e1c2c",
+          "immediate": 240,
+          "why": "`mov w8, #0xf0`(240) 与紧随的 0x2E1C30 `mov w9, #0x78`(120) 经 0x2E1C34 `csel` 二选一写进本字段 ⇒ 冷却按 240/120 **帧**计，是个帧计数"
+        }
+      ]
+    }
+  ]
+}

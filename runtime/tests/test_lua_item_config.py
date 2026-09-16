@@ -177,14 +177,86 @@ std::uintptr_t ItemAddress(std::size_t slot) {
 }
 
 void CreateBlocks() {
-    // 0x60 而不是 0x40：`GfxFileName` 在 `+0x38`，24 字节的 libc++ 串要占到 `+0x4F`。
-    g_ItemBlocks.assign(kItemSlotCount, std::vector<unsigned char>(0x60, 0));
+    // 0xD8 而不是 0x40：`GfxFileName` 在 `+0x38`（24 字节的 libc++ 串占到 `+0x4F`），
+    // 2026-09-16 起的 `Quality`(`+0xC8`) / `CraftingQuality`(`+0xCC`) 两个 32 位整数要占到 `+0xCF`，
+    // 后面还要留出 `+0xD0` 那个诱饵。
+    g_ItemBlocks.assign(kItemSlotCount, std::vector<unsigned char>(0xD8, 0));
     g_ManagerBytes.assign(kManagerItemConfigOffset + 0xA0, 0);
     g_ManagerSlotBytes.assign(sizeof(std::uint64_t), 0);
     // 模块块只需要覆盖 `g_Manager` 的槽（`Isaac.GetItemConfig` 用不到 `g_Game`，但玩家链在同一
     // 块里，测试保留同样的口径：越界的槽读不到就是"拿不到"）。
     g_ModuleBytes.assign(kGameManagerGlobalSlotOffset + sizeof(std::uint64_t), 0);
     g_EngineBase = AddressOf(g_ModuleBytes);
+    // `IsAvailable` 一族的三条引擎函数入口指纹：设备上由真实代码提供，夹具里手工摆上
+    // —— 于是"入口核对通过 ⇒ 真的去调那一条"这条路上宿主也能验证；反例（指纹不对就不调）
+    // 见 `test_is_available_refuses_to_call_when_the_entry_word_is_wrong`。
+    WriteAt<std::uint32_t>(g_ModuleBytes, kItemConfigItemIsAvailableOffset,
+                           kItemConfigItemIsAvailableEntryWord);
+    WriteAt<std::uint32_t>(g_ModuleBytes, kItemConfigCardIsAvailableOffset,
+                           kItemConfigCardIsAvailableEntryWord);
+    WriteAt<std::uint32_t>(g_ModuleBytes, kItemConfigPillEffectIsAvailableOffset,
+                           kItemConfigPillEffectIsAvailableEntryWord);
+}
+
+// `Quality`(`+0xC8`) / `CraftingQuality`(`+0xCC`) 的夹具写入。
+//
+// ★ 这里**故意写死字面偏移**（0xC8/0xCC），不用 `kItemConfigItemQualityOffset` 常量：
+//   夹具和实现共用同一个常量时，常量写错两边会一起错 ⇒ 断言永远绿（实测过：把常量改成
+//   诱饵位 0xC4，夹具跟着把值写到 0xC4，测试照样通过）。夹具的职责是**钉住 ABI 本身**。
+// ★ 同时在 `+0xC4` / `+0xD0` 放诱饵：读错一格就会读到诱饵，断言必然失败。
+void SetItemQuality(std::size_t slot, std::uint32_t quality, std::uint32_t craftingQuality) {
+    auto& block = g_ItemBlocks[slot];
+    WriteAt<std::uint32_t>(block, 0xC4, 0x7F7F7F7Fu);                 // 诱饵：Quality 前一格
+    WriteAt<std::uint32_t>(block, 0xC8, quality);
+    WriteAt<std::uint32_t>(block, 0xCC, craftingQuality);
+    WriteAt<std::uint32_t>(block, 0xD0, 0x7E7E7E7Eu);                 // 诱饵：CraftingQuality 后一格
+}
+
+// `AchievementID`(`+0x50`) / `Tags`(`+0x58`) / `MaxCharges`(`+0x74`) / `ChargeType`(`+0xB0`)。
+// ★ 同样**写死字面偏移 + 每个字段的后一格放诱饵**（理由见 `SetItemQuality` 的注释）：
+//   夹具一旦跟着实现侧的常量走，两边就会一起错，断言永远绿。
+// ★ 值故意挑"能把类型定死"的：`AchievementID` 给 **-1**（PC 的"默认可解锁"取值为 -1，
+//   读成无符号就永远不等于 -1）、`MaxCharges` 也给 -1（同样钉有符号）、`Tags` 走低位的位掩码。
+void SetItemExtras(std::size_t slot, std::int32_t achievementId, std::uint32_t tags,
+                   std::int32_t maxCharges, std::int32_t chargeType) {
+    auto& block = g_ItemBlocks[slot];
+    WriteAt<std::int32_t>(block, 0x50, achievementId);
+    WriteAt<std::uint32_t>(block, 0x54, 0x7F7F7F7Fu);
+    WriteAt<std::uint32_t>(block, 0x58, tags);
+    WriteAt<std::uint32_t>(block, 0x5C, 0x7F7F7F7Fu);
+    WriteAt<std::int32_t>(block, 0x74, maxCharges);
+    WriteAt<std::uint32_t>(block, 0x78, 0x7F7F7F7Fu);
+    WriteAt<std::int32_t>(block, 0xB0, chargeType);
+    WriteAt<std::uint32_t>(block, 0xB4, 0x7F7F7F7Fu);
+}
+
+// `Hidden`（`+0xB7`，**1 字节**；2026-09-16 第三批）。
+// ★ 写死字面偏移 + 前后各放一个**单字节**诱饵（`+0xB6` / `+0xB8`）：
+//   读错一格（或按 4 字节整数读）都会读到诱饵 ⇒ 断言必然失败。
+// ★ **必须在 `SetItemExtras` 之后调用**：那边给 `ChargeType`(+0xB0) 放的 4 字节诱饵
+//   正好覆盖 `0xB4..0xB7`，会把 `+0xB7` 顶掉（夹具里的写入顺序是有意义的）。
+// 证据：`ItemConfig::Item::IsAvailable`（`0x3C101C`）第一条指令 `ldrb w8,[x0,#0xb7]`，
+// 非零直接返回 false —— 所以这里也顺便证明"我们按 1 字节读"。
+void SetItemHidden(std::size_t slot, bool hidden) {
+    auto& block = g_ItemBlocks[slot];
+    WriteAt<std::uint8_t>(block, 0xB6, 0x7Fu);   // 诱饵：前一字节
+    WriteAt<std::uint8_t>(block, 0xB7, hidden ? 1u : 0u);
+    WriteAt<std::uint8_t>(block, 0xB8, 0x7Eu);   // 诱饵：后一字节
+}
+
+// `MimicCharge`（卡牌 `+0x64` / 胶囊 `+0x48`，2026-09-16）。**写死字面偏移 + 前后各一个 4 字节诱饵**：
+// 读错一格就会读到诱饵。收藏品那条向量上没有这个字段（分别在 +0x64/+0x48 写值，收藏品的对应位置由
+// 诱饵占住 ⇒ 万一实现对收藏品也返回了值，断言会失败）。
+void SetMimicCharge(std::size_t cardSlot, std::int32_t cardValue, std::size_t pillSlot,
+                    std::int32_t pillValue) {
+    auto& card = g_ItemBlocks[cardSlot];
+    WriteAt<std::uint32_t>(card, 0x60, 0x7F7F7F7Fu);   // 诱饵：前一格
+    WriteAt<std::int32_t>(card, 0x64, cardValue);
+    WriteAt<std::uint32_t>(card, 0x68, 0x7E7E7E7Eu);   // 诱饵：后一格
+    auto& pill = g_ItemBlocks[pillSlot];
+    WriteAt<std::uint32_t>(pill, 0x44, 0x7F7F7F7Fu);
+    WriteAt<std::int32_t>(pill, 0x48, pillValue);
+    WriteAt<std::uint32_t>(pill, 0x4C, 0x7E7E7E7Eu);
 }
 
 // 建一条 `std::vector<ItemConfig::Item*>` 并把 begin/end 写进 `IC` 的对应偏移。
@@ -207,6 +279,26 @@ std::vector<std::uint64_t> CollectibleElements() {
     return elements;
 }
 
+// `ItemConfig_Item:IsAvailable()` 的宿主接法：那一条 `bl` 在宿主上由测试注入的实现顶替。
+// 它**记录分派结果**（`kind`：0 = `Item`（带 flags）/ 1 = `Card` / 2 = `PillEffect`）与 flags，
+// 返回值刻意编码分派结果（只有"走 Item 分支且 flags 正确"才为 true）—— 这样 Lua 侧的断言
+// 一次钉住两件事，而打印出来的 `ISAVAIL_CALLS` 由 Python 侧逐项核对顺序与取值。
+struct IsAvailableCall {
+    int kind = -1;
+    std::int64_t flags = -1;
+};
+IsAvailableCall g_IsAvailableCalls[8];
+int g_IsAvailableCallCount = 0;
+
+bool HarnessIsAvailable(int kind, void* /*entry*/, std::int64_t flags) {
+    if (g_IsAvailableCallCount < 8) {
+        g_IsAvailableCalls[g_IsAvailableCallCount].kind = kind;
+        g_IsAvailableCalls[g_IsAvailableCallCount].flags = flags;
+    }
+    ++g_IsAvailableCallCount;
+    return kind == 0 && flags == kItemIsAvailableFlags;
+}
+
 // 条目数据。`+0x00` 是 PC 的 `ItemType`（批次 3 定案：`items.xml` 的 `type` 属性被解析器原样
 // 写进这个字段，见 `runtime_constants.hpp` 的 `kItemConfigItemTypeOffset`）：1=PASSIVE、
 // 2=TRINKET、3=ACTIVE、4=FAMILIAR。卡牌/药丸条目沿用 3/4 只是为了证明"`Type` 原样返回
@@ -221,6 +313,21 @@ void FillItems() {
     FillItem(kPillItem, 4, 1, "Pill stub", "pill stub", "gfx/items/pill.png", false);
     FillItem(kBrimstone, kItemTypePassive, 1, "Brimstone", "blood laser barrage",
              "gfx/items/c118.png", false);
+    // `Quality` / `CraftingQuality`（2026-09-16）：只给测试会断言的两条非零值，
+    // 其余条目保持 0（字段在、值为 0 —— 与 PC 上"这段内存是整数"同形）。
+    SetItemQuality(kSadOnion, /*quality=*/1, /*craftingQuality=*/3);
+    SetItemQuality(kLongCollectible, /*quality=*/4, /*craftingQuality=*/4);
+    // `items.xml` 属性分派表上的另外四个字段（2026-09-16 第二批）。
+    SetItemExtras(kSadOnion, /*achievementId=*/ -1, /*tags=*/ 0x108u, /*maxCharges=*/ 0,
+                  /*chargeType=*/ 0);
+    SetItemExtras(kLongCollectible, /*achievementId=*/ 5, /*tags=*/ 0xABCDu, /*maxCharges=*/ -1,
+                  /*chargeType=*/ 2);
+    // `Hidden`（第三批）：一条假、一条真 ⇒ "读得到 + 读得对"两个方向都钉住。
+    // 第二条同时覆盖"非 0 就是真"的口径（引擎里就是 `!= 0`）。
+    SetItemHidden(kSadOnion, /*hidden=*/ false);
+    SetItemHidden(kLongCollectible, /*hidden=*/ true);
+    // `MimicCharge`（第三批）：卡与胶囊各给一个可辨认的值（卡 2、胶囊 3）。
+    SetMimicCharge(kCardItem, 2, kPillItem, 3);
 }
 
 // 换局：`ItemConfig::Init` 重排向量 —— 收藏品向量指到另一块数组、1 号条目换了一个对象。
@@ -269,7 +376,7 @@ int main(int argc, char** argv) {
     const std::string scenario = argv[1];
     const char* kScenarios[] = {"valid", "no_base", "slot_zero", "no_manager", "empty_vector",
                                 "bad_length", "huge_length", "null_entry", "bad_string",
-                                "wrong_kind"};
+                                "wrong_kind", "bad_isavailable_entry"};
     bool known = false;
     for (const char* candidate : kScenarios) {
         if (scenario == candidate) known = true;
@@ -310,12 +417,22 @@ int main(int argc, char** argv) {
             // 而不是拿这个长度去越界读。
             WriteAt<std::uint8_t>(g_ItemBlocks[kSadOnion], kItemConfigItemNameOffset, 1);
             WriteWord(g_ItemBlocks[kSadOnion], kItemConfigItemNameOffset + 0x08, 0x100000);
+        } else if (scenario == "bad_isavailable_entry") {
+            // `IsAvailable` 那条引擎函数的入口指纹对不上（偏移写错时的真实形态）：
+            // **必须拒绝调用**（宁可返回 false，也不能去调另一个函数）。
+            WriteAt<std::uint32_t>(g_ModuleBytes, kItemConfigItemIsAvailableOffset, 0);
         } else if (scenario == "wrong_kind") {
             // 收藏品向量里的条目却带着 TRINKET 的类别：`IsCollectible` 必须说 false。
             WriteAt<std::uint32_t>(g_ItemBlocks[kSadOnion], kItemConfigItemTypeOffset,
                                    kItemTypeTrinket);
         }
         LuaRuntime::SetEngineModuleBase(g_EngineBase);
+    }
+
+    // 只在 `valid` 场景装 `IsAvailable` 的宿主实现（其余场景跑同一份模板，但相关断言按 SCENARIO
+    // 分支；不装那条通路就没人接 —— 与其它引擎方法的宿主接法同口径）。
+    if (scenario == "valid" || scenario == "bad_isavailable_entry") {
+        isaac::runtime::SetItemConfigIsAvailableHostImplementation(&HarnessIsAvailable);
     }
 
     const std::string script = "SCENARIO = '" + scenario + "'\n" + kScriptTemplate;
@@ -352,6 +469,13 @@ int main(int argc, char** argv) {
         // 两帧的 Lua 侧结论都已经由 `ExpectNumber` 核对过，这里只是把标记打出来给 Python 侧看。
         std::printf("PHASE1_OK PHASE2_OK\n");
     }
+    // `IsAvailable` 的分派记录（顺序 = Lua 侧的调用顺序；Python 侧逐项核对）
+    std::printf("ISAVAIL_CALLS %d", g_IsAvailableCallCount);
+    for (int i = 0; i < g_IsAvailableCallCount && i < 8; ++i) {
+        std::printf(" %d:%lld", g_IsAvailableCalls[i].kind,
+                    static_cast<long long>(g_IsAvailableCalls[i].flags));
+    }
+    std::printf("\n");
     return 0;
 }
 '''
@@ -404,7 +528,57 @@ local function verifyValid()
   -- （报告 `01789228056` 那条 126 字节的 Lua 错误唯一能落在 `eid_api.lua:1278`）。
   check(item.GfxFileName == 'gfx/items/c1.png',
         'GfxFileName must be the raw items.xml gfx path, got ' .. describe(item.GfxFileName))
+  -- `Quality`(`+0xC8`) / `CraftingQuality`(`+0xCC`)，2026-09-16：EID 用前者显示品质
+  -- （`features/eid_api.lua:2702` → `main.lua:663` 的 `{{QualityN}}`）、用两者做背包合成排序
+  -- （`eid_bagofcrafting.lua:393/407` 的 `item.CraftingQuality or item.Quality`）。
+  -- 缺这两个字段的症状是**静默的**（`and desc.Quality` 短路 ⇒ 品质不显示、不报错、无日志），
+  -- 夹具在 `+0xC4`/`+0xD0` 放了诱饵 ⇒ 读错一格就会读到诱饵，断言必然失败。
+  check(item.Quality == 1,
+        'Quality must come from +0xC8 (fixture 1), got ' .. describe(item.Quality))
+  check(item.CraftingQuality == 3,
+        'CraftingQuality must come from +0xCC (fixture 3, not the Quality value), got '
+        .. describe(item.CraftingQuality))
+  -- `items.xml` 属性分派表上的另外四个字段（2026-09-16 第二批）：
+  -- `AchievementID`(`+0x50`) / `Tags`(`+0x58`) / `MaxCharges`(`+0x74`) / `ChargeType`(`+0xB0`)。
+  -- EID 的用法：`eid_api.lua:2003` 用 `item.AchievementID == -1` 与 `item.Tags & TAG_QUEST`
+  -- 判断"是不是任务道具"，`eid_api.lua:785/786` 把 `ChargeType`/`MaxCharges` 填进描述对象。
+  -- **-1 这条同时钉住"有符号读"**：无符号读会给出 4294967295，断言必然失败。
+  check(item.AchievementID == -1,
+        'AchievementID must be read **signed** (fixture -1), got ' .. describe(item.AchievementID))
+  check(item.Tags == 0x108,
+        'Tags must come from +0x58 (fixture 0x108), got ' .. describe(item.Tags))
+  check(item.Tags & 0x100 == 0x100,
+        'Tags must work as a bitmask the way EID uses it, got ' .. describe(item.Tags))
+  check(item.MaxCharges == 0,
+        'MaxCharges must come from +0x74 (fixture 0), got ' .. describe(item.MaxCharges))
+  check(item.ChargeType == 0,
+        'ChargeType must come from +0xB0 (fixture 0 = CHARGE_NORMAL), got '
+        .. describe(item.ChargeType))
+  -- `Hidden`(`+0xB7`，**1 字节**；2026-09-16 第三批）：EID 用它做两件事 ——
+  -- `eid_api.lua:2008` 的 `if item.Hidden then`（隐藏道具不出描述）与 `eid_api.lua:1927`
+  -- Spindown Dice 预测里的 `not item.Hidden`（缺这个字段时那一半恒真）。
+  -- 夹具在 `+0xB6`/`+0xB8` 放了单字节诱饵 ⇒ 读错一格或按 4 字节读都会读到诱饵。
+  check(item.Hidden == false,
+        'Hidden must be the byte at +0xB7 (fixture 0 = false), got ' .. describe(item.Hidden))
+  local longItem = config:GetCollectible(2)
+  check(type(longItem) == 'userdata', 'GetCollectible(2) must return an ItemConfig_Item')
+  check(longItem.Hidden == true,
+        'Hidden must be true when the byte is non-zero (fixture 1), got '
+        .. describe(longItem.Hidden))
+  -- `Hidden` 是布尔，不是数字：PC 文档写 `boolean`。
+  check(type(longItem.Hidden) == 'boolean',
+        'Hidden must be a boolean, got ' .. describe(longItem.Hidden))
   check(item.NotAThing == nil, 'an unknown item field must be nil')
+  -- `ItemConfig_Item:IsAvailable()`（2026-09-16，"IsAvailable 一族"）：EID 在
+  -- `eid_api.lua:1988`/`:2013`、`eid_bagofcrafting.lua:826` 上用它判断"这件道具解锁了没有"。
+  -- 两件事一起钉住：
+  --   ① EID 先做**字段式**探测（`if item.IsAvailable then ...`）⇒ `item.IsAvailable` 不能是 nil；
+  --   ② 收藏品条目必须走 `Item::IsAvailable`，且 flags 是兼容层定义的 0xE
+  --      （宿主 harness 只在"kind == 0 且 flags == 0xE"时返回 true）⇒ 拿到 true 就同时证明了这两点。
+  check(item.IsAvailable ~= nil,
+        'EID probes `item.IsAvailable` as a field first — it must not be nil')
+  check(item:IsAvailable() == true,
+        'the collectible entry must be routed to Item::IsAvailable with flags 0xE')
   -- 没有证据的成员：恒假，而不是报错或编一个值。
   check(item:HasTags(1) == false, 'ItemConfig_Item:HasTags has no evidence and must return false')
   -- 批次 3：`ItemConfig_Item:IsCollectible()`（**无参**）是 EID 在描述构建里直接调用的成员
@@ -451,6 +625,16 @@ local function verifyValid()
         'a long gfx name must be read from the heap form, got ' .. describe(long.GfxFileName))
   check(string.sub(long.GfxFileName, 1, 4) == 'gfx/',
         'the long gfx name must be the fixture path, got ' .. describe(long.GfxFileName))
+  check(long.Quality == 4, 'the long-name entry has its own Quality, got ' .. describe(long.Quality))
+  check(long.CraftingQuality == 4,
+        'the long-name entry has its own CraftingQuality, got ' .. describe(long.CraftingQuality))
+  -- 每个条目读的是**自己那段内存**（不是共用一份夹具值），顺带把 `MaxCharges` 的有符号读也钉住。
+  check(long.AchievementID == 5, 'AchievementID must be per-entry, got ' .. describe(long.AchievementID))
+  check(long.Tags == 0xABCD, 'Tags must be per-entry, got ' .. describe(long.Tags))
+  check(long.MaxCharges == -1,
+        'MaxCharges must be read **signed** (fixture -1), got ' .. describe(long.MaxCharges))
+  check(long.ChargeType == 2,
+        'ChargeType must be per-entry (fixture 2 = CHARGE_SPECIAL), got ' .. describe(long.ChargeType))
 
   -- 并列向量：各自的下标空间与条目内容。
   local trinket = config:GetTrinket(1)
@@ -460,6 +644,11 @@ local function verifyValid()
   check(trinket.Type == 2, 'a trinket entry must report kind 2, got ' .. describe(trinket.Type))
   check(trinket:IsTrinket() == true, 'a kind-2 entry must answer IsTrinket true')
   check(trinket.ID == 1, 'the trinket id must come from its own entry')
+  -- 非收藏品条目的这段内存是 0 ⇒ 必须读到**数字 0**（字段存在、值为 0），而不是 nil。
+  -- EID 的 `item.CraftingQuality or item.Quality` 只在 nil 时才回退，读错成 nil 会改变行为。
+  check(trinket.Quality == 0,
+        'a non-collectible entry must still answer a numeric Quality (0), got '
+        .. describe(trinket.Quality))
   check(config:GetTrinket(0) == nil, 'the null trinket slot must be nil')
   check(config:GetTrinket(2) == nil, 'the trinket vector has 3 slots: index 2 is the null slot')
   check(config:GetTrinket(3) == nil, 'GetTrinket(3) must be nil (out of range)')
@@ -473,12 +662,26 @@ local function verifyValid()
   check(config:GetCard(1) == nil, 'the card vector has 2 slots: index 1 is the null slot')
   check(config:GetCard(2) == nil, 'GetCard(2) must be nil (out of range)')
 
+  -- `MimicCharge`（2026-09-16）：**卡牌与胶囊各有一个**（`+0x64` / `+0x48`），收藏品没有。
+  -- EID 用它给"模仿胶囊/卡牌"补说明（`features/eid_modifiers.lua:731`）。
+  check(card.MimicCharge == 2,
+        'Card.MimicCharge must come from +0x64 (fixture 2), got ' .. describe(card.MimicCharge))
+  check(trinket.MimicCharge == nil,
+        'a trinket must not expose MimicCharge, got ' .. describe(trinket.MimicCharge))
   local pill = config:GetPillEffect(1)
   check(pill ~= nil, 'GetPillEffect(1) must exist')
+  check(pill.MimicCharge == 3,
+        'PillEffect.MimicCharge must come from +0x48 (fixture 3), got ' .. describe(pill.MimicCharge))
   check(pill.Name == 'Pill stub', 'GetPillEffect(1).Name must come from the pill vector, got '
         .. describe(pill.Name))
   check(config:GetPillEffect(0) == nil, 'the null pill slot must be nil')
   check(config:GetPillEffect(2) == nil, 'GetPillEffect(2) must be nil (out of range)')
+
+  -- 卡牌/药丸条目走的是**另外两个引擎函数**（宿主 harness 对 kind != 0 一律返回 false）
+  -- ⇒ 拿到 false 说明"没有误走 Item 那条"。具体分派（1 = Card、2 = PillEffect）由 C++ 侧
+  -- 打印的 `ISAVAIL_CALLS` 在 Python 侧逐项核对 —— 布尔返回值区分不了 1 与 2，所以不能只看 Lua。
+  check(card:IsAvailable() == false, 'a card entry must not be routed to Item::IsAvailable')
+  check(pill:IsAvailable() == false, 'a pill entry must not be routed to Item::IsAvailable')
 
   savedConfig = config
   savedItem = item
@@ -497,6 +700,7 @@ local function verifyExpired()
   check(savedItem.Name == nil, 'a stale item handle must not answer Name')
   check(savedItem.Description == nil, 'a stale item handle must not answer Description')
   check(savedItem.GfxFileName == nil, 'a stale item handle must not answer GfxFileName')
+  check(savedItem.Quality == nil, 'a stale item handle must not answer Quality')
   check(savedItem:HasTags(1) == false, 'HasTags stays false on a stale handle')
 
   local fresh = Isaac.GetItemConfig()
@@ -546,10 +750,24 @@ local function verifyWrongKind()
   check(config:IsCollectible(2) == true, 'the neighbouring collectible is untouched')
 end
 
+-- `IsAvailable` 的**反例**：引擎函数入口指纹对不上时，方法必须拒绝调用（返回 false），
+-- 而不是"照调不误"（偏移写错就会去调别的函数，那比读错值危险得多）。
+-- 判据两条：Lua 侧拿到 false；C++ 侧记录的调用数必须是 0。
+local function verifyBadIsAvailableEntry()
+  local config = Isaac.GetItemConfig()
+  check(config ~= nil, 'Isaac.GetItemConfig() must return an ItemConfig')
+  local item = config:GetCollectible(1)
+  check(item ~= nil, 'GetCollectible(1) must exist even when the entry word is wrong')
+  local ok, value = pcall(function() return item:IsAvailable() end)
+  check(ok, 'IsAvailable must not raise a Lua error: ' .. tostring(value))
+  check(value == false, 'a wrong entry word must degrade to false, got ' .. describe(value))
+end
+
 local RUNNERS = {
   null_entry = verifyNullEntry,
   bad_string = verifyBadString,
   wrong_kind = verifyWrongKind,
+  bad_isavailable_entry = verifyBadIsAvailableEntry,
 }
 
 local function run()
@@ -660,6 +878,9 @@ class LuaItemConfigTests(unittest.TestCase):
         """
         result = self.run_scenario("valid")
         self.assertIn("ITEM_CONFIG_OK scenario=valid", result.stdout)
+        # `IsAvailable` 的分派：顺序 = 收藏品（kind 0，flags 0xE = 14）、卡牌（kind 1，flags 0）、
+        # 药丸（kind 2，flags 0）。Lua 侧的布尔返回值分不出 kind 1 与 2，所以这条是必要的第二重证据。
+        self.assertIn("ISAVAIL_CALLS 3 0:14 1:0 2:0", result.stdout)
         self.assertIn("PHASE1_OK", result.stdout)
 
     def test_stale_handles_degrade_and_new_handles_re_read_the_engine(self):
@@ -673,6 +894,16 @@ class LuaItemConfigTests(unittest.TestCase):
         result = self.run_scenario("valid")
         self.assertIn("PHASE1_OK", result.stdout)
         self.assertIn("PHASE2_OK", result.stdout)
+
+    def test_is_available_refuses_to_call_when_the_entry_word_is_wrong(self):
+        """入口指纹对不上 ⇒ **一次调用都不许发生**（宁可返回 false）。
+
+        这条防的是"偏移写错就去调另一个函数"——本项目里比"读到一个错值"危险得多的那种失败。
+        宿主上两条证据一起看：Lua 侧拿到 false，且注入的实现**没有被调用过**。
+        """
+        result = self.run_scenario("bad_isavailable_entry")
+        self.assertNotIn("ISAAC_ERROR", result.stdout + result.stderr)
+        self.assertIn("ISAVAIL_CALLS 0", result.stdout)
 
     def test_unreadable_links_return_nil_without_a_lua_error(self):
         """六种"整条链路拿不到"的形态都必须返回 nil，而且不抛 Lua 错误。

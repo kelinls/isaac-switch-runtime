@@ -52,4 +52,12 @@ int VectorFromAngle(lua_State* state);
 // `Vector.FromAngle` is the static constructor.
 int VectorClassIndex(lua_State* state);
 
+// 把一个 `Vector`（两个 float）压成 Lua 的 `Vector` userdata。**给字段读取用**：
+// `Game.ScreenShakeOffset` / `Entity.PositionOffset` 这类字段在 PC 侧就是 `Vector` 对象，
+// 返回一个真正的 Vector（而不是一张只有 X/Y 的表）才能让 Mod 继续用 `:Length()` 等方法。
+//
+// 名字带 `Lua` 前缀是为了与 TU 内部那个匿名命名空间的同名函数区分开（同名会让定义处
+// 出现 "call is ambiguous"）。
+void PushLuaVector(lua_State* state, float x, float y);
+
 } // namespace isaac::runtime

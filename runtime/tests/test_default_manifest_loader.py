@@ -75,6 +75,30 @@ class DefaultManifestLoaderTests(unittest.TestCase):
         self.assertIn("default-pc-mods", makefile)
         self.assertIn("DEPLOY_RENDER_RELAY_IPS", makefile)
 
+    def test_a_missing_manifest_falls_back_to_auto_discovery(self):
+        """清单是**可选项**：没有/读不出/解析失败时，运行时自己列 `isaac_mods/mods`（方案 A）。
+
+        这条按源码钉住三件事（自动发现本身的行为由
+        `runtime/tests/integration/test_mod_discovery.py` 覆盖）：
+        1. 加载路径里确实挂了自动发现这条兜底；
+        2. 兜底**只**在"清单不可用"（读取或解析失败）时生效 —— 路径拼装失败说明清单本身有问题，
+           那种情况下静默改用扫描会把用户写的清单悄悄忽略掉；
+        3. 用自动发现装载时诊断字是 6（`Discovered`），与"清单点名加载"区分得开。
+        """
+        hook = (SOURCE / "hook_manager.cpp").read_text(encoding="utf-8")
+        self.assertIn("mod_discovery_service.hpp", hook)
+        self.assertIn("g_ModDiscoveryService.Discover(&batch)", hook)
+        self.assertIn("ModLoadStep::ManifestRead", hook)
+        self.assertIn("ModLoadStep::ManifestParse", hook)
+        self.assertIn("DefaultManifestFailureDetail::Discovered", hook)
+        discovery = (ROOT / "runtime" / "src" / "application" / "mod"
+                     / "mod_discovery_service.cpp").read_text(encoding="utf-8")
+        # 发现出来的路径必须与清单路径用**同一套前缀**，否则同一个模组走两条路会落到不同地方。
+        self.assertIn('"isaac_mods/mods"', discovery)
+        self.assertIn('"rom:/isaac_mods/mods/"', discovery)
+        # 顺序必须确定（引擎给的顺序没有保证，而派发顺序影响游戏行为）。
+        self.assertIn("SortNames(", discovery)
+
 
 if __name__ == "__main__":
     unittest.main()

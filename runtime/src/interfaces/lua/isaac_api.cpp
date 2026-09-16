@@ -5,6 +5,7 @@
 
 #include "interfaces/lua/mod_api.hpp"
 #include "interfaces/lua/owner_binding.hpp"
+#include "interfaces/lua/vector_api.hpp"
 // `Entity:GetSprite()` 的实现体在 `sprite_api.cpp`（`Sprite` 句柄的布局与所有权都在那里，
 // 见 `lua_object_handles.hpp` 的 `SpriteHandle`）：这里只做实体校验 + 推入一个句柄。
 #include "interfaces/lua/sprite_api.hpp"
@@ -242,6 +243,7 @@ int ItemConfigIsCollectible(lua_State* state);
 int ItemConfigHasTags(lua_State* state);
 int ItemConfigItemHasTags(lua_State* state);
 int ItemConfigItemIsCollectible(lua_State* state);
+int ItemConfigItemIsAvailable(lua_State* state);
 
 // Catalog 的 id 与实现的对应关系。id 一旦分配不得复用（见 `api_descriptor.hpp`）。
 constexpr LuaHandlerBinding kIsaacHandlers[] = {
@@ -339,6 +341,7 @@ constexpr LuaHandlerBinding kItemConfigHandlers[] = {
 constexpr LuaHandlerBinding kItemConfigItemHandlers[] = {
     {0x0E01001E, &ItemConfigItemHasTags},
     {0x0E010023, &ItemConfigItemIsCollectible},
+    {0x0E010055, &ItemConfigItemIsAvailable},
 };
 
 constexpr char kIsaacOwner[] = "Isaac";
@@ -587,10 +590,10 @@ int IsaacRunCallback(lua_State* state) {
 // `Type == 1`、`Variant == 0`、`SubType == 0`、`PlayerType == 0`（Isaac）、下标 0、
 // 位置 `(80.0, 280.0)`、vptr 命中。所以这里按"已证事实"实现，不再重新验证偏移。
 //
-// **只做只读**：本批次不提供任何写引擎内存的接口（`Position`/`Velocity`/`Size`/收藏品数组
-// 都只是读）。理由是写接口会直接改动引擎不变量 —— 这些字段参与碰撞、AI、掉落与存档，
-// 写坏的症状是随机崩溃或存档损坏，而"写哪些字段、什么时机写是安全的"目前没有任何证据；
-// 真机轮次有限，先把"能读到正确的玩家"这件事变成可验收的事实。
+// **读是只读的；写只有一个入口**（2026-09-16 起）：`Position`/`Velocity`/`Size`/收藏品数组
+// 这些字段仍然只读 —— 它们参与碰撞、AI、掉落与存档，写坏的症状是随机崩溃或存档损坏，
+// 而"写哪些字段、什么时机写是安全的"目前只有 `ControlsCooldown` 一条有 PC 语义与引擎读点
+// 双重支撑（见 `EntityNewIndex`）。其余写路径一律经 `WriteEngine`，且必须先确认该页可写。
 bool IsEngineMemoryReadable(std::uintptr_t address, std::size_t length) noexcept {
     // 实现见 `interfaces/lua/engine_memory_guard.hpp`：四个 API 族共用同一份缓存与计数。
     //
@@ -637,6 +640,54 @@ bool ReadEngine(std::uintptr_t address, T* value) noexcept {
         return false;
     }
     std::memcpy(value, reinterpret_cast<const void*>(address), sizeof(T));
+    return true;
+}
+
+// 写一个引擎字段（2026-09-16 新增，与上面的读原语成对）。
+//
+// 上面那段"本批次不提供任何写引擎内存的接口"的注释是批次 3 的口径，从**写通道**这一批起
+// 被取代：现在**允许**写，但只有一个入口（`WriteEngine`）且必须先确认"这一页可写"。
+// 判据与读侧同源却**分开缓存**：可读（`Perm_R`）不等于可写（`Perm_W`），模块映像的代码段与
+// 只读数据段就是可读不可写（详见 `interfaces/lua/engine_memory_guard.hpp` 里
+// `EngineGuardWritableRegionCache` 的注释）。
+//
+// 目前唯一的调用点是 `EntityPlayer.ControlsCooldown`（`EntityNewIndex`）—— EID 用它抑制输入。
+// 其它字段**没有**写入口，理由与批次 3 相同：写参与碰撞/AI/掉落/存档的字段，症状是随机崩溃
+// 或存档损坏，必须有证据才做。
+bool IsEngineMemoryWritable(std::uintptr_t address, std::size_t length) noexcept {
+    if (!EngineGuardRangeUsable(address, length)) {
+        return false;
+    }
+#if defined(__SWITCH__)
+    if (EngineGuardLookupWritable(address, length)) {
+        return true;
+    }
+    const std::uint64_t syscallStart = EngineGuardSyscallBegin();
+    MemoryInfo info{};
+    u32 pageInfo = 0;
+    const std::uint32_t result = svcQueryMemory(&info, &pageInfo, address);
+    EngineGuardSyscallEnd(syscallStart);
+    if (R_FAILED(result) || info.size == 0 || info.addr > UINTPTR_MAX - info.size) {
+        return false;
+    }
+    if (address < info.addr || address + length > info.addr + info.size ||
+        (info.perm & Perm_W) == 0) {
+        return false;
+    }
+    EngineGuardRememberWritable(info.addr, info.addr + info.size);
+    return true;
+#else
+    // 宿主构建没有 `svcQueryMemory`：宿主测试里的"引擎内存"是本进程申请出来的伪造块。
+    return true;
+#endif
+}
+
+template <typename T>
+bool WriteEngine(std::uintptr_t address, const T& value) noexcept {
+    if (!IsEngineMemoryWritable(address, sizeof(T))) {
+        return false;
+    }
+    std::memcpy(reinterpret_cast<void*>(address), &value, sizeof(T));
     return true;
 }
 
@@ -1347,6 +1398,12 @@ constexpr EntityIntegerField kEntityIntegerFields[] = {
     {"Index", kEntityIndexOffset, false},
     // `InitSeed`：EID 把它当表键（`main.lua:206`/`264`），nil 会变成 `table index is nil`。
     {"InitSeed", kEntityInitSeedOffset, false},
+    // `DropSeed`（2026-09-16）：EID 用它拼抓娃娃机的掉落判定键
+    // （`main.lua:1173/1174` 的 `crane.InitSeed.."Drop"..crane.DropSeed`）。
+    // 偏移是硬的（实体唯一的 RNG 成员、种子字，见 `kEntityDropSeedOffset` 的注释）；
+    // **"Lua 名就叫 DropSeed"是推断**（PC 名字块里 DropSeed 紧挨 GetDropRNG，且 InitSeed 另有 0x3E8）。
+    // 它只被当键用，取到的是"当前种子/状态字"（取过随机数会变），不会影响判定逻辑本身。
+    {"DropSeed", kEntityDropSeedOffset, false},
 };
 
 // 只有 `Entity_Player` 有的整型字段。
@@ -1354,9 +1411,27 @@ constexpr EntityIntegerField kEntityIntegerFields[] = {
 // `ControllerIndex`（`0x19EC`，批次 3）：EID 在 `EID:setPlayer()`（`main.lua:1076`）里写
 // `EID.controllerIndexes[p.ControllerIndex] = 1` —— nil 会直接触发 "table index is nil"。
 // 偏移来源见 `runtime_constants.hpp`（`Entity_Player::SetControllerIndex` 的第一条存值指令）。
+// 玩家专属的 **float** 字段表（2026-09-16）。用"名字 → 偏移"的静态表形态 —— 枚举工具
+// （`tools/eid_api_gap_report.py`）靠这种形态认"已实现"，散装 strcmp 会让它继续报缺口。
+struct EntityFloatField {
+    const char* name;
+    std::uintptr_t offset;
+};
+constexpr EntityFloatField kEntityPlayerFloatFields[] = {
+    // 四个都是 `Entity_Player` 上的战斗属性，EID 只在"安慰奖"描述里用（见调用处注释）。
+    {"Damage", kEntityPlayerDamageOffset},
+    {"MoveSpeed", kEntityPlayerMoveSpeedOffset},
+    {"MaxFireDelay", kEntityPlayerMaxFireDelayOffset},
+    {"TearRange", kEntityPlayerTearRangeOffset},
+};
+
 constexpr EntityIntegerField kEntityPlayerIntegerFields[] = {
     {"PlayerType", kEntityPlayerTypeOffset, false},
     {"ControllerIndex", kEntityPlayerControllerIndexOffset, true},
+    // `ControlsCooldown`（2026-09-16）：EID 读它判断"还能不能操作"，也会**写**它来抑制按键
+    // （`eid_bagofcrafting.lua:877`、`eid_holdmapdesc.lua:669` 都是 `= 2`）。
+    // 写入口见本单元的 `EntityNewIndex`（挂在 `EntityPlayer` 元表的 `__newindex` 上）。
+    {"ControlsCooldown", kEntityPlayerControlsCooldownOffset, true},
 };
 
 // 字段名 → Lua 值。返回 false 表示"不是这个对象的字段"，让调用方继续找方法。
@@ -1391,6 +1466,63 @@ bool PushEntityField(lua_State* state, std::uintptr_t entity, const char* field,
         lua_pushinteger(state, static_cast<lua_Integer>(value));
         return true;
     }
+    // `Player`（2026-09-16）：**只有跟班有**这个字段（PC 的 `EntityFamiliar.Player` = 主人）。
+    // 判据与 `Entity:ToFamiliar()` 完全一致（`Type == ENTITY_FAMILIAR(3)` 且 vptr 精确等于
+    // `base + kEntityFamiliarVtableOffset`）—— 不满足就返回 false，落到上层给 nil
+    // （PC 里别的实体本来就没有这个成员，不能给它编一个）。
+    // EID 的用法：`wisp:ToFamiliar().Player`（`eid_api.lua:3069`）。
+    if (std::strcmp(field, "Player") == 0) {
+        const std::uintptr_t base = EngineModuleBase();
+        std::uintptr_t vtable = 0;
+        std::uint32_t type = 0;
+        if (base == 0 || base > UINTPTR_MAX - kEntityFamiliarVtableOffset ||
+            !ReadEngine(entity, &vtable) || !ReadEngine(entity + kEntityTypeOffset, &type) ||
+            type != kEntityTypeFamiliar || vtable != base + kEntityFamiliarVtableOffset) {
+            return false;
+        }
+        std::uintptr_t owner = 0;
+        if (!ReadEngine(entity + kEntityFamiliarPlayerOffset, &owner)) {
+            return false;
+        }
+        if (owner == 0) {
+            lua_pushnil(state);
+            return true;
+        }
+        PushEntityHandle(state, owner,
+                         IsEntityPlayer(owner) ? kEntityPlayerMetatable : kEntityMetatable);
+        return true;
+    }
+    // `Parent`（2026-09-16）：指针字段，指向父实体（跟班的主段、多段实体的主段…）。
+    // PC 里 `nil` 表示"没有父"，所以指针为 0 时必须给 nil —— 给一个"空实体句柄"会让
+    // EID 的 `player.Parent == nil`（`main.lua:1089`）判错。
+    if (std::strcmp(field, "Parent") == 0) {
+        std::uintptr_t parent = 0;
+        if (!ReadEngine(entity + kEntityParentOffset, &parent)) {
+            return false;
+        }
+        if (parent == 0) {
+            lua_pushnil(state);
+            return true;
+        }
+        // 句柄要按**它自己**的类型给元表（父实体可能是玩家、跟班或任意实体），
+        // 否则 `parent.Luck` 这类玩家字段会在错的元表上查不到。
+        PushEntityHandle(state, parent,
+                         IsEntityPlayer(parent) ? kEntityPlayerMetatable : kEntityMetatable);
+        return true;
+    }
+    // `PositionOffset`（2026-09-16）：`Vector2`（两个 float）。EID 用它修正实体在屏幕上的位置
+    // （`main.lua:924`）。读不到就返回 false ⇒ 上层给 nil（不编一个 0 向量）。
+    if (std::strcmp(field, "PositionOffset") == 0) {
+        float x = 0.0F;
+        float y = 0.0F;
+        if (!ReadEngine(entity + kEntityPositionOffsetOffset, &x) ||
+            !ReadEngine(entity + kEntityPositionOffsetOffset + sizeof(float), &y)) {
+            return false;
+        }
+        // `Vector` userdata（PC 侧这个字段就是 `Vector`，不是一张表）。
+        isaac::runtime::PushLuaVector(state, x, y);
+        return true;
+    }
     if (playerView) {
         // `player.Luck`（2026-09-14）：EID 的幸运值公式在**逐帧渲染路径**上读它
         // （`features/eid_data.lua` 里 48 条 `EID.LuckFormulas[...](player.Luck)`）。
@@ -1406,6 +1538,29 @@ bool PushEntityField(lua_State* state, std::uintptr_t entity, const char* field,
                 return false;
             }
             lua_pushnumber(state, static_cast<lua_Number>(luck));
+            return true;
+        }
+        // 四个战斗属性（2026-09-16）：全部是 float（偏移与证据见 `runtime_constants.hpp`）。
+        // EID 只用它们做"安慰奖（Consolation Prize 644）"描述里的档位换算
+        // （`features/eid_modifiers.lua:461-464`），缺一个就是 `nil^0.56` 那种算术抛错。
+        for (const EntityFloatField& candidate : kEntityPlayerFloatFields) {
+            if (std::strcmp(field, candidate.name) != 0) {
+                continue;
+            }
+            float value = 0.0F;
+            if (!ReadEngine(entity + candidate.offset, &value)) {
+                return false;
+            }
+            lua_pushnumber(state, static_cast<lua_Number>(value));
+            return true;
+        }
+        // `CanFly`（1 字节布尔，2026-09-16）：EID 用它决定要不要禁用"障碍物提示"（`main.lua:1193`）。
+        if (std::strcmp(field, "CanFly") == 0) {
+            std::uint8_t value = 0;
+            if (!ReadEngine(entity + kEntityPlayerCanFlyOffset, &value)) {
+                return false;
+            }
+            lua_pushboolean(state, value != 0 ? 1 : 0);
             return true;
         }
         for (const EntityIntegerField& candidate : kEntityPlayerIntegerFields) {
@@ -1648,6 +1803,44 @@ int EntityPickupIndex(lua_State* state) {
     return IndexEntity(state, EntityView::Pickup);
 }
 
+// --- 引擎字段**写**入口（2026-09-16，写通道第一批）----------------------------
+//
+// 为什么需要它：PC 的 `EntityPlayer.ControlsCooldown` 是**可写**成员，EID 用它"吃掉"随后的按键
+// ——`features/eid_bagofcrafting.lua:877` 与 `features/eid_holdmapdesc.lua:669` 都是
+// `player.ControlsCooldown = 2`（意思是"接下来两帧不要吃输入"，用于背包/按住地图的界面）。
+// 我们的实体是 userdata、元表里没有 `__newindex` 时，这两处赋值会直接抛
+// "attempt to index a userdata value" ⇒ 那两条回调每帧报错、被派发器摘除。
+//
+// 口径（与 `Sprite`/`KColor` 的 `__newindex` 一致）：
+//   * **只有 `EntityPlayer` 视图能写** —— 这一批只有玩家字段可写；
+//   * **只认 `ControlsCooldown`**（偏移与证据见 `runtime_constants.hpp` 的
+//     `kEntityPlayerControlsCooldownOffset`：`Entity_Player` 自己的 tick 读它做递减），
+//     别的字段名一律报错，避免把拼错的字段名静默吞掉；
+//   * 写入经 `WriteEngine<std::int32_t>`（先确认这一页**可写**再写）。这一批**不**静默失败：
+//     实体地址刚刚才通过 vptr + 可读性校验，写不进去说明可写性判断本身出了问题，
+//     报错比"EID 的抑制输入永远不生效却没人知道"更好排查。
+int EntityNewIndex(lua_State* state) {
+    auto* handle = static_cast<EntityHandle*>(luaL_checkudata(state, 1, kEntityPlayerMetatable));
+    if (lua_type(state, 2) != LUA_TSTRING) {
+        return luaL_error(state, "EntityPlayer fields are written by name");
+    }
+    const char* field = lua_tostring(state, 2);
+    const std::uintptr_t entity = ValidatedEntityPlayer(handle);
+    if (entity == 0) {
+        // 过期/伪造句柄：与读路径同一口径 —— 不报错、也不写（写一个失效地址才是真危险）。
+        return 0;
+    }
+    if (std::strcmp(field, "ControlsCooldown") == 0) {
+        const lua_Integer value = luaL_checkinteger(state, 3);
+        const std::int32_t stored = static_cast<std::int32_t>(value);
+        if (!WriteEngine<std::int32_t>(entity + kEntityPlayerControlsCooldownOffset, stored)) {
+            return luaL_error(state, "EntityPlayer.ControlsCooldown is not writable on this object");
+        }
+        return 0;
+    }
+    return luaL_error(state, "EntityPlayer fields are read-only except ControlsCooldown");
+}
+
 // --- Entity / EntityPlayer 方法 ----------------------------------------------
 
 int EntityToPlayer(lua_State* state) {
@@ -1848,9 +2041,83 @@ std::uintptr_t AddCollectibleMethod() noexcept {
     return method;
 }
 
+// `ItemConfig::Item::IsAvailable(long, uint)` 的地址：模块基址 + 偏移，**调用前核对入口 4 字节**。
+// 这条会真的去调引擎函数（`flags`/`this` 由我们给），偏移写错就会去调别的函数 ⇒ 指纹不是可选项。
+std::uintptr_t ItemIsAvailableMethod() noexcept {
+    const std::uintptr_t base = EngineModuleBase();
+    if (base == 0 || base > UINTPTR_MAX - kItemConfigItemIsAvailableOffset) {
+        return 0;
+    }
+    const std::uintptr_t method = base + kItemConfigItemIsAvailableOffset;
+    std::uint32_t entryWord = 0;
+    if (!IsEngineMemoryReadable(method, sizeof(std::uint32_t)) ||
+        !ReadEngine(method, &entryWord) || entryWord != kItemConfigItemIsAvailableEntryWord) {
+        return 0;
+    }
+    return method;
+}
+
+std::uintptr_t CardIsAvailableMethod() noexcept {
+    const std::uintptr_t base = EngineModuleBase();
+    if (base == 0 || base > UINTPTR_MAX - kItemConfigCardIsAvailableOffset) {
+        return 0;
+    }
+    const std::uintptr_t method = base + kItemConfigCardIsAvailableOffset;
+    std::uint32_t entryWord = 0;
+    if (!IsEngineMemoryReadable(method, sizeof(std::uint32_t)) ||
+        !ReadEngine(method, &entryWord) || entryWord != kItemConfigCardIsAvailableEntryWord) {
+        return 0;
+    }
+    return method;
+}
+
+std::uintptr_t PillEffectIsAvailableMethod() noexcept {
+    const std::uintptr_t base = EngineModuleBase();
+    if (base == 0 || base > UINTPTR_MAX - kItemConfigPillEffectIsAvailableOffset) {
+        return 0;
+    }
+    const std::uintptr_t method = base + kItemConfigPillEffectIsAvailableOffset;
+    std::uint32_t entryWord = 0;
+    if (!IsEngineMemoryReadable(method, sizeof(std::uint32_t)) ||
+        !ReadEngine(method, &entryWord) || entryWord != kItemConfigPillEffectIsAvailableEntryWord) {
+        return 0;
+    }
+    return method;
+}
+
+// `kind` → 该调哪个引擎函数（0 = `Item`（带 flags）、1 = `Card`、2 = `PillEffect`）。
+// （宿主实现指针必须定义在**使用它的 `CallItemConfigIsAvailable` 之前** —— 上面那次"定义放在
+//  文件末尾、使用在前面"的直接后果就是 `use of undeclared identifier`。）
+#if !defined(__SWITCH__)
+ItemConfigIsAvailableHostImplementation g_ItemConfigIsAvailableHostImplementation = nullptr;
+#endif
+
+// `kind` → 该调哪个引擎函数（0 = `Item`（带 flags）、1 = `Card`、2 = `PillEffect`）。
+bool CallItemConfigIsAvailable(std::uintptr_t method, std::uintptr_t entry, int kind) {
+#if defined(__SWITCH__)
+    if (kind == 0) {
+        // `Item::IsAvailable(long flags, uint)`：x0 = 条目、x1 = flags（兼容层定义、已登记偏离）、
+        // x2 = 0（反汇编里读到的四个分支都没用到第三个参数）。
+        using ItemFn = bool (*)(void*, std::int64_t, std::uint32_t);
+        return reinterpret_cast<ItemFn>(method)(reinterpret_cast<void*>(entry),
+                                                kItemIsAvailableFlags, 0);
+    }
+    using NoArgFn = bool (*)(void*);
+    return reinterpret_cast<NoArgFn>(method)(reinterpret_cast<void*>(entry));
+#else
+    static_cast<void>(method);
+    const ItemConfigIsAvailableHostImplementation injected =
+        g_ItemConfigIsAvailableHostImplementation;
+    return injected != nullptr &&
+           injected(kind, reinterpret_cast<void*>(entry), kind == 0 ? kItemIsAvailableFlags : 0);
+#endif
+}
+
+
 #if !defined(__SWITCH__)
 EntityPlayerHasCollectibleHostImplementation g_HasCollectibleHostImplementation = nullptr;
 CurrentLanguageCodeHostImplementation g_CurrentLanguageCodeHostImplementation = nullptr;
+// `g_ItemConfigIsAvailableHostImplementation` 定义在它的使用点之前（见 `ItemIsAvailableMethod` 之后）。
 #endif
 
 bool CallEntityPlayerHasCollectible(std::uintptr_t method, std::uintptr_t entity,
@@ -2727,6 +2994,85 @@ bool PushItemField(lua_State* state, std::uintptr_t item, const char* field) noe
     if (std::strcmp(field, "GfxFileName") == 0) {
         return PushLibcxxString(state, item + kItemConfigItemGfxFileNameOffset, true);
     }
+    // `Quality` / `CraftingQuality`（2026-09-16）：EID 靠它们显示道具品质
+    // （`features/eid_api.lua:2702` → `main.lua:663` 的 `{{QualityN}}`）与做背包合成排序
+    // （`eid_bagofcrafting.lua:393/407`）。缺了这两个字段的症状是**静默的**：`desc.Quality`
+    // 为 nil 被 `and` 短路，品质图标直接不显示，既不报错也没有日志 —— 这正是"缺口账本
+    // 只统计方法、字段从没被枚举过"留下的洞（见 `docs/错误复盘.md` 2026-09-16）。
+    // 偏移证据见 `runtime_constants.hpp` 的 `kItemConfigItemQualityOffset` 注释。
+    // 两个都是 32 位整数；`CraftingQuality` 在 `items.xml` 未指定时由引擎用 `Quality` 回填，
+    // 所以这里**照读原值**，不自己编缺省（读不到时按"字段读不出来"降级成 nil，交给 Mod 的
+    // `or` 兜底，与 PC 的 `item.CraftingQuality or item.Quality` 写法一致）。
+    if (std::strcmp(field, "Quality") == 0) {
+        std::uint32_t value = 0;
+        if (!ReadEngine(item + kItemConfigItemQualityOffset, &value)) {
+            return false;
+        }
+        lua_pushinteger(state, static_cast<lua_Integer>(value));
+        return true;
+    }
+    if (std::strcmp(field, "CraftingQuality") == 0) {
+        std::uint32_t value = 0;
+        if (!ReadEngine(item + kItemConfigItemCraftingQualityOffset, &value)) {
+            return false;
+        }
+        lua_pushinteger(state, static_cast<lua_Integer>(value));
+        return true;
+    }
+    // 2026-09-16 第二批（字段缺口台账里的 planned 项，同在 `items.xml` 属性分派表上）：
+    // `AchievementID` / `Tags` / `MaxCharges` / `ChargeType`。
+    // 逐个的偏移依据见 `runtime_constants.hpp` 里那四个常量的注释（都是同一条链上的 `str`）。
+    // **有符号 / 无符号是按 PC 文档定的，不是随手选的**：
+    //   * `AchievementID` 文档写 int 且"默认可解锁时返回 -1"，EID 直接与 `-1` 比较
+    //     （`features/eid_api.lua:2003`）⇒ 无符号读会让它永远不相等；
+    //   * `MaxCharges` / `ChargeType` 也是 int ⇒ 有符号读（-1 这类哨兵值不丢）；
+    //   * `Tags` 是**位掩码**（EID 用 `item.Tags & ItemConfig.TAG_QUEST`）⇒ 无符号读，
+    //     第 31 位不会被符号扩展污染成"高 32 位全 1"。
+    if (std::strcmp(field, "AchievementID") == 0) {
+        std::int32_t value = 0;
+        if (!ReadEngine(item + kItemConfigItemAchievementIdOffset, &value)) {
+            return false;
+        }
+        lua_pushinteger(state, static_cast<lua_Integer>(value));
+        return true;
+    }
+    if (std::strcmp(field, "Tags") == 0) {
+        std::uint32_t value = 0;
+        if (!ReadEngine(item + kItemConfigItemTagsOffset, &value)) {
+            return false;
+        }
+        lua_pushinteger(state, static_cast<lua_Integer>(value));
+        return true;
+    }
+    if (std::strcmp(field, "MaxCharges") == 0) {
+        std::int32_t value = 0;
+        if (!ReadEngine(item + kItemConfigItemMaxChargesOffset, &value)) {
+            return false;
+        }
+        lua_pushinteger(state, static_cast<lua_Integer>(value));
+        return true;
+    }
+    if (std::strcmp(field, "ChargeType") == 0) {
+        std::int32_t value = 0;
+        if (!ReadEngine(item + kItemConfigItemChargeTypeOffset, &value)) {
+            return false;
+        }
+        lua_pushinteger(state, static_cast<lua_Integer>(value));
+        return true;
+    }
+    // `Hidden`（2026-09-16，第三批）：PC 文档写的是 `boolean`，引擎里就是 `+0xB7` 的**一个字节**
+    // （`ItemConfig::Item::IsAvailable` 第一条指令 `ldrb w8,[x0,#0xb7]`）⇒ 按字节读、压成布尔，
+    // **不要**按 4 字节整数读（会把后面 3 个字节的无关内容当成真值）。
+    // EID 的两处用法：`eid_api.lua:2008` 的 `if item.Hidden then`（隐藏道具不出描述）、
+    // `eid_api.lua:1927` Spindown Dice 预测里的 `not item.Hidden`（缺这个字段时那一半恒真）。
+    if (std::strcmp(field, "Hidden") == 0) {
+        std::uint8_t value = 0;
+        if (!ReadEngine(item + kItemConfigItemHiddenOffset, &value)) {
+            return false;
+        }
+        lua_pushboolean(state, value != 0 ? 1 : 0);
+        return true;
+    }
     return false;
 }
 
@@ -2890,6 +3236,52 @@ int ItemConfigItemIsCollectible(lua_State* state) {
     return 1;
 }
 
+// `ItemConfig_Item:IsAvailable()`（批次"IsAvailable 一族"，2026-09-16）：EID 在
+// `features/eid_api.lua:1988`、`:2013` 与 `eid_bagofcrafting.lua:826` 三处对**收藏品条目**
+// 调它，用来判断"这件道具解锁了没有"（`EID:isCollectibleUnlocked`），进而决定 Spindown Dice
+// 与背包合成要不要跳过它 —— 也是让 `AchievementID` / `Tags` 两个字段真正产生可见效果的关键。
+//
+// PC 契约（`analysis/isaacdocs-snapshot/docs/ItemConfig_Item.md:35-38`）：
+// "true = 已解锁；false = 没解锁 **或被 tags 挡掉**"。
+//
+// 引擎侧对应**三个不同类的函数**，只能按"条目属于哪条向量"分派（句柄里就存着 `beginOffset`）：
+//   收藏品 / 饰品 / 其他 `ItemConfig::Item` 条目 → `Item::IsAvailable(long flags, uint)`
+//   卡牌条目                                   → `Card::IsAvailable()`
+//   药丸条目                                   → `PillEffect::IsAvailable()`
+// ⚠️ `flags` 取值是**我们的兼容层定义**（引擎里三个函数没有任何调用点，参数学不到），
+// 依据见 `runtime_constants.hpp` 的 `kItemIsAvailableFlags` 注释，并在 `api_deviation.cpp` 登记。
+//
+// 降级口径：句柄失效 / 方法拿不到（偏移或入口指纹不对）⇒ 返回 **false**（"这件不可用"）。
+// 为什么不给 true：EID 拿 false 的行为是"跳过这件道具"，而给 true 会让未解锁的道具照样出现 ——
+// 两种都是猜，但"少显示"比"多显示未解锁内容"更接近 PC 语义，且不会让 Spindown Dice 给出非法结果。
+int ItemConfigItemIsAvailable(lua_State* state) {
+    auto* handle = CheckItemConfigItemHandle(state, 1);
+    if (lua_gettop(state) != 1) {
+        return luaL_error(state, "ItemConfig_Item:IsAvailable accepts no arguments");
+    }
+    const std::uintptr_t entry = ValidatedItem(handle);
+    if (entry == 0) {
+        lua_pushboolean(state, 0);
+        return 1;
+    }
+    int kind = 0;
+    if (handle->beginOffset == kItemConfigCardBeginOffset) {
+        kind = 1;
+    } else if (handle->beginOffset == kItemConfigPillEffectBeginOffset) {
+        kind = 2;
+    }
+    const std::uintptr_t method =
+        kind == 1 ? CardIsAvailableMethod()
+                  : (kind == 2 ? PillEffectIsAvailableMethod() : ItemIsAvailableMethod());
+    if (method == 0) {
+        lua_pushboolean(state, 0);
+        return 1;
+    }
+    lua_pushboolean(state, CallItemConfigIsAvailable(method, entry, kind) ? 1 : 0);
+    return 1;
+}
+
+
 // `__index`：方法 → nil（`ItemConfig` 没有字段，PC 同）。
 //
 // **方法不因句柄失效而消失**：`config:GetCollectible(id)` 在过期句柄上必须返回 nil，而不是让
@@ -2917,6 +3309,26 @@ int ItemConfigItemIndex(lua_State* state) {
     }
     const char* field = lua_tostring(state, 2);
     const std::uintptr_t item = ValidatedItem(handle);
+    // `MimicCharge`（2026-09-16）：**卡牌与胶囊各有一个**（`+0x64` / `+0x48`），收藏品/饰品没有。
+    // 所以它不放在 `PushItemField`（那里只有"条目指针"，不知道是卡还是胶囊），而是放在这里
+    // —— 句柄的 `beginOffset` 就是种类判据（与 `IsAvailable` 的分派同一条）。
+    if (item != 0 && std::strcmp(field, "MimicCharge") == 0) {
+        std::uintptr_t offset = 0;
+        if (handle->beginOffset == kItemConfigCardBeginOffset) {
+            offset = kItemConfigCardMimicChargeOffset;
+        } else if (handle->beginOffset == kItemConfigPillEffectBeginOffset) {
+            offset = kItemConfigPillEffectMimicChargeOffset;
+        }
+        if (offset != 0) {
+            std::int32_t value = 0;
+            if (!ReadEngine(item + offset, &value)) {
+                lua_pushnil(state);
+                return 1;
+            }
+            lua_pushinteger(state, static_cast<lua_Integer>(value));
+            return 1;
+        }
+    }
     if (item != 0 && PushItemField(state, item, field)) {
         return 1;
     }
@@ -3754,6 +4166,11 @@ void SetCurrentLanguageCodeHostImplementation(
     CurrentLanguageCodeHostImplementation function) noexcept {
     g_CurrentLanguageCodeHostImplementation = function;
 }
+
+void SetItemConfigIsAvailableHostImplementation(
+    ItemConfigIsAvailableHostImplementation function) noexcept {
+    g_ItemConfigIsAvailableHostImplementation = function;
+}
 #endif
 
 namespace {
@@ -3840,6 +4257,11 @@ void RegisterViewMetatables(lua_State* state) {
     lua_setfield(state, -2, "__methods");
     lua_pushcfunction(state, EntityPlayerIndex);
     lua_setfield(state, -2, "__index");
+    // 写入口（2026-09-16）：见 `EntityNewIndex` 的注释（目前只放行 `ControlsCooldown`）。
+    // 基类 `Entity` 的元表**故意没有** `__newindex` —— PC 里也没有可写的基类字段，
+    // 让它保持"赋值即报错"，比给一个什么都接受的写入口安全。
+    lua_pushcfunction(state, EntityNewIndex);
+    lua_setfield(state, -2, "__newindex");
     lua_pop(state, 1);
 
     // `EntityPickup`（批次 4）：没有自己的 catalog 条目（它的成员只有字段），方法表留空，

@@ -541,20 +541,28 @@ class ManifestCapacityContractTests(unittest.TestCase):
         self.assertLess(largest, capacity, "require 的最大文件必须装得进缓冲区")
 
     def test_hook_diagnostics_reports_the_scriptless_outcome(self):
+        """资源型 Mod 必须走"返回成功 + 报 5"，而不是被判失败。
+
+        ⚠️ 2026-09-16（多模组加载）之后，这条路径由"一次一个 Mod"改成"一次一批 Mod"
+        （`Resolve`/`Load` → `ResolveAll`/`LoadAll`），所以下面几条**表述**跟着换了，
+        **判定意图一字未改**：纯资源型报 5、按成功返回、内容挂载点必须在加载之前注册。
+        """
         hook = (SOURCE / "hook_manager.cpp").read_text(encoding="utf-8")
         self.assertIn("Scriptless = 5", hook)
         default_block = hook[
             hook.index("bool LoadDefaultManifestModThroughService") :
             hook.index("bool PrimeDefaultCallbacks")
         ]
-        # 资源型 Mod 必须走"返回成功 + 报 5"，而不是被判失败。
-        self.assertIn("loaded.value().ScriptExecuted()", default_block)
+        # 资源型 Mod 必须走"返回成功 + 报 5"，而不是被判失败（看第一个 Mod 的脚本状态）。
+        self.assertIn("loadOutcome.scripts[0]", default_block)
+        self.assertIn("ScriptExecuted()", default_block)
         self.assertIn("DefaultManifestFailureDetail::Scriptless", default_block)
-        self.assertIn("return loaded.ok();", default_block)
-        self.assertIn("RegisterMod(resolved.value().modRoot)", default_block)
+        # 多模组：任何 Mod 失败都要如实翻出来，成功路径返回 true。
+        self.assertIn("!loadOutcome.anyFailure", default_block)
+        self.assertIn("RegisterMod(batch.mods[index].modRoot)", default_block)
         self.assertLess(
-            default_block.index("RegisterMod(resolved.value().modRoot)"),
-            default_block.index("service.Load(request, &failure)"),
+            default_block.index("RegisterMod(batch.mods[index].modRoot)"),
+            default_block.index("service.LoadAll("),
             "内容挂载点必须在加载（含资源型）之前注册",
         )
 

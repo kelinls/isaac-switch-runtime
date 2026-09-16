@@ -381,6 +381,73 @@ DRIVER = textwrap.dedent(
               "out_of_range_hook_id_reads_as_failed");
     }
 
+    // 卡上开关驱动的"这一轮别装这个挂点"判据（真机排障用，见 hook_install_service.hpp）。
+    // 判据是普通函数指针 + `void*` 上下文：它跑在游戏进程的安装路径上，不引入虚表、不分配。
+    struct SkipContext {
+        std::vector<HookId> skipped;
+    };
+
+    bool SkipListedHooks(void* context, HookId id) noexcept {
+        auto* list = static_cast<SkipContext*>(context);
+        for (const HookId candidate : list->skipped) {
+            if (candidate == id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool SkipEveryHook(void*, HookId) noexcept { return true; }
+
+    void TestHookSkipPredicate() {
+        ScriptedHooks hooks{};
+        HookInstallService service{hooks};
+        HookInstallReport report{};
+        SkipContext context{};
+        context.skipped = {HookId::ManagerPresent, HookId::RebuildMountPoints};
+        service.SetSkipPredicate(&SkipListedHooks, &context);
+        Check(service.InstallProductionHooks(ValidModule(), &report).ok(),
+              "skip_predicate_install_still_succeeds");
+        Check(report.OutcomeOf(HookId::ManagerPresent) == HookOutcome::Skipped &&
+                  report.OutcomeOf(HookId::RebuildMountPoints) == HookOutcome::Skipped,
+              "skipped_hooks_recorded_as_skipped");
+        // 关键一条：被判据跳过的点**一次都不能碰端口** —— 排障的全部意义就是"不碰游戏内存"。
+        Check(hooks.presentCalls == 0 && hooks.rebuildCalls == 0,
+              "skipped_hooks_never_reach_the_port");
+        Check(hooks.updateCalls == 1 && hooks.renderCalls == 1 && hooks.collectibleCalls == 1 &&
+                  hooks.gameStartCalls == 1,
+              "hooks_without_a_skip_switch_are_still_installed");
+        Check(report.InstalledCount() == static_cast<std::uint32_t>(kHookIdCount) - 2,
+              "skipped_hooks_are_not_counted_as_installed");
+        Check(report.productionReady(), "skipping_optional_hooks_keeps_the_report_ready");
+
+        // 跳过**必需**点：只记 `Skipped` 并继续，整个安装不算失败 —— 否则"某个挂点有害"
+        // 与"Mod 根本没加载"就分不开了（这正是卡上 `skip-all.on` 想回答的问题）。
+        ScriptedHooks everyHooks{};
+        HookInstallService everyService{everyHooks};
+        HookInstallReport everyReport{};
+        everyService.SetSkipPredicate(&SkipEveryHook, nullptr);
+        Check(everyService.InstallProductionHooks(ValidModule(), &everyReport).ok(),
+              "skipping_every_hook_is_not_an_install_failure");
+        Check(everyReport.OutcomeOf(HookId::ManagerUpdate) == HookOutcome::Skipped,
+              "skipped_required_hook_is_skipped_not_failed");
+        Check(everyHooks.updateCalls == 0 && everyHooks.renderCalls == 0 &&
+                  everyHooks.collectibleCalls == 0 && everyHooks.presentCalls == 0 &&
+                  everyHooks.rebuildCalls == 0 && everyHooks.gameStartCalls == 0,
+              "skipping_every_hook_touches_no_game_memory");
+        Check(everyReport.FirstFailureSlot() == 0, "skipping_every_hook_reports_no_failure_slot");
+        Check(!everyReport.productionReady(), "skipping_every_hook_is_not_production_ready");
+
+        // 判据为 nullptr = 与加入这个能力之前逐字节一致：一个点都不跳过。
+        ScriptedHooks plain{};
+        HookInstallService plainService{plain};
+        HookInstallReport plainReport{};
+        plainService.SetSkipPredicate(nullptr, nullptr);
+        Check(plainService.InstallProductionHooks(ValidModule(), &plainReport).ok() &&
+                  plainReport.InstalledCount() == static_cast<std::uint32_t>(kHookIdCount),
+              "a_null_predicate_installs_every_hook");
+    }
+
     void TestHookTargetCarriesModuleIdentity() {
         // Hook verification compares the module build-ID field, so the service
         // must pass base, code window, image size and the full build ID through
@@ -410,6 +477,7 @@ DRIVER = textwrap.dedent(
         TestDispatcher();
         TestScanService();
         TestHookInstallService();
+        TestHookSkipPredicate();
         TestHookTargetCarriesModuleIdentity();
         if (failures != 0) {
             std::printf("PIPELINE_CHECKS_FAILED %d\n", failures);

@@ -150,8 +150,13 @@ class EmbeddedLuaRuntimeBoundaryTests(unittest.TestCase):
         runtime = (SOURCE / "lua_runtime.cpp").read_text()
         self.assertIn("int PrepareRuntime", runtime)
         preparation = runtime[runtime.index("int PrepareRuntime"):runtime.index("LuaInitResult ResetAfterFailure")]
-        initialize = runtime[runtime.index("LuaInitResult InitializeScript"):runtime.index("void DispatchPostUpdate()")]
+        initialize = runtime[runtime.index("LuaInitResult EnsureRuntimeWithMenuInternal")
+                              :runtime.index("void DispatchPostUpdate()")]
 
+        # 2026-09-16：建立运行时的那段（建状态 → `PrepareRuntime` → 自带菜单脚本）抽成了
+        # `EnsureRuntimeWithMenuInternal()` —— 因为"把所有模组都关掉"之后没有模组可加载、Lua 状态
+        # 就不会被建立，菜单自己也没了（真机读数 `g_ModRegisteredCount = 0`）。切片因此从那个函数起算；
+        # 断言的内容（注册走受保护的 `lua_pcall`、准备失败有独立结果码）一个字没改。
         self.assertIn("OpenSafeLibraries(state);", preparation)
         self.assertIn("RegisterModApi(state);", preparation)
         self.assertIn("lua_pushcfunction(state, PrepareRuntime);", initialize)
@@ -163,7 +168,8 @@ class EmbeddedLuaRuntimeBoundaryTests(unittest.TestCase):
         entry = (SOURCE / "runtime_entry.cpp").read_text()
 
         self.assertIn("RuntimePreparationFailed", header)
-        initialize = runtime[runtime.index("LuaInitResult InitializeScript"):runtime.index("void DispatchPostUpdate()")]
+        initialize = runtime[runtime.index("LuaInitResult EnsureRuntimeWithMenuInternal")
+                              :runtime.index("void DispatchPostUpdate()")]
         self.assertIn("LuaInitResult::RuntimePreparationFailed", initialize)
         self.assertIn("case LuaRuntime::LuaInitResult::RuntimePreparationFailed:", entry)
         self.assertIn("ReportStage7Failure(LuaRuntime::PreparationFailureDetail());", entry)
@@ -174,7 +180,8 @@ class EmbeddedLuaRuntimeBoundaryTests(unittest.TestCase):
         entry = (SOURCE / "runtime_entry.cpp").read_text()
 
         self.assertIn("RuntimePreparationMemoryFailed", header)
-        initialize = runtime[runtime.index("LuaInitResult InitializeScript"):runtime.index("void DispatchPostUpdate()")]
+        initialize = runtime[runtime.index("LuaInitResult EnsureRuntimeWithMenuInternal")
+                              :runtime.index("void DispatchPostUpdate()")]
         self.assertIn("const int preparationStatus = lua_pcallk", initialize)
         self.assertIn("preparationStatus == LUA_ERRMEM", initialize)
         self.assertIn("LuaInitResult::RuntimePreparationMemoryFailed", initialize)

@@ -55,13 +55,23 @@ GameRoomObservation ReadCurrentGameRoomType(uintptr_t, std::uint32_t*) {
 // Test seam for the controller-input bindings: the Hook installation is what publishes the
 // real `Manager::` trampolines, so the harness binds fakes and the Lua script asserts that the
 // handlers call them with the arguments the PC API passes.
-bool FakeIsActionPressed(std::uint32_t action, std::uint32_t controller) {
+//
+// ★ 2026-09-16 修正（这条断言原先写的是**错的调用约定**）：那三个绑定地址不是函数本体，而是
+// 游戏自己的入口跳板 —— 它把 `x0` 换成 Manager 单例、把 `x3` 清零，然后尾调用真函数
+// `(Manager*, u32 action, u32 controller, void* entity)`。也就是说**动作号在 x1、手柄序号在 x2**，
+// 第一个参数是跳板要覆盖的占位。原先的假跳板按 `(action, controller)` 两个参数声明，等于把
+// "动作号必须落在 x0"当成了契约，于是真机上任何按键都答"没按下"（0~27 号动作 × controller 0/1
+// 全问一遍、玩家按遍所有键，一个都没触发）。证据：跳板字节 + 本项目 stage 88/89 自己的调用点
+// `actionTriggered(manager, 动作号, 手柄序号, nullptr)`；新增的
+// `test_lua_input_binding_abi.py` 专门钉这条约定。
+bool FakeIsActionPressed(void* /* 被跳板覆盖的 Manager* */, std::uint32_t action,
+                         std::uint32_t controller) {
     return action == 16 && controller == 0;
 }
-bool FakeIsActionTriggered(std::uint32_t action, std::uint32_t controller) {
+bool FakeIsActionTriggered(void*, std::uint32_t action, std::uint32_t controller) {
     return action == 15 && controller == 0;
 }
-float FakeGetActionValue(std::uint32_t action, std::uint32_t controller) {
+float FakeGetActionValue(void*, std::uint32_t action, std::uint32_t controller) {
     return (action == 16 && controller == 0) ? 0.5f : 0.0f;
 }
 namespace GameFileReader {

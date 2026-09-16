@@ -338,6 +338,15 @@ void SetRuntimeState(const RuntimeContext& context) {
 
 #if !defined(EXL_STARTUP_PROBE_STAGE) || EXL_STARTUP_PROBE_STAGE != 6
 void ModuleWorker(void*) {
+    // 把"我们自己的启动期动作"（扫内存找游戏模块、装挂点、自校验、读模组文件）推迟到
+    // "系统装载游戏本体模块"那个窗口之后再开始。默认 0：`EXL_WORKER_STARTUP_DELAY_SECONDS`
+    // 未定义时下面是编译期常量 0，整个分支被优化掉 —— 生产形状与门禁都不变；
+    // 真机实验包由 `WORKER_STARTUP_DELAY_SECONDS=5` 打开（0 以外的取值经 Makefile 校验）。
+    // 为什么等在这里而不是入口：入口被游戏**同步等待**，在入口等等于给开机加秒数。
+    // 背景、实测数字与代价见 `docs/问题与解决记录.md` 2026-09-16 续十六 与 `docs/改动日志-20260916.md`。
+    if (kWorkerStartupDelayNanoseconds > 0) {
+        svcSleepThread(kWorkerStartupDelayNanoseconds);
+    }
 #if defined(EXL_PERSISTENCE_EVENT_DIAGNOSTIC)
     PersistenceEventJournal::MarkAndFlush(
         PersistenceEventJournal::Event::WorkerEntered);
@@ -935,12 +944,9 @@ extern "C" void exl_main(void*, void*) {
     IsaacModRuntime_EnsureThreadTls();
     IsaacModRuntime_PublishRuntimeSelf(reinterpret_cast<std::uintptr_t>(&exl_main));
 #endif
-    // 实验 E1（2026-09-15）：把运行时的**启动期工作整体推迟 15 秒**。
-    // 目的：验证"我们的启动期动作与'系统继续装载游戏后续模块'抢时序"这条假设
-    //       （崩溃点 `nn::ro::LoadModule → RoModule::BindVariables` 就在那个窗口里）。
-    // 唯一变量就是这个等待——下面的逻辑一字未改。若这一版不再崩，说明窗口是真的；
-    // 若照崩，说明与我们的代码无关，要回到系统/覆盖层那条线去查。
-    svcSleepThread(15'000'000'000ULL);
+    // 2026-09-16：这里原有的 `svcSleepThread(15'000'000'000ULL)` 已删除（实验 E1，提交 `38b761b2` 加的）。
+    // 入口是被游戏**同步等待**的 ⇒ 在入口等 = 直接给开机加秒数，而崩溃只是整体后移（记录续十六 §二）。
+    // 要把"我们自己的启动期动作"挪出装载窗口，等的地方是 `ModuleWorker` 开头（见下面那个函数）。
     TestRunObserver::Mark(TestRunObserver::State::ExlMainEntered);
 #if defined(EXL_LAYERED_RUNTIME)
     // Layered entry: the Composition Root records the entry boundary before the

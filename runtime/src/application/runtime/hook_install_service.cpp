@@ -48,8 +48,15 @@ Status HookInstallService::InstallProductionHooks(const ModuleInfo& module,
     // 必需点先装（登记表里 required 的那些；当前只有 ManagerUpdate）。
     // 必需点失败即整体失败：其余点根本没被尝试，一律记 Skipped，
     // 于是报告里不会留下 Pending（回读口径"FirstFailureSlot 只看 Failed"依赖这一点）。
+    //
+    // 例外（排障用）：判据说"这一轮跳过它"时只记 `Skipped` 并继续 —— 否则一个"跳过必需点"
+    // 的排障配置会让整个 Mod 都装不上，我们就没法把"某个挂点有害"和"Mod 没加载"区分开。
     for (const HookDescriptor& point : kHookCatalog) {
         if (!point.required) {
+            continue;
+        }
+        if (ShouldSkip(point.id)) {
+            report->Set(point.id, HookOutcome::Skipped);
             continue;
         }
         const Status status = hooks_.Install(point.id, target);
@@ -69,6 +76,10 @@ Status HookInstallService::InstallProductionHooks(const ModuleInfo& module,
     // 既不影响 Mod 加载，也不影响其它挂点。顺序即回读槽位顺序。
     for (const HookDescriptor& point : kHookCatalog) {
         if (point.required) {
+            continue;
+        }
+        if (ShouldSkip(point.id)) {
+            report->Set(point.id, HookOutcome::Skipped);
             continue;
         }
         report->Set(point.id, hooks_.Install(point.id, target).ok() ? HookOutcome::Installed

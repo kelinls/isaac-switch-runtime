@@ -185,6 +185,12 @@ struct SpriteHandle {
     float colorGreen;
     float colorBlue;
     float colorAlpha;
+    // `Color` 的第 5/6/7 个分量（`RO/GO/BO`）。2026-09-16 起随 tint 一起回写引擎：PC 的
+    // `sprite.Color = Color(r,g,b,a,ro,go,bo)` 是**整体替换**，只写 tint 会把上一份偏移量留在
+    // 引擎对象里（EID 传的是 `0,0,0`，留旧值就会出现它没要求过的颜色偏移）。
+    float colorOffsetRed;
+    float colorOffsetGreen;
+    float colorOffsetBlue;
     std::uint8_t flipX;
     std::uint8_t hasScale;
     std::uint8_t hasColor;

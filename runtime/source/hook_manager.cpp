@@ -5,6 +5,7 @@
 #if !defined(EXL_DIAGNOSTIC_STAGE)
 #include "default_callback_gate.hpp"
 #include "default_persistence_gate.hpp"
+#include "infrastructure/persistence/engine_save_file_adapter.hpp"
 #include "mod_persistence.hpp"
 #endif
 #include "game_observer.hpp"
@@ -26,8 +27,12 @@
 // deleted with the migration.
 #include "application/mod/content_mount_service.hpp"
 #include "application/mod/manifest_service.hpp"
+#include "application/mod/mod_discovery_service.hpp"
 #include "infrastructure/content/engine_content_mount_adapter.hpp"
+#include "infrastructure/content/engine_directory_adapter.hpp"
 #include "application/mod/mod_load_service.hpp"
+#include "application/mod/mod_toggle_service.hpp"
+#include "interfaces/lua/mod_menu_api.hpp"
 #include "application/runtime/hook_install_service.hpp"
 #include "infrastructure/exlaunch/exlaunch_hook_adapter.hpp"
 #include "infrastructure/content/game_file_reader_adapter.hpp"
@@ -127,6 +132,40 @@ std::atomic<std::uint32_t> g_RenderCallbackEntries{0};
 // 之间的线格式），只给探针读：安装结果与"中继到底跑没跑"必须能从设备上读出来。
 std::atomic<std::uint32_t> g_RenderPresentRelayState{0};
 std::atomic<std::uint32_t> g_RenderPresentRelayEntries{0};
+
+// 卡上开关的**自证**字段（2026-09-16，排障用）。
+//
+// 为什么必须有：开关文件读不到时 `CardSwitchOn` 返回 false（"就当没这个开关"），
+// 于是"开关没生效"与"开关生效了但没用"在设备上长得一模一样 —— 那会把整个二分带偏。
+// 这两个字把两种失败分开，调试桩直接读（一次开机读一次就够）：
+//   [0] 找到的开关掩码（按 `kCardSwitchNames` 的顺序，bit i = 第 i 个名字的 `.on` 在卡上）
+//   [1] 通道状态：bit0 = 至少一次查询成功返回；bit1 = 至少一次查询失败（通道不可用）；
+//                 bit2 = 在**不是游戏主线程**的地方被要求探测 ⇒ 拒绝执行（见下面那条纪律）
+std::atomic<std::uint32_t> g_CardSwitchMask{0};
+std::atomic<std::uint32_t> g_CardSwitchChannel{0};
+// ★★ 纪律（2026-09-16 真机撞出来的）：**游戏 nnSdk 的文件 API 只允许在游戏主线程上调用。**
+//
+// 事故经过：卡上开关最早是在"装挂点"那一步探测的，而那一步跑在**我们自己创建的 worker 线程**上。
+// 结果 442190 那一版**每次开机必崩**（两份崩溃报告 `01789571605` / `01789571620`）：
+// `runtime + 0x15080`（`EngineSaveFileAdapter::Exists`）→ nnSdk 的
+// `_ZN2nn2fs8OpenFileEPNS0_10FileHandleEPKci + 0x28`
+// → nnSdk 里一条 `os::SdkMutexType::Lock` → 空指针 + 0x1b0 的 Data Abort。
+// 同一个适配器的 `Read`/`Write` 在**游戏主线程**上一直是好的（模组开关状态的持久化就是它做的）
+// ⇒ 差别是**线程**，不是时机（两者相隔几毫秒）。
+// 机制：游戏这套 nnSdk 用的是**线程本地堆**（`TlsHeapCentral`，退出对局那次崩溃的栈里也出现过），
+// 我们自己 `svcCreateThread`/libnx 建出来的线程没有在游戏的线程体系里登记 ⇒ 任何会**分配内存**的
+// SDK 调用都会踩空。所以：**我们自己的线程上只做"读内存 + 写游戏代码"，不做 SDK 调用。**
+// 用 u32 而不是 bool 原子：门禁 `test_runtime_source_contains_no_bool_atomics`
+// 明令两个源码根里不许出现 bool 特化的原子（0 = 未允许、1 = 允许探测）。
+std::atomic<u32> g_CardSwitchProbeAllowed{0};
+
+// 名字顺序就是掩码位序 —— 改了顺序就等于换了 `g_CardSwitchMask` 的语义，别随手改。
+//
+// 只留"由**游戏主线程**上的代码读取"的开关：挂点跳过类开关原本也在这里，但读它们的那一步
+// 跑在 worker 线程上 ⇒ 会崩（见 `g_CardSwitchProbeAllowed` 上面那条纪律）。
+// 挂点层面的二分改用**编译开关**（`ONLY_REQUIRED_HOOK=1`），一条构建一个配置，不上卡。
+constexpr const char* kCardSwitchNames[] = {"no-menu", "no-lua"};
+constexpr std::size_t kCardSwitchNameCount = sizeof(kCardSwitchNames) / sizeof(kCardSwitchNames[0]);
 
 HookInstallResult RecordUpdateHookInstall(HookInstallResult result) {
     g_HookInstallResults[0].store(static_cast<std::uint32_t>(result), std::memory_order_release);
@@ -1006,6 +1045,9 @@ enum class DefaultManifestFailureDetail : u32 {
     // 照常注册、Lua 完全不初始化、`InitializeDefaultManifestMod` 返回成功、Mod 状态为 Ready。
     // 诊断字 [11] 因此有了第三种含义：0 = 带脚本加载成功，1..4 = 失败在哪一步，5 = 只挂载内容。
     Scriptless = 5,
+    // 6：没有可用清单，运行时**自己列目录**发现的模组（方案 A，2026-09-16）。
+    // 不是失败：与 0 一样是"加载成功"，只是告诉读数"这批模组不是清单点名的那批"。
+    Discovered = 6,
 };
 std::atomic<DefaultManifestState> g_DefaultManifestState{DefaultManifestState::Unarmed};
 std::atomic<u32> g_DefaultManifestFailureDetail{static_cast<u32>(DefaultManifestFailureDetail::None)};
@@ -1128,6 +1170,130 @@ bool InitializeDefaultManifestMod(u32* failureDetail) {
 // relay can reach the same instance through `SessionContentMountService()`.
 isaac::runtime::EngineContentMountAdapter g_ContentMountAdapter;
 isaac::runtime::ContentMountService g_ContentMountService{g_ContentMountAdapter};
+// 方案 A（2026-09-16）：没有清单时自己列 `isaac_mods/mods`，把发现的目录当模组。
+// 与适配器同样放在文件作用域：这两个对象都没有动态初始化的依赖。
+isaac::runtime::EngineDirectoryAdapter g_ModDirectoryAdapter;
+isaac::runtime::ModDiscoveryService g_ModDiscoveryService{g_ModDirectoryAdapter};
+// 模组开关（2026-09-16，路线 B）：状态存在游戏**存档分区**里（真机通道见
+// `docs/问题与解决记录.md` 续三十四），开机时读出来、按它过滤掉被关掉的模组。
+// 放在文件作用域的理由同上面两个：没有动态初始化的依赖，菜单侧也能拿到同一个实例。
+isaac::runtime::EngineSaveFileAdapter g_SaveFileAdapter;
+isaac::runtime::ModToggleService g_ModToggleService{g_SaveFileAdapter};
+
+// 把内嵌的模组开关菜单当成"第一个模组"装进 Lua：走标准模组路径（同样的上下文与文件绑定）。
+// 需要一个合法的 `modRoot`（引擎的 stage13 上下文只接受 `rom:/isaac_mods/mods/` 前缀下的路径）；
+// 菜单本身不 `require`，所以这个根只用于满足上下文校验。
+// 卡上开关（定义在下面，这里先声明：装菜单时要用它）。
+bool CardSwitchOn(const char* name);
+
+bool LoadEmbeddedMenuMod() {
+    if (CardSwitchOn("no-menu") || CardSwitchOn("no-lua")) {
+        return false;   // 卡上开关：这一轮不装菜单（等价于"连自带菜单都没有 Lua 状态"）
+    }
+    return LuaRuntime::InitializeEmbeddedMenuMod("rom:/isaac_mods/mods/isaac-switch-mod-menu",
+                                                 g_DefaultManifestBindings) ==
+           LuaRuntime::LuaInitResult::Success;
+}
+
+// 卡上开关 `no-lua.on`：这一轮**完全不建 Lua 状态**（自带菜单与真实模组都不加载），
+// 但模块本身照旧在（挂点按各自的开关决定）。与 `no-menu` 的区别只是"真实模组还装不装"。
+bool CardSwitchNoLua() { return CardSwitchOn("no-lua"); }
+
+// ---- 卡上开关（2026-09-16，排障效率）------------------------------------------------
+//
+// 为什么要有它：定位崩溃时"一版一构建一部署"太贵（每轮十几分钟）。运行时改成**开机时看卡上有没有
+// 标记文件**，来决定这一轮装哪些挂点 —— 于是**一份包能测很多种配置**，改卡上的文件（FTP 一秒）
+// 加一次重启就能换一个变量，不需要我重新构建。
+//
+// 标记文件放在游戏覆盖层目录里（我用 FTP 能写、游戏能读）：
+//   `/atmosphere/contents/010021C000B6A000/romfs/isaac_mods/mods/<名字>.on`
+//   ⇒ 运行时按 `rom:/isaac_mods/mods/<名字>.on` 去问"存在吗"。
+// ⚠️ 放在 `mods/` 里是安全的：模组自动发现**只认子目录**，文件会被忽略。
+//
+// 支持的开关（名字就是文件名的前半段）：
+//   `no-menu`        不装自带的模组开关菜单（真实模组照旧加载）
+//   `no-lua`         不建任何 Lua 状态（菜单与真实模组都不加载）
+//
+// ⚠️ 这两个开关都只由**游戏主线程**上的代码读取（模组加载那条路），**不允许**在 worker 线程上读
+// —— 理由见 `g_CardSwitchProbeAllowed` 上面那段事故记录。
+//
+// **一次开机只探测一遍**：第一次（被允许的）调用时把 `kCardSwitchNames` 里每个名字都问一遍，
+// 结果存进 `g_CardSwitchMask` / `g_CardSwitchChannel`（设备侧可读，见那里的注释），之后只查掩码。
+void BuildCardSwitchPath(const char* name, char* out, std::size_t capacity) {
+    const char* prefix = "rom:/isaac_mods/mods/";
+    const char* suffix = ".on";
+    std::size_t length = 0;
+    if (out == nullptr || capacity == 0) {
+        return;
+    }
+    out[0] = '\0';
+    const char* pieces[3] = {prefix, name, suffix};
+    for (const char* piece : pieces) {
+        for (const char* cursor = piece; *cursor != '\0' && length + 1 < capacity; ++cursor) {
+            out[length++] = *cursor;
+        }
+    }
+    out[length] = '\0';
+}
+
+void ProbeCardSwitches() {
+    static bool probed = false;
+    if (probed) {
+        return;
+    }
+    // ★ 硬闸：**不确认自己在游戏线程上就不碰卡**。
+    // 这一条是 442190 那次"每次开机必崩"的直接修复 —— 那种崩溃发生在 nnSdk 内部，
+    // 从我们的代码里看不出任何异常，排查代价极高（两份崩溃报告 + 一次完整装机）。
+    if (g_CardSwitchProbeAllowed.load(std::memory_order_acquire) == 0) {
+        g_CardSwitchChannel.fetch_or(4U, std::memory_order_release);
+        return;
+    }
+    probed = true;
+    u32 mask = 0;
+    u32 channel = 0;
+    for (std::size_t index = 0; index < kCardSwitchNameCount; ++index) {
+        char path[128] = {};
+        BuildCardSwitchPath(kCardSwitchNames[index], path, sizeof(path));
+        bool exists = false;
+        if (!g_SaveFileAdapter.Exists(path, &exists).ok()) {
+            channel |= 2U;   // 查询本身失败：通道不可用（不是"文件不在"）
+            continue;
+        }
+        channel |= 1U;
+        if (exists) {
+            mask |= (1U << index);
+        }
+    }
+    g_CardSwitchMask.store(mask, std::memory_order_release);
+    g_CardSwitchChannel.store(channel, std::memory_order_release);
+}
+
+bool CardSwitchOn(const char* name) {
+    if (name == nullptr) {
+        return false;
+    }
+    ProbeCardSwitches();
+    const u32 mask = g_CardSwitchMask.load(std::memory_order_acquire);
+    for (std::size_t index = 0; index < kCardSwitchNameCount; ++index) {
+        if (std::strcmp(kCardSwitchNames[index], name) == 0) {
+            return (mask & (1U << index)) != 0;
+        }
+    }
+    // 表里没有的名字：如实返回 false（不现问卡 —— 那会引入"有的开关问了、有的没问"的
+    // 两套行为，掩码也就无法自证了）。
+    return false;
+}
+
+// 挂点层面的"跳过判据"（`ONLY_REQUIRED_HOOK=1` 的二分构建用）。
+//
+// 为什么是**编译期**而不是卡上开关：读卡要用游戏 nnSdk 的文件 API，而装挂点这一步跑在
+// **worker 线程**上（见 `g_CardSwitchProbeAllowed` 上面的事故记录）。所以挂点二分只能一条构建
+// 一个配置；卡上开关只留给"游戏主线程上读得到"的那两个（`no-menu` / `no-lua`）。
+#if defined(EXL_ONLY_REQUIRED_HOOK) && EXL_ONLY_REQUIRED_HOOK == 1
+bool SkipOptionalHooksPredicate(void*, isaac::runtime::HookId id) noexcept {
+    return !isaac::runtime::IsRequired(id);
+}
+#endif
 
 u32 MapModLoadFailure(const isaac::runtime::ModLoadFailure& failure) {
     if (failure.step == isaac::runtime::ModLoadStep::None) return 0;
@@ -1140,6 +1306,10 @@ u32 MapModLoadFailure(const isaac::runtime::ModLoadFailure& failure) {
 // 两个头文件在本文件里同时可见。
 static_assert(isaac::runtime::kRomfsModScriptMaximumLength == kRomfsModScriptMaximumLength,
               "脚本缓冲区上限在两处定义必须一致（runtime_constants.hpp / manifest_service.hpp）");
+// 同上：多模组上限在旧解析器与 domain 各有一份，必须一致 —— 不一致时"清单里有 4 个 Mod"
+// 会在解析层通过、在解析结果类型里装不下（或者反过来），而这类错只在真机上看得见。
+static_assert(isaac::runtime::kModManifestCapacity == ::ModManifest::kMaximumSelectedMods,
+              "多模组上限在两处定义必须一致（mod_manifest.hpp / domain/mod_manifest.hpp）");
 
 // 把 `ModLoadFailure` 变成诊断字 `[11]`：低 8 位沿用旧步骤字，bits 8..15 是原因（`StatusCode`
 // 或 Lua 的 detail），bits 16..47 是读取失败时观测到的文件长度。
@@ -1150,53 +1320,124 @@ u32 PackModLoadDiagnostics(const isaac::runtime::ModLoadFailure& failure) {
 }
 
 bool LoadDefaultManifestModThroughService(u32* failureDetail) {
+    // ★ 进入这个函数 = **我们确定自己在游戏主线程上**（它只由 `ManagerUpdateHook::Callback` 调用，
+    // 而那个回调是游戏自己的 `Manager::Update` 帧里进来的）。从这一行起才允许用游戏 nnSdk 的
+    // 文件 API（卡上开关就要用它）—— 理由见 `g_CardSwitchProbeAllowed` 上面那段事故记录。
+    g_CardSwitchProbeAllowed.store(1, std::memory_order_release);
+    // 卡上开关 `no-lua.on`：**这一轮一个 Lua 状态都不建**（自带菜单与真实模组都不加载，
+    // 连清单/自动发现都不走）。用来把"运行时在，但 Lua 侧完全不存在"这一档单独隔离出来。
+    // 注意它不改变挂点安装：挂点层面的二分用 `ONLY_REQUIRED_HOOK=1` 的构建。
+    if (CardSwitchNoLua()) {
+        if (failureDetail != nullptr) {
+            *failureDetail = 0;
+        }
+        return true;
+    }
     isaac::runtime::GameFileReaderAdapter content{g_DefaultManifestBindings};
     isaac::runtime::EmbeddedLuaAdapter lua{g_DefaultManifestBindings};
     // The JSON backend stays the hand-written parser that already runs on
     // device; the adapter is the only bridge to it, so `ManifestParser` and
     // `ManifestService` have no legacy dependency of their own.
+    //
+    // 两个后端一起给：`SelectFunction` 是"取第一个启用的"（历史口径，诊断阶段仍在用），
+    // `SelectAllFunction` 是"取全部启用的"（多模组加载用的就是它）。
     isaac::runtime::ManifestService manifestService{
         content, isaac::runtime::ManifestParser{
-                     isaac::runtime::ManifestSelectorAdapter::SelectFunction()}};
+                     isaac::runtime::ManifestSelectorAdapter::SelectFunction(),
+                     isaac::runtime::ManifestSelectorAdapter::SelectAllFunction()}};
     isaac::runtime::ModLoadService service{content, lua};
-    std::array<char, isaac::runtime::kModEntryPathCapacity> entryPath{};
-    std::array<char, isaac::runtime::kModRootPathCapacity> modRoot{};
-    std::array<char, isaac::runtime::kModChunkNameCapacity> chunkName{};
     isaac::runtime::ModLoadFailure failure{};
     TestRunObserver::Mark(TestRunObserver::State::LuaInitializeEntered);
-    const isaac::runtime::Result<isaac::runtime::ResolvedManifestMod> resolved =
-        manifestService.Resolve(g_DefaultManifest.data(), g_DefaultManifest.size(),
-                                entryPath.data(), entryPath.size(), modRoot.data(),
-                                modRoot.size(), chunkName.data(), chunkName.size(), &failure);
+    // 一批 Mod 的路径缓冲放在**静态存储**里：`ResolvedManifestModBatch` 约 9.6 KiB，
+    // 放在这条路径的栈上不合适（它跑在游戏线程），而且 `ResolvedManifestMod` 里的指针
+    // 必须活得和这一批一样久 —— 挂在函数内的 static 正好满足。
+    static isaac::runtime::ResolvedManifestModBatch batch{};
+    const isaac::runtime::Status resolved =
+        manifestService.ResolveAll(g_DefaultManifest.data(), g_DefaultManifest.size(), &batch,
+                                   &failure);
+    // 方案 A（2026-09-16）：**清单是可选项**。清单缺席（或读不出来/写坏了）时，运行时自己列
+    // `isaac_mods/mods`，把发现的每个子目录当成一个模组 —— 玩家"把模组文件夹丢进卡里"就装好了，
+    // 与 PC 的语义一致（见 `mod_discovery_service.hpp`）。
+    //
+    // 三条纪律：
+    //   1. **有合法清单就听清单**（顺序、开关都由清单说了算，向后兼容）；
+    //   2. 自动发现只在**清单路径失败**时兜底，而且只在失败原因是"没有清单/读不出来/解析失败"
+    //      这类"清单不可用"的情况 —— 路径拼装失败（`PathBuild`）说明清单本身有问题，
+    //      那种情况下"静默改用自动发现"会把用户写的清单悄悄忽略掉；
+    //   3. 自动发现失败时**如实报失败**，不要退回"什么都没加载"却看起来正常。
+    u32 discoveryMark = 0;
     if (!resolved.ok()) {
-        const u32 detail = MapModLoadFailure(failure);
-        *failureDetail = detail;
-        g_DefaultManifestFailureWord.store(PackModLoadDiagnostics(failure),
-                                           std::memory_order_release);
-        TestRunObserver::Mark(TestRunObserver::State::LuaInitializeReturned, detail);
-        return false;
+        const bool manifestUnusable =
+            failure.step == isaac::runtime::ModLoadStep::ManifestRead ||
+            failure.step == isaac::runtime::ModLoadStep::ManifestParse;
+        const isaac::runtime::Status discovered =
+            manifestUnusable ? g_ModDiscoveryService.Discover(&batch)
+                             : isaac::runtime::Status{isaac::runtime::StatusCode::Unsupported};
+        if (discovered.ok()) {
+            discoveryMark = static_cast<u32>(DefaultManifestFailureDetail::Discovered);
+        } else {
+            const u32 detail = MapModLoadFailure(failure);
+            *failureDetail = detail;
+            g_DefaultManifestFailureWord.store(PackModLoadDiagnostics(failure),
+                                               std::memory_order_release);
+            TestRunObserver::Mark(TestRunObserver::State::LuaInitializeReturned, detail);
+            return false;
+        }
     }
-    // Mount the Mod's own content directories before its entry script runs, so a Mod
-    // that ships `resources/` can already load its own assets from the script. The
-    // engine rebuilds its mount point table on content reload and drops this mount
-    // point with it, which is why the service also remembers the Mod for the rebuild
-    // relay to restore.
-    (void)g_ContentMountService.RegisterMod(resolved.value().modRoot);
+    (void)discoveryMark;
+    // 模组开关（2026-09-16，路线 B）：**在挂载点与脚本之前**按状态把被关掉的模组移出去。
+    // 真机已验：模组加载这一步存档分区已经挂好，所以这一次读就是"当次生效"的。
+    // 读失败（通道不可用/文件读坏）时**不拦**：宁可照常加载（用户看到的是"开关没生效"），
+    // 也不要因为读不出状态就少加载模组 —— 那会变成"游戏行为莫名其妙变了"。
+    // 菜单要显示**全部**扫描到的模组（包括被关掉的，用户正是要重新打开它们），
+    // 所以清单在过滤**之前**先灌进去；过滤之后再把"这次真的加载了哪些"标上。
+    isaac::runtime::ModMenuAttachToggles(&g_ModToggleService);
+    isaac::runtime::ModMenuPublishDiscovered(batch);
+    if (const isaac::runtime::Status toggles = g_ModToggleService.Load(); toggles.ok()) {
+        (void)g_ModToggleService.ApplyToBatch(&batch);
+    }
+    isaac::runtime::ModMenuMarkActive(batch);
+
+    // 每个 Mod 各自的资源目录都要挂上，并且要在**它自己的**入口脚本之前挂好 ——
+    // 一个只带 `resources/` 的 Mod 就是靠这一步生效的。挂载点表由引擎在内容重载时重建，
+    // 那时会丢掉这里的挂点，所以 `ContentMountService` 同时记住这些 Mod 供重建中继恢复。
+    for (std::size_t index = 0; index < batch.count; ++index) {
+        (void)g_ContentMountService.RegisterMod(batch.mods[index].modRoot);
+    }
     // 注意：**这里刻意不登记任何东西**。贴图侧的结论是——引擎最终只认磁盘上真实存在的
     // `.pcx`，所以"把请求改回 `.png`"的那条图片中继保持空转（表为空 = 永不改写），转码由
     // 打包工具 `tools/pc_mod_manifest.py` 在生成 romfs 时完成（PNG 旁边同时写入同名 `.pcx`）。
-    isaac::runtime::ModLoadRequest request{};
-    request.resolved = &resolved.value();
-    request.entryBuffer = g_DefaultEntry.data();
-    request.entryCapacity = g_DefaultEntry.size();
-    const isaac::runtime::Result<isaac::runtime::ModLoadOutcome> loaded =
-        service.Load(request, &failure);
+    // 模组开关菜单：**永远先作为"第一个模组"加载**（2026-09-16 真机结论见该函数注释）。
+    // 放在模组之前有两个理由：① 它要最先看到呼出键（晚了会被模组抢走）；② 它是"模组全关时
+    // 菜单依然可用"的实现方式 —— 不再需要那条"只有菜单的运行时"特殊路径。
+    static_cast<void>(LoadEmbeddedMenuMod());
+    isaac::runtime::ModLoadBatchOutcome loadOutcome{};
+    const isaac::runtime::Status loaded =
+        service.LoadAll(batch, g_DefaultEntry.data(), g_DefaultEntry.size(), &loadOutcome,
+                        &failure);
     u32 detail = MapModLoadFailure(failure);
-    if (loaded.ok() && !loaded.value().ScriptExecuted()) {
-        // 纯资源 Mod（清单没写 `entry`，或 entry 指向的文件不存在）：加载**成功**，内容挂载点
-        // 已注册，只是没有脚本可跑。诊断字 [11] 用 5 把它和"带脚本成功（0）"区分开；真机上
-        // `isaac_mods/manifest.json` 只有一个 Mod，所以这个字就是"这次挂载的是资源型 Mod"。
-        detail = static_cast<u32>(DefaultManifestFailureDetail::Scriptless);
+    // 模组加载失败（脚本报错等）会让运行时把 Lua 状态收掉 —— 那样连自带菜单都没了，
+    // 用户就失去"在游戏里把出问题的模组关掉"的唯一手段。这里把菜单重新装一遍（标准模组路径），
+    // 失败本身照旧如实上报（诊断字不变），只是菜单还活着。
+    if (!loaded.ok() || loadOutcome.anyFailure) {
+        static_cast<void>(LoadEmbeddedMenuMod());
+    }
+    if (loaded.ok() && !loadOutcome.anyFailure && loadOutcome.count > 0) {
+        // 全部成功时，用**第一个** Mod 的脚本状态决定诊断字：PC 的清单里第一个 Mod 通常就是
+        // 主体（我们的 EID 部署就是这样）。任何 Mod 失败都走上面的失败分支。
+        if (discoveryMark != 0) {
+            // 自动发现：诊断字用 6（`Discovered`）——与"清单里指定"区分开，
+            // 真机上一眼就能看出"这次是靠扫描加载的"。
+            detail = discoveryMark;
+        }
+        const isaac::runtime::ModLoadOutcome& first = loadOutcome.scripts[0];
+        if (detail == 0 && !first.ScriptExecuted()) {
+            // 纯资源型 Mod（清单没写 `entry`，或 entry 指向的文件不存在）：加载**成功**，
+            // 内容挂载点已注册，只是没有脚本可跑。诊断字 [11] 用 5 把它和"带脚本成功（0）"
+            // 区分开。多模组下"第一个 Mod 无脚本、后面有脚本"是合法清单，这里如实报 5，
+            // 具体每个 Mod 的状态在 `loadOutcome.scripts[]` 里。
+            detail = static_cast<u32>(DefaultManifestFailureDetail::Scriptless);
+        }
     }
     *failureDetail = detail;
     // 诊断字 `[11]`：脚本型成功为 0、纯资源型为 5、失败则带上"原因 + 观测到的文件大小"。
@@ -1207,7 +1448,7 @@ bool LoadDefaultManifestModThroughService(u32* failureDetail) {
     // scripted success, the legacy step code on failure, and 5 when the Mod was
     // mounted without a script (Lua was deliberately never initialized).
     TestRunObserver::Mark(TestRunObserver::State::LuaInitializeReturned, detail);
-    return loaded.ok();
+    return loaded.ok() && !loadOutcome.anyFailure;
 }
 
 bool PrimeDefaultCallbacks(uintptr_t manager) {
@@ -1948,6 +2189,12 @@ DefaultManifestInstallResult TryInstallDefaultManifestMod(const TargetModule& mo
     isaac::runtime::RegisterEntryRelayCallbacks();
     isaac::runtime::HookRoutingAdapter hookAdapter{};
     isaac::runtime::HookInstallService hookService{hookAdapter};
+#if defined(EXL_ONLY_REQUIRED_HOOK) && EXL_ONLY_REQUIRED_HOOK == 1
+    // 二分构建（2026-09-16）：这一轮**只装必需挂点**（`ManagerUpdate`），五个可选挂点一个都不碰。
+    // 用来回答"主界面停 10 秒崩 / 退出对局崩"是不是可选挂点引起的。
+    // ⚠️ 判据必须是**编译期常量**：这一步跑在 worker 线程上，读卡会崩（见 `CardSwitchOn` 上面那段）。
+    hookService.SetSkipPredicate(&SkipOptionalHooksPredicate, nullptr);
+#endif
     isaac::runtime::HookInstallReport hookReport{};
     const bool hooksInstalled =
         info.valid && hookService.InstallProductionHooks(info, &hookReport).ok();
@@ -2716,6 +2963,30 @@ bool VerifyLevelGetAbsoluteStage(const TargetModule& module, uintptr_t* method) 
     std::array<u8, kLevelGetAbsoluteStageExpectedBytes.size()> bytes{};
     std::memcpy(bytes.data(), reinterpret_cast<const void*>(candidate), bytes.size());
     if (!verify_bytes(kLevelGetAbsoluteStageExpectedBytes.data(), bytes.data(), bytes.size())) {
+        return false;
+    }
+    *method = candidate;
+    return true;
+}
+
+// 2026-09-16：`Room:GetFrameCount()` 的入口（`Room::GetFrameCount @ 0x470B0C`）。
+// 与上面几条同形：**安装期必须核对入口 16 字节**；不符就只留 0 ⇒ handler 报"绑定不可用"，
+// 不会去调一个"地址恰好落在模块里"的东西，也不会编造帧数。
+bool VerifyRoomGetFrameCount(const TargetModule& module, uintptr_t* method) {
+    if (method == nullptr || module.base == 0 || module.buildId != kTargetBuildId ||
+        kRoomGetFrameCountOffset > UINTPTR_MAX - module.base ||
+        kRoomGetFrameCountExpectedBytes.size() > module.textSize ||
+        kRoomGetFrameCountOffset > module.textSize - kRoomGetFrameCountExpectedBytes.size()) {
+        return false;
+    }
+    const uintptr_t candidate = module.base + kRoomGetFrameCountOffset;
+    if ((candidate & 3) != 0 || !module.Contains(candidate, kRoomGetFrameCountExpectedBytes.size()) ||
+        !IsMappedRxModuleCodeWindow(candidate, kRoomGetFrameCountExpectedBytes.size())) {
+        return false;
+    }
+    std::array<u8, kRoomGetFrameCountExpectedBytes.size()> bytes{};
+    std::memcpy(bytes.data(), reinterpret_cast<const void*>(candidate), bytes.size());
+    if (!verify_bytes(kRoomGetFrameCountExpectedBytes.data(), bytes.data(), bytes.size())) {
         return false;
     }
     *method = candidate;
@@ -3646,6 +3917,10 @@ HookInstallResult TryInstallManagerUpdateHook(const TargetModule& module) {
         VerifyLevelIsNextStageAvailable(module, &nextStageAvailable);
         LuaRuntime::SetLevelGetAbsoluteStageBinding(absoluteStage);
         LuaRuntime::SetLevelIsNextStageAvailableBinding(nextStageAvailable);
+        // 2026-09-16：`Room:GetFrameCount()`。同样两处发布点都要发（漏发=某个档位少一个方法）。
+        uintptr_t roomGetFrameCount = 0;
+        VerifyRoomGetFrameCount(module, &roomGetFrameCount);
+        LuaRuntime::SetRoomGetFrameCountBinding(roomGetFrameCount);
         // 批次 10：`Room:WorldToScreenPosition()` 的引擎函数（两处发布点都要发 —— 漏发会让
         // 诊断档里少一个方法，这条教训本项目已经栽过一次）。
         uintptr_t getRenderPosition = 0;
@@ -3726,6 +4001,11 @@ void PublishManagerEngineBindings(const TargetModule& module) {
     VerifyLevelIsNextStageAvailable(module, &nextStageAvailable);
     LuaRuntime::SetLevelGetAbsoluteStageBinding(absoluteStage);
     LuaRuntime::SetLevelIsNextStageAvailableBinding(nextStageAvailable);
+    // 2026-09-16：`Room:GetFrameCount()`（`0x470B0C`）。与上面几条同样按"可选能力"处理：
+    // 守卫不符只留 0，handler 报"绑定不可用"，**不编造帧数**。
+    uintptr_t roomGetFrameCount = 0;
+    VerifyRoomGetFrameCount(module, &roomGetFrameCount);
+    LuaRuntime::SetRoomGetFrameCountBinding(roomGetFrameCount);
     // 批次 10（2026-09-15）：`Room:WorldToScreenPosition()` 要调的引擎函数。同样按"可选能力"
     // 处理：守卫不符只留 0，handler 报"绑定不可用"，不编造坐标。
     uintptr_t getRenderPosition = 0;

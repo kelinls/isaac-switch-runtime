@@ -150,7 +150,17 @@ TextReadResult ReadTextFile(const Bindings&, const char* path, u8* buffer,
         if (std::strcmp(g_Scenario, "compile") == 0) return CopySource("this is not lua", buffer, capacity, length);
         if (std::strcmp(g_Scenario, "execute") == 0) return CopySource("error('module failed')", buffer, capacity, length);
         if (std::strcmp(g_Scenario, "register_twice") == 0) {
-            return CopySource("RegisterMod('First',1); RegisterMod('Second',1)", buffer, capacity, length);
+            // 2026-09-16 多模组加载：`require` 出来的模块里再登记一个 Mod **不再是错误**
+            // （PC 上 `RegisterMod` 本来就可以调用多次）。这一条从"失败边界"改成了成功用例，
+            // 见 `test_a_required_module_may_register_a_second_mod`。
+            // 第二个 Mod 也要登记一个回调：首个初始化要求"至少有一个回调"，
+            // 否则失败原因是 `MissingPostUpdateCallback`，与"能不能登记两个 Mod"无关。
+            return CopySource(
+                "RegisterMod('First',1) "
+                "local second = RegisterMod('Second',1) "
+                "MODULE_REGISTERED_OK = 1 "
+                "second:AddCallback(ModCallbacks.MC_POST_UPDATE, function() end)",
+                buffer, capacity, length);
         }
         if (std::strcmp(g_Scenario, "nested") == 0) return CopySource("return require('src.missing')", buffer, capacity, length);
         if (std::strcmp(g_Scenario, "nested_execute") == 0) return CopySource("return require('src.metadata')", buffer, capacity, length);
@@ -305,6 +315,16 @@ mod:AddCallback(ModCallbacks.MC_POST_UPDATE, function() end))lua";
                    ? 0
                    : 7;
     }
+    if (std::strcmp(g_Scenario, "register_twice") == 0) {
+        // 多模组加载之后：这一条**必须成功**（两个 Mod 都登记得上、状态仍在）。
+        double marker = 0.0;
+        return result == LuaRuntime::LuaInitResult::Success &&
+                       LuaRuntime::RequireFailureDetail() == 0 &&
+                       LuaRuntime::ReadLuaGlobalNumber("MODULE_REGISTERED_OK", &marker) &&
+                       marker == 1.0
+                   ? 0
+                   : 11;
+    }
     if (std::strcmp(g_Scenario, "not_found_text") == 0) {
         // 脚本自己 pcall 了 `require("")`，所以初始化必须成功；但失败细节仍然被记下来
         // （`RaiseRequireFailure` 先记账再 `luaL_error`），而且**一次文件读取都不许发生**。
@@ -318,7 +338,6 @@ mod:AddCallback(ModCallbacks.MC_POST_UPDATE, function() end))lua";
     if (std::strcmp(g_Scenario, "unsafe") == 0 || std::strcmp(g_Scenario, "depth") == 0) expected = 19;
     if (std::strcmp(g_Scenario, "missing") == 0 || std::strcmp(g_Scenario, "nested") == 0) expected = 20;
     if (std::strcmp(g_Scenario, "read") == 0) expected = 21;
-    if (std::strcmp(g_Scenario, "register_twice") == 0) expected = 26;
     if (std::strcmp(g_Scenario, "execute") == 0) expected = 27;
     if (std::strcmp(g_Scenario, "nested_execute") == 0) expected = 27;
     if (result != LuaRuntime::LuaInitResult::ScriptRunFailed ||
@@ -420,9 +439,20 @@ mod:AddCallback(ModCallbacks.MC_POST_UPDATE, function() end))lua";
         self.run_harness(self.stage13_harness, "plus_module_name")
 
     def test_production_loader_reports_each_failure_boundary(self):
-        for scenario in ("unsafe", "missing", "read", "compile", "execute", "nested_execute", "register_twice", "nested", "depth", "wrong_callback"):
+        # `register_twice` 不在这里：多模组加载之后它不再是失败（见下一条用例）。
+        for scenario in ("unsafe", "missing", "read", "compile", "execute", "nested_execute",
+                         "nested", "depth", "wrong_callback"):
             with self.subTest(scenario=scenario):
                 self.run_harness(self.stage13_harness, scenario)
+
+    def test_a_required_module_may_register_a_second_mod(self):
+        """`require` 出来的模块里再 `RegisterMod` 一次必须成功（多模组加载，2026-09-16）。
+
+        旧行为是**报错**（"RegisterMod accepts exactly one Mod"，require 失败码 26）。
+        多模组加载之后每个 Mod 各自调用一次 `RegisterMod` 是常态，所以这条从失败边界
+        改成成功用例：require 成功、没有记失败码、被 require 的模块确实读了、状态里的标记可见。
+        """
+        self.run_harness(self.stage13_harness, "register_twice")
 
     def test_production_default_stage7_and_stage12_keep_pc_mod_first_callback_contract(self):
         for executable in self.legacy_harnesses:

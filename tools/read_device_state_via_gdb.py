@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import os
 import re
 import select
@@ -48,7 +49,24 @@ DEFAULT_ELF = 'runtime/.gdbsym-artifacts/runtime.elf'
 # ⚠️ 教训（写在代码里免得再犯）：`identity` 那 16 字节的自校验只能证明"是同一版族"，
 # **分不出相邻两次构建**；改过任何编译单元都可能让 `bss`/`data` 整体挪位。
 # 所以任何一次重建之后，都必须用 `tools/elf_syms.py` 重新核对下面整张表。
-SYMS = {
+class _SymbolTable(dict):
+    """缺键时返回 0 并记账，而不是抛 `KeyError`。
+
+    2026-09-16 的教训：漏一个符号名（`g_selfJournalTotalRecords`）让整次读数在**准备阶段**
+    就崩了 —— 调试桩一个启动周期只能 attach 几次，一次 attach 就这么白白烧掉。
+    现在缺的键进 `missing`，调用方跳过它们、照读其余的量。
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.missing: list = []
+
+    def __missing__(self, key):
+        self.missing.append(key)
+        return 0
+
+
+SYMS = _SymbolTable({
     # ---- 代码锚点（只用于核对版本，不作为"变量"读）----
     'identity': 0x27e48,              # IsaacModRuntime_GetRuntimeIdentity
     'exl_main': 0x8890,               # 模块入口（旧表写 0x8840，那是 20:00 那次的构建）
@@ -67,10 +85,16 @@ SYMS = {
     'g_HookInstallResults': 0x2345c8,   # 16 字诊断数组（线格式，见 IsaacModRuntime_GetHookDiagnostics）
     'g_HookEnabled': 0x234610,
     'g_RenderPresentRelayState': 0x2345bc,
+    # 2026-09-16 卡上开关（一份包测多种配置，见 hook_manager.cpp 的那一节）：
+    #   [0] 掩码：bit i = 第 i 个名字的 `<名字>.on` 在卡上（位序见 CARD_SWITCH_NAMES）
+    #   [1] 通道：bit0 = 至少一次查询成功；bit1 = 至少一次查询失败（通道不可用）
+    # 没这两个量就分不清"开关没读到"与"开关生效了但没用"——那会把整个二分带偏。
+    'g_CardSwitchMask': 0x0,
+    'g_CardSwitchChannel': 0x0,
     'g_PresentGotSlotTarget': 0xb40f0,
     # ---- 2026-09-14 夜间加：清单/挂点失败原因（这次读数的主角）----
     'g_DefaultManifestFailureWord': 0x234598,   # 诊断字 [11]，打包格式见 mod_load_step.hpp
-    'g_DefaultManifestFailureDetail': 0x23459c,  # 旧步骤字（1=读清单 2=解析 3=拼路径 4=读入口 5=纯资源）
+    'g_DefaultManifestFailureDetail': 0x23459c,  # 步骤字（1..4 失败、5 纯资源、6 自动发现）
     'g_DefaultManifestState': 0x2345a0,          # 0 未武装 1 已武装 2 安装中 3 就绪 4 失败
     'g_HookInstallFailureCode': 0x234614,        # 入口中继后端转发的失败码（0 = 无失败）
     'g_HookInstallFailureSlot': 0x234618,        # 第一个失败挂点 index+1（0 = 没有装失败的）
@@ -78,6 +102,14 @@ SYMS = {
     'g_PendingGameStarted': 0x234624,            # 待派发的"游戏开局"事件
     # ---- Lua 侧 ----
     'g_ModRegistered': 0x334da4,       # 模组是否登记成功（1 字节；= Lua 真的跑起来了）
+    # 回调派发次数（无 ELF 时的兜底偏移；有 ELF 时由 `sync_syms_from_elf()` 刷新）
+    'g_UpdateCallbackEntries': 0x2345b0,
+    'g_RenderCallbackEntries': 0x2345b4,
+    # 自 journal（模块**自己**用 libnx fs 写 SD 的那条路）：会话状态与最后一条记录。
+    # 这些量没有兜底偏移 —— 没有 ELF 就如实报"读不到"，绝不用别的地址凑。
+    # 2026-09-16 多模组加载：登记成功的 Mod **个数**（清单里有几个 enabled，就该是几）。
+    # 偏移由 `sync_syms_from_elf()` 按符号名自动同步，这里只是无 ELF 时的兜底值。
+    'g_ModRegisteredCount': 0x334da8,
     'g_LastLuaErrorLength': 0x334c94,
     'g_LastLuaErrorText': 0x334c98,    # 256 字节文本
     'g_PostUpdateCount': 0x334c80,
@@ -91,10 +123,11 @@ SYMS = {
     'present_callsite_offset': 0x3F9B40,  # `Manager::Render` 体内那次 `bl Present`
     'present_got_slot': 0xA9E488,      # Present 的 GOT 槽（应等于 运行时基址 + present_got_intercept）
     'present_target': 0x4F3014,        # `Present` 本体（期望值比对用）
-}
+})
 #: 上表里"属于**我们运行时模块**"的那些键 → 它们在本地 ELF 里的**精确符号名**。
 #: 有这张表，偏移就不必再靠人手抄：`sync_syms_from_elf()` 每次读数前直接问 ELF。
 #: 不在表里的键（`manager_update_entry` 那几条）是**游戏模块**的常量，与我们的重建无关，保持原值。
+
 SYM_ELF_NAMES = {
     'identity': 'IsaacModRuntime_GetRuntimeIdentity',
     'exl_main': 'exl_main',
@@ -112,6 +145,8 @@ SYM_ELF_NAMES = {
     'g_HookInstallResults': '_ZN12_GLOBAL__N_1L20g_HookInstallResultsE',
     'g_HookEnabled': '_ZN12_GLOBAL__N_1L13g_HookEnabledE',
     'g_RenderPresentRelayState': '_ZN12_GLOBAL__N_1L25g_RenderPresentRelayStateE',
+    'g_CardSwitchMask': '_ZN12_GLOBAL__N_1L16g_CardSwitchMaskE',
+    'g_CardSwitchChannel': '_ZN12_GLOBAL__N_1L19g_CardSwitchChannelE',
     'g_PresentGotSlotTarget': 'g_PresentGotSlotTarget',
     'g_DefaultManifestFailureWord': '_ZN12_GLOBAL__N_1L28g_DefaultManifestFailureWordE',
     'g_DefaultManifestFailureDetail': '_ZN12_GLOBAL__N_1L30g_DefaultManifestFailureDetailE',
@@ -120,6 +155,15 @@ SYM_ELF_NAMES = {
     'g_HookInstallFailureSlot': '_ZZN5isaac7runtime22HookInstallFailureSlotEvE5value',
     'g_PendingGameStarted': '_ZN10LuaRuntime12_GLOBAL__N_1L20g_PendingGameStartedE',
     'g_ModRegistered': '_ZN10LuaRuntime12_GLOBAL__N_1L15g_ModRegisteredE',
+    # 2026-09-16：回调派发次数的**真身**（数组里那两个槽是错的，见 `legacy` 的注释）。
+    'g_UpdateCallbackEntries': '_ZN12_GLOBAL__N_1L23g_UpdateCallbackEntriesE',
+    'g_RenderCallbackEntries': '_ZN12_GLOBAL__N_1L23g_RenderCallbackEntriesE',
+    # 自 journal：0=没试过、1=sm+fs 会话起来了、2=服务初始化失败。
+    'g_selfJournalServiceState': '_ZN12self_journal14g_serviceStateE',
+    'g_selfJournalTotalRecords': '_ZN12self_journal14g_totalRecordsE',
+    'g_selfJournalLastMarker': '_ZN12self_journal12g_lastMarkerE',
+    'g_selfJournalLastResults': '_ZN12self_journal13g_lastResultsE',
+    'g_ModRegisteredCount': '_ZN10LuaRuntime12_GLOBAL__N_1L20g_ModRegisteredCountE',
     'g_LastLuaErrorLength': '_ZN10LuaRuntime12_GLOBAL__N_1L20g_LastLuaErrorLengthE',
     'g_LastLuaErrorText': '_ZN10LuaRuntime12_GLOBAL__N_1L18g_LastLuaErrorTextE',
     'g_PostUpdateCount': '_ZN10LuaRuntime12_GLOBAL__N_1L17g_PostUpdateCountE',
@@ -137,6 +181,31 @@ SYM_ELF_NAMES = {
     'g_RequireFailureDetail': '_ZN10LuaRuntime12_GLOBAL__N_1L22g_RequireFailureDetailE',
     'g_Dispatchable': '_ZN10LuaRuntime12_GLOBAL__N_1L14g_DispatchableE',
     'g_Unhooked': '_ZN10LuaRuntime12_GLOBAL__N_1L10g_UnhookedE',
+    # ---- B1 写通道探针（`runtime/source/probe/engine_file_write.cpp`，2026-09-16 第三轮）----
+    # 为什么要有这一步：偏移表是手抄的，而**改任何一个编译单元都会让 bss 整体挪位**；
+    # 探针从构建里删掉之后，`sync_syms_from_elf` 会自动把这些名字从表里剔掉并打印提示。
+    # ---- 模组开关菜单的诊断面（2026-09-16）----
+    # 菜单脚本要读键（`Input.*`）与画字（`Font.*`）：这两个绑定在真机上此前**从没被验过**，
+    # 所以"按了没反应"的第一件事就是看这几个量。
+    'g_InputIsActionTriggeredThunk': '_ZN10LuaRuntime12_GLOBAL__N_1L24g_InputIsActionTriggeredE',
+    # 菜单/输入诊断量（名字按 `nm` 直出，长度前缀由脚本核对）
+    'g_InputActionQueriedMask': '_ZN5isaac7runtime24g_InputActionQueriedMaskE',
+    'g_InputActionTriggeredMask': '_ZN5isaac7runtime26g_InputActionTriggeredMaskE',
+    'g_InputActionTriggeredMaskOther': '_ZN5isaac7runtime31g_InputActionTriggeredMaskOtherE',
+    'g_InputActionPressedMask': '_ZN5isaac7runtime24g_InputActionPressedMaskE',
+    'g_InputActionPressedMaskOther': '_ZN5isaac7runtime29g_InputActionPressedMaskOtherE',
+    'g_InputLastController': '_ZN5isaac7runtime21g_InputLastControllerE',
+    'g_InputPressedControllerMask': '_ZN5isaac7runtime28g_InputPressedControllerMaskE',
+    'g_InputTriggeredControllerMask': '_ZN5isaac7runtime30g_InputTriggeredControllerMaskE',
+    'g_InputLastActionCode': '_ZN5isaac7runtime21g_InputLastActionCodeE',
+    'g_InputLastActionResult': '_ZN5isaac7runtime23g_InputLastActionResultE',
+    'g_ModMenuLastCode': '_ZN5isaac7runtime17g_ModMenuLastCodeE',
+    'g_ModMenuMilestones': '_ZN5isaac7runtime19g_ModMenuMilestonesE',
+    'g_ModMenuReportCount': '_ZN5isaac7runtime20g_ModMenuReportCountE',
+    'g_FontDrawCalls': '_ZN5isaac7runtime15g_FontDrawCallsE',
+    'g_FontDrawBytes': '_ZN5isaac7runtime15g_FontDrawBytesE',
+    'g_FontLoadCalls': '_ZN5isaac7runtime15g_FontLoadCallsE',
+    'g_FontLoadResult': '_ZN5isaac7runtime16g_FontLoadResultE',
 }
 #: 表里有、但**这次构建的 ELF 里已经找不到**的符号：不能沿用过期的偏移（那是"看起来有值、
 #: 其实是别人的变量"），只能在读数时报"读不到"。这里只记账，方便汇报时说明缺了什么。
@@ -174,7 +243,10 @@ TEST_RUN_STATES = ['Unseen', 'ExlMainEntered', 'ModuleWorkerEntered', 'TitleStat
                    'FinalReportEntered']
 MANIFEST_STATES = ['Unarmed(未武装)', 'Armed(已武装)', 'Running(安装中)', 'Ready(就绪)', 'Failed(失败)']
 MANIFEST_STEPS = {0: '成功/无失败', 1: '读清单失败', 2: '解析清单失败', 3: '拼路径失败',
-                  4: '读入口脚本失败', 5: '纯资源型（无脚本，不是失败）'}
+                  4: '读入口脚本失败', 5: '纯资源型（无脚本，不是失败）',
+                  # 6（方案 A，2026-09-16）：**没有可用清单**，运行时自己列 `isaac_mods/mods`
+                  # 发现的模组。不是失败 —— 与 0 一样是加载成功，只是"这批模组不是清单点名的"。
+                  6: '自动发现（无清单，扫描 isaac_mods/mods）'}
 # `LuaRuntime::LuaInitResult`（`0x10 + 这个值` 就是报告里看到的 detail）。
 LUA_INIT_RESULTS = {0: '成功', 1: 'StateCreateFailed（建 lua_State 失败）',
                     2: 'RuntimePreparationMemoryFailed（准备运行时内存失败）',
@@ -192,8 +264,8 @@ def decode_failure_detail(value: int) -> str:
     """
     if value == 0:
         return MANIFEST_STEPS[0]
-    if value == 5:
-        return MANIFEST_STEPS[5]
+    if value in (5, 6):
+        return MANIFEST_STEPS[value]
     if 1 <= value <= 4:
         return MANIFEST_STEPS[value]
     if 0x10 <= value < 0x20:
@@ -524,8 +596,13 @@ def local_bytes(elf: Path, vaddr: int, count: int) -> bytes | None:
     return None
 
 
-def build_requests(base: int, game_base: int, plugin_base: int) -> list[tuple[str, int, int]]:
-    """一次挂载里要读完的全部地址（挑最少的字节数换最有用的信息）。"""
+def build_requests(base: int, game_base: int, plugin_base: int):
+    """一次挂载里要读完的全部地址（挑最少的字节数换最有用的信息）。
+
+    返回 `(要读的清单, 被跳过的键)`。**缺偏移的量只跳过、不抛异常**：调试桩一个启动周期
+    只能 attach 几次，缺一个符号名就让整次 attach 白烧（2026-09-16 真发生过）。
+    """
+    skipped: list = []
     req = [(name, base + offset, 1) for name, offset in SYMS.items() if name not in SYM_ONLY]
     req += [
         ('anchors', base + SYMS['identity'], 2),          # 版本核对：身份函数头 16 字节
@@ -533,10 +610,20 @@ def build_requests(base: int, game_base: int, plugin_base: int) -> list[tuple[st
         ('anchor_manifest', base + SYMS['manifest_install'], 2),  # 版本核对：诊断改动的那个函数
         ('manifest_state', base + SYMS['g_DefaultManifestState'], 1),
         ('hook_results', base + SYMS['g_HookInstallResults'], 5),
+        ('update_entries', base + SYMS['g_UpdateCallbackEntries'], 1),
+        ('render_entries', base + SYMS['g_RenderCallbackEntries'], 1),
+        ('callback_error', base + SYMS['g_CallbackError'], 1),
+        ('self_journal', base + SYMS['g_selfJournalServiceState'], 1),
+        # ★ 这几个量是**分散**排布的（链接器按大小/对齐重排过），所以逐个地址各读各的，
+        #   绝不能当成一个连续数组一次读出来 —— 2026-09-16 第一版就是这么写错的。
+        ('self_journal_records', base + SYMS['g_selfJournalTotalRecords'], 1),
+        ('self_journal_marker', base + SYMS['g_selfJournalLastMarker'], 1),
         ('lua_error_text', base + SYMS['g_LastLuaErrorText'], 32),
         ('manifest_head', base + SYMS['g_DefaultManifest'], 24),   # 清单原文前 192 字节
         ('entry_head', base + SYMS['g_DefaultEntry'], 8),          # 入口脚本前 64 字节
-        ('callback_registry', base + SYMS['g_CallbackRegistry'], 6),
+        # 回调登记表：**按字节**解（每项 20 字节，见 `decode_callback_entries`）。
+        # 请求 90 个 8 字节字 = 720 字节 ⇒ 够看满 36 条登记（容量 256 条，EID 一家约 34 条）。
+        ('callback_registry', base + SYMS['g_CallbackRegistry'], 90),
         ('callback_count', base + SYMS['g_CallbackRegistry'] + 0x1400, 1),
         ('filetable', base + SYMS['g_diagnosticFileApi'], 4),
         ('hook_callbacks', base + SYMS['g_hookCallbacks'], 6),
@@ -548,7 +635,65 @@ def build_requests(base: int, game_base: int, plugin_base: int) -> list[tuple[st
     ]
     if plugin_base:
         req.append(('helper', plugin_base + PLUGIN_HELPER, 14))
-    return req
+    # 上面每条都用 `SYMS[...]` 直接取；这里做一遍守卫，缺的进 `skipped` 而不是让整个函数崩掉。
+    skipped.extend(SYMS.missing)
+    del SYMS.missing[:]
+    # 缺偏移的量地址会退化成 `base + 0`（模块基址），必须剔掉 —— 否则会拿一段无关内存当读数。
+    present = [(key, address, count) for key, address, count in req
+               if not (key in skipped and address == base)]
+    return present, skipped
+
+
+#: 回调登记表的一项 = 20 字节（`CallbackDescriptor`）：
+#:   +0 `id`(u32)、+4 `owner.index`(u16)、+6 `owner.generation`(u16)、
+#:   +8 `affinity`(u8，`ThreadAffinity` 的底层类型就是 `uint8_t`)+3 填充、
+#:   +12 `luaReference`(int32)、+16 `modReference`(int32)。
+#:
+#: **2026-09-16 修正**：这里以前按"每项 40 字节、字段各 8 字节"解 —— 那是错的口径，
+#: 读出来的东西（`id = 281483566645271`）谁也认不出来。表项大小与字段宽度都以
+#: `runtime/src/domain/callback/callback_descriptor.hpp` 为准。
+CALLBACK_ENTRY_BYTES = 20
+
+#: `ModCallbacks` 里我们关心的几个 id → 名字（PC 值，见 `callback_descriptor.hpp`）。
+CALLBACK_NAMES = {
+    1: 'MC_POST_UPDATE',
+    2: 'MC_POST_RENDER',
+    13: 'MC_INPUT_ACTION',
+    15: 'MC_POST_GAME_STARTED',
+    62: 'MC_PRE_GET_COLLECTIBLE',
+}
+
+
+def callback_name(identifier: int) -> str:
+    return CALLBACK_NAMES.get(identifier, '其它种类')
+
+
+#: 卡上开关的**名字与位序**，必须与 `runtime/source/hook_manager.cpp` 的 `kCardSwitchNames`
+#: 逐字一致（顺序就是 `g_CardSwitchMask` 的位序）。`runtime/tests/test_card_switches.py` 钉住这一点。
+#:
+#: 只剩"由**游戏主线程**上的代码读取"的两个开关。挂点跳过类开关已经删掉：读它们那一步跑在
+#: worker 线程上，会在 nnSdk 里空指针崩溃（2026-09-16，442190 每次开机必崩）——
+#: 挂点层面的二分改用编译开关 `ONLY_REQUIRED_HOOK=1`。
+CARD_SWITCH_NAMES = (
+    'no-menu',
+    'no-lua',
+)
+
+
+def decode_callback_entries(raw: bytes) -> list[dict]:
+    """把回调登记表的原始字节切成一条条登记（不足一条的尾巴丢掉）。"""
+    entries = []
+    for offset in range(0, len(raw) - CALLBACK_ENTRY_BYTES + 1, CALLBACK_ENTRY_BYTES):
+        chunk = raw[offset:offset + CALLBACK_ENTRY_BYTES]
+        entries.append({
+            'id': int.from_bytes(chunk[0:4], 'little'),
+            'owner_index': int.from_bytes(chunk[4:6], 'little'),
+            'owner_generation': int.from_bytes(chunk[6:8], 'little'),
+            'affinity': chunk[8],
+            'lua_reference': int.from_bytes(chunk[12:16], 'little', signed=True),
+            'mod_reference': int.from_bytes(chunk[16:20], 'little', signed=True),
+        })
+    return entries
 
 
 def save_raw(text: str, base: int, game_base: int, plugin_base: int) -> Path:
@@ -571,8 +716,24 @@ def load_raw(path: Path) -> tuple[str, int, int, int]:
     return rest, int(m.group(1), 16), int(m.group(2), 16), int(m.group(3), 16)
 
 
+def parse_extra_reads(text: str):
+    """`--read 0x1234:32,0x5678:16` → [(地址, 字节数)]。
+
+    用途：探针把"像指针"的值记下来之后，**直接把这些地址的内容读回来** ——
+    不必为了多知道几个字节就再烧一次 attach（调试桩一个启动周期只能挂几次）。
+    """
+    items = []
+    for chunk in (text or '').split(','):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        address_text, _, size_text = chunk.partition(':')
+        items.append((int(address_text, 0), int(size_text or '16', 0)))
+    return items
+
+
 def run_one_shot(ip: str, elf: Path, pid: int = 0, base: int = 0, game_base: int = 0,
-                 plugin_base: int = 0) -> int:
+                 plugin_base: int = 0, extra_reads=()) -> int:
     session = GdbSession()
     try:
         session.command(f'target extended-remote {ip}:22225')
@@ -603,7 +764,12 @@ def run_one_shot(ip: str, elf: Path, pid: int = 0, base: int = 0, game_base: int
             print('也可以直接用 --base/--game-base 指定。')
             return 3
 
-        requests = build_requests(base, game_base, plugin_base)
+        requests, skipped = build_requests(base, game_base, plugin_base)
+        for index, item in enumerate(extra_reads):
+            address, size = item
+            requests.append((f'extra_{index}_0x{address:x}', address, size))
+        if skipped:
+            print('  ⚠ 这些量没有偏移（本次不读，不影响其它读数）：' + '、'.join(skipped))
         lines = []
         for label, addr, count in requests:
             lines.append(f'echo TAG {label}\\n')
@@ -738,8 +904,13 @@ def report(values: dict[str, list[int]], base: int, game_base: int, plugin_base:
     elif slot:
         print(f'    ⇒ 挂点 `{hook_name(slot)}` 没装上 ⇒ 这就是模组装不上的直接原因。')
 
+    # ★ 2026-09-16 更正：`g_HookInstallResults` 只写了 [0]/[1]/[2]（三个挂点的安装结果），
+    # [3]/[4] 是**另一个东西**：`IsaacModRuntime_FillHookJournalWords` 把
+    # `g_UpdateCallbackEntries` / `g_RenderCallbackEntries` 填在输出数组的这两个位置。
+    # 以前这里把两套东西混着标（读数组却说"回调进入次数"），于是读数永远是 0 —— 而游戏一切正常。
+    # 现在回调进入次数**直接读那两个变量**（见下面的 `callback_entries`）。
     legacy = ['ManagerUpdate 入口中继', 'ManagerRender 入口中继', 'PreGetCollectible 中继',
-              'update 回调进入次数', 'render 回调进入次数']
+              '（该数组不用）', '（该数组不用）']
     print()
     print('=== 旧安装器诊断数组 g_HookInstallResults[0..4]（线格式，供交叉核对）===')
     for i, name in enumerate(legacy):
@@ -750,9 +921,47 @@ def report(values: dict[str, list[int]], base: int, game_base: int, plugin_base:
             print(f'  [{i}] {name:22} = {v} = {LEGACY_HOOK_CODES.get(v, "未知")}')
         else:
             print(f'  [{i}] {name:22} = {v}')
+    # 读不到就明说"读不到"，**不许**把"没读到"显示成 0 —— 两者含义完全相反，
+    # 而这一类混淆在本项目已经造成过误判（2026-09-16：数组里的 [3]/[4] 被当成计数器，永远是 0）。
+    for key, label, zero_hint in (
+            ('update_entries', 'update 回调进入次数', '  ⇒ 一次都没进：回调没跑起来（或还没到派发条件）'),
+            ('render_entries', 'render 回调进入次数', '  ⇒ 一次都没进'),
+            ('callback_error', '回调里出过 Lua 错误', '  ⇒ 无')):
+        if key in values:
+            count = first(values, key) & 0xFFFFFFFF
+            print(f'  {label} = {count}'
+                  + ('  ⇒ 确实在派发 ✓' if count else zero_hint))
+        else:
+            print(f'  {label} = （读不到：本次读数没有取这个地址）')
+    if 'self_journal' in values:
+        service_state = first(values, 'self_journal') & 0xFFFFFFFF
+        records = first(values, 'self_journal_records') & 0xFFFFFFFF
+        marker = first(values, 'self_journal_marker') & 0xFFFFFFFF
+        state_text = {0: '没试过', 1: 'sm+fs 会话已就绪', 2: '服务初始化失败'}.get(
+            service_state, f'未知({service_state})')
+        print(f'  模块自己的 SD 写入通道（自 journal）：会话状态 = {state_text}、'
+              f'记录数 = {records}、最后标记 = {marker}')
+        print('    ⇒ 会话已就绪即说明"我们模块自己起得来 sm/fs、能碰 SD 卡"'
+              '（记录数 > 0 则还证明**真的写进去过**）')
     present_state = first(values, 'g_RenderPresentRelayState') & 0xFFFFFFFF
     print(f'  Present 前派发点（GOT 槽方案）状态 = {present_state} = '
           f'{PRESENT_RELAY_CODES.get(present_state, "未知")}')
+
+    # 卡上开关：**先读它再解释任何"开关好像没生效"** —— 掩码为 0 且通道正常时，
+    # 说明卡上确实没有开关文件（配置就是"什么都没跳过"），而不是"开关机制坏了"。
+    if 'g_CardSwitchMask' in values:
+        mask = first(values, 'g_CardSwitchMask') & 0xFFFFFFFF
+        channel = first(values, 'g_CardSwitchChannel') & 0xFFFFFFFF
+        found = [name for index, name in enumerate(CARD_SWITCH_NAMES) if mask & (1 << index)]
+        channel_text = ('查询正常' if channel & 1 else '一次都没查成功')
+        if channel & 2:
+            channel_text += '；有查询失败（通道部分不可用）'
+        if channel & 4:
+            channel_text += '；★ 曾在**非游戏线程**上被要求探测 ⇒ 已拒绝执行（这条路径会崩游戏，见实现注释）'
+        print(f'  卡上开关：掩码 = 0x{mask:x}、通道 = {channel_text}')
+        print(f'    卡上确实存在的开关 = {found if found else "（一个都没有）"}')
+        print('    （掩码为 0 且通道正常 ⇒ 就是"什么都没跳过"的正常配置；'
+              '通道报失败 ⇒ 读卡这条路有问题，开关读数的结论一律不成立）')
 
     print()
     print('=== Lua 侧：模组到底跑到哪一步 ===')
@@ -760,6 +969,11 @@ def report(values: dict[str, list[int]], base: int, game_base: int, plugin_base:
     print(f'  g_ModRegistered = {registered}'
           + ('  ⇒ 模组登记成功，Lua 真的跑起来了 ✓' if registered else
              '  ⇒ 模组没登记（Lua 从未跑到登记那一步）'))
+    if 'g_ModRegisteredCount' in values:
+        # 多模组加载（2026-09-16）：个数应当等于清单里 `enabled: true` 的条数。
+        # 只有 1 而清单里明明有 2 ⇒ 第二个 Mod 的脚本没跑到 `RegisterMod`（去看它的错误文本）。
+        print(f'  g_ModRegisteredCount = {first(values, "g_ModRegisteredCount") & 0xFFFFFFFF}'
+              '  ⇒ 登记成功的 Mod 个数（清单里几个 enabled 就该是几）')
     err_len = first(values, 'g_LastLuaErrorLength') & 0xFFFFFFFF
     if err_len:
         raw = b''.join(v.to_bytes(8, 'little') for v in (values.get('lua_error_text') or []))
@@ -771,10 +985,32 @@ def report(values: dict[str, list[int]], base: int, game_base: int, plugin_base:
     count = first(values, 'callback_count')
     print(f'  回调登记数 = {count}')
     reg = values.get('callback_registry') or []
-    for i in range(min(3, len(reg) // 5)):
-        entry = reg[i * 5:i * 5 + 5]
-        print(f'    第 {i} 条：id = {entry[0]}、owner = {entry[1]}、'
-              f'affinity = {entry[2]}、luaReference = {entry[3]}、modReference = {entry[4]}')
+    entries = decode_callback_entries(words_to_bytes(reg))[:count]
+    if entries:
+        print(f'    （下面按 20 字节/项解码；前 3 条与后 3 条，共读到 {len(entries)} 条）')
+        for i in ([0, 1, 2] if len(entries) > 6 else range(len(entries))):
+            if i >= len(entries):
+                continue
+            entry = entries[i]
+            print(f'    第 {i} 条：id = {entry["id"]}（{callback_name(entry["id"])}）、'
+                  f'owner = #{entry["owner_index"]} 代{entry["owner_generation"]}、'
+                  f'affinity = {entry["affinity"]}、luaReference = {entry["lua_reference"]}、'
+                  f'modReference = {entry["mod_reference"]}')
+        if len(entries) > 6:
+            print('    …')
+            for i in range(len(entries) - 3, len(entries)):
+                entry = entries[i]
+                print(f'    第 {i} 条：id = {entry["id"]}（{callback_name(entry["id"])}）、'
+                      f'owner = #{entry["owner_index"]} 代{entry["owner_generation"]}、'
+                      f'affinity = {entry["affinity"]}、luaReference = {entry["lua_reference"]}、'
+                      f'modReference = {entry["mod_reference"]}')
+        owners = collections.Counter(
+            (e['owner_index'], e['owner_generation']) for e in entries)
+        summary = '、'.join(f'#{index}代{gen}：{times} 条' for (index, gen), times in
+                            sorted(owners.items()))
+        print(f'    ⇒ {len(entries)} 条登记的 owner 分布：{summary}'
+              + ('  ← 多个 owner = 多个模组的回调确实并存' if len(owners) > 1 else
+                 '  ← 只有一个 owner：多模组下说明只登记上了一家'))
     self_addr = first(values, 'g_runtimeSelfAddress')
     mark = '（= exl_main，入口跑过 ✓）' if self_addr == base + SYMS['exl_main'] else ''
     print(f'  g_runtimeSelfAddress = 0x{self_addr:012x} {mark}')
@@ -882,6 +1118,67 @@ def report(values: dict[str, list[int]], base: int, game_base: int, plugin_base:
                 note = '← 与真实身份函数地址一致 ✓'
             print(f'  {name:20} 0x{v:012x} {note}')
 
+    if 'g_ModMenuMilestones' in values:
+        print()
+        print('=== 模组开关菜单的诊断（按了没反应时看这里）===')
+        thunk = first(values, 'g_InputIsActionTriggeredThunk')
+        print(f'  `Input.IsActionTriggered` 的原生入口 = 0x{thunk:012x}'
+              + ('  ⇒ **没有绑定**（脚本调用会立刻抛错）' if thunk == 0
+                 else '  ⇒ 已绑定 ✓（那"没反应"就不是绑定问题）'))
+        milestones = first(values, 'g_ModMenuMilestones') & 0xFFFFFFFF
+        names = {1: '脚本已加载并登记', 2: '字体装上', 3: '字体失败', 4: '菜单打开过',
+                 5: 'update 回调跑过', 6: '切换过', 7: '落盘成功',
+                 8: '至少一个动作号完成过沿判定', 9: '呼出键过沿成立（下一步就该打开）',
+                 11: '枚举表缺失（用了数字兜底）', 12: 'Input.IsActionPressed 不可用'}
+        # 位 10..25：`Held(动作号)` 曾经返回 true 的那些动作号（code % 16）
+        held_codes = sorted({bit - 10 for bit in range(10, 26) if milestones & (1 << bit)})
+        hit = [f'{bit}={text}' for bit, text in sorted(names.items()) if milestones & (1 << bit)]
+        if held_codes:
+            print(f'  菜单自己看到"按住"的动作号（code % 16）= '
+                  f'{", ".join(str(c) for c in held_codes)}')
+        print(f'  菜单里程碑 = 0x{milestones:08x}'
+              + (f' ⇒ {"; ".join(hit)}' if hit else '  ⇒ **一个都没报：菜单脚本根本没跑起来**')
+              + f'（上报 {first(values, "g_ModMenuReportCount") & 0xFFFFFFFF} 次，最后一次 = '
+              + f'{first(values, "g_ModMenuLastCode") & 0xFFFFFFFF}）')
+        load_calls = first(values, 'g_FontLoadCalls') & 0xFFFFFFFF
+        load_result = first(values, 'g_FontLoadResult') & 0xFFFFFFFF
+        draws = first(values, 'g_FontDrawCalls') & 0xFFFFFFFF
+        drawn_bytes = first(values, 'g_FontDrawBytes') & 0xFFFFFFFF
+        print(f'  字体：Load 被调用 {load_calls} 次、最后一次结果 = '
+              + {0: '失败', 1: '成功'}.get(load_result, '未知'))
+        print(f'  画字：DrawString* 调用 {draws} 次、共 {drawn_bytes} 字节'
+              + ('  ⇒ **一个字都没画过**（菜单没打开，或脚本没跑到绘制）' if draws == 0
+                 else '  ⇒ 真的画过字（那就要看坐标/颜色/是不是被别的画面盖住）'))
+        queried = first(values, 'g_InputActionQueriedMask') & 0xFFFFFFFF
+        triggered = first(values, 'g_InputActionTriggeredMask') & 0xFFFFFFFF
+        triggered_other = first(values, 'g_InputActionTriggeredMaskOther') & 0xFFFFFFFF
+        pressed_mask = first(values, 'g_InputActionPressedMask') & 0xFFFFFFFF
+        pressed_other = first(values, 'g_InputActionPressedMaskOther') & 0xFFFFFFFF
+        pressed_ctrl = first(values, 'g_InputPressedControllerMask') & 0xFFFFFFFF
+        print(f'  输入：问过的动作号 = 0x{queried:08x}、回答"是"的 = 0x{triggered:08x}'
+              + f'（最后一次问 {first(values, "g_InputLastActionCode") & 0xFFFFFFFF}，'
+              + f'结果 {first(values, "g_InputLastActionResult") & 0xFFFFFFFF}）')
+        asked = [str(code) for code in range(32) if queried & (1 << code)]
+        fired = [str(code) for code in range(32) if triggered & (1 << code)]
+        ctrl_list = [str(v) for v in range(32) if pressed_ctrl & (1 << v)]
+        print(f'  能让 IsActionPressed 返回 true 的 controller 值（&31）：'
+              f'{", ".join(ctrl_list) if ctrl_list else "（一个都没有）"}')
+        print(f'    ⇒ 问过：{", ".join(asked) if asked else "（无）"}；'
+              f'按到过：{", ".join(fired) if fired else "**一个都没有**"}')
+        fired_other = [str(code) for code in range(32) if triggered_other & (1 << code)]
+        pressed = [str(code) for code in range(32) if pressed_mask & (1 << code)]
+        print(f'  非 0 号 controller 上按到过的动作号：'
+              f'{", ".join(fired_other) if fired_other else "（无）"}'
+              f'（最后一次问的 controller = '
+              f'{first(values, "g_InputLastController") & 0xFFFFFFFF}）')
+        pressed_other_codes = [str(code) for code in range(32) if pressed_other & (1 << code)]
+        print(f'  "按住"位图（IsActionPressed）：controller 0 = '
+              f'{", ".join(pressed) if pressed else "（无）"}；非 0 = '
+              f'{", ".join(pressed_other_codes) if pressed_other_codes else "（无）"}')
+        if not fired and not fired_other:
+            print('    ⇒ 两个 controller 序号都没有任何动作被判定为按下：说明**查询本身**没通'
+                  '（不是键位对不上）—— 下一步要换机制，而不是继续猜动作号。')
+
 
 # ---------------------------------------------------------------------------
 # 备用：两段式（各一次 attach），老流程，留作对照
@@ -924,7 +1221,9 @@ def run_two_phase(ip: str, elf: Path, pid: int = 0, base: int = 0, game_base: in
         return 3
     print(f'进程 = {pid}；运行时模块基址 = 0x{base:x}；游戏模块基址 = 0x{game_base:x}')
 
-    requests = build_requests(base, game_base, plugin_base)
+    requests, skipped = build_requests(base, game_base, plugin_base)
+    if skipped:
+        print('  ⚠ 这些量没有偏移（本次不读，不影响其它读数）：' + '、'.join(skipped))
     cmds = header(ip) + [f'attach {pid}']
     for label, addr, count in requests:
         cmds.append(f'printf "TAG {label}\\n"')
@@ -959,6 +1258,10 @@ def main() -> int:
     ap.add_argument('--two-phase', action='store_true',
                     help='走老流程（四次 attach，费调试桩预算），只在一次挂载失败时用')
     ap.add_argument('--dry-run', action='store_true', help='只测 gdb 管道，不连设备')
+    ap.add_argument('--read', default='',
+                    help='额外读任意地址：ADDR:SIZE[,ADDR:SIZE...]（十六进制/十进制都行）。'
+                         '用途：探针把"像指针"的值记下来之后，直接把那些地址的内容读回来 —— '
+                         '不必为了多知道几个字节就再烧一次 attach。')
     ap.add_argument('--from-raw', default='',
                     help='离线重放某次读数（不连设备）：换解码/改解释时用，别再烧调试桩预算')
     args = ap.parse_args()
@@ -997,7 +1300,8 @@ def main() -> int:
 
     if args.two_phase:
         return run_two_phase(args.ip, elf, args.pid, args.base, args.game_base, args.plugin_base)
-    return run_one_shot(args.ip, elf, args.pid, args.base, args.game_base, args.plugin_base)
+    return run_one_shot(args.ip, elf, args.pid, args.base, args.game_base, args.plugin_base,
+                        parse_extra_reads(args.read))
 
 
 if __name__ == '__main__':

@@ -72,6 +72,30 @@ struct ResolvedManifestMod {
     bool hasEntry{false};
 };
 
+// 一个 Mod 的三条路径的**存储**（多模组加载，2026-09-16）。
+//
+// 为什么把它和 `ResolvedManifestMod` 放在同一个对象里：后者只存指针（它是个廉价的值对象，
+// 见上面的注释），所以缓冲必须活得和它一样久。两者绑在一起之后，"指针指向已经析构的缓冲"
+// 这类错误在类型上就不可能发生。
+struct ModPathBuffers {
+    std::array<char, kModEntryPathCapacity> entryPath{};
+    std::array<char, kModRootPathCapacity> modRoot{};
+    std::array<char, kModChunkNameCapacity> chunkName{};
+};
+
+// 一批已解析的 Mod：路径缓冲 + 指针视图 + 个数。
+//
+// **这是一个大对象**（4 个 Mod ≈ 9.6 KiB）。调用方应当把它放在静态存储里
+// （`hook_manager.cpp` 就是这么用的），不要放在游戏线程的栈上。
+struct ResolvedManifestModBatch {
+    static constexpr std::size_t kCapacity = kModManifestCapacity;
+
+    std::array<ModPathBuffers, kCapacity> paths{};
+    std::array<ResolvedManifestMod, kCapacity> mods{};
+    std::size_t count{0};
+    std::size_t manifestBytes{0};
+};
+
 // Reads the manifest through `IContentPort`, parses it with the injected
 // `ManifestParser`, and assembles the three paths the Lua layer addresses.
 //
@@ -89,6 +113,13 @@ public:
         char* modRoot, std::size_t modRootCapacity,
         char* chunkName, std::size_t chunkNameCapacity,
         ModLoadFailure* failure = nullptr) const noexcept;
+
+    // 多模组（2026-09-16）：收下清单里**所有**启用的 Mod，按书写顺序填进 `batch`。
+    // 判定与失败上报与 `Resolve` 逐条一致（同一个 `ModLoadFailure` 契约），
+    // 只是不再"只取第一个"。`batch` 由调用方提供，并且要活得比这一批 Mod 久。
+    [[nodiscard]] Status ResolveAll(std::uint8_t* manifestBuffer, std::size_t manifestCapacity,
+                                    ResolvedManifestModBatch* batch,
+                                    ModLoadFailure* failure = nullptr) const noexcept;
 
 private:
     IContentPort& content_;

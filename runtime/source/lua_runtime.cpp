@@ -1,4 +1,7 @@
 #include "lua_runtime.hpp"
+// `GameFileReader::Bindings` 出现在公开入口的签名里（`InitializeManifestMod` / `InitializeEmbeddedMenuMod`）：
+// 之前它靠别的头间接带进来，宿主 harness 的包含路径不同就会"未声明"，所以显式包含。
+#include "game_file_reader.hpp"
 
 #include "game_observer.hpp"
 #include "lua_object_handles.hpp"
@@ -21,6 +24,7 @@ extern "C" char __fake_heap[];
 #include "program/pc_lua_enum_data.hpp"
 #include "program/pc_lua_enum_data.cpp"
 #include "program/embedded_lua_test_script.hpp"
+#include "program/embedded_mod_menu_script.hpp"
 #include "runtime_constants.hpp"
 
 // Every build entry point (production module, diagnostics and the startup
@@ -37,6 +41,7 @@ extern "C" char __fake_heap[];
 #include "interfaces/lua/font_api.hpp"
 #include "interfaces/lua/game_api.hpp"
 #include "interfaces/lua/input_api.hpp"
+#include "interfaces/lua/mod_menu_api.hpp"
 #include "interfaces/lua/isaac_api.hpp"
 #include "interfaces/lua/mod_api.hpp"
 #include "interfaces/lua/music_api.hpp"
@@ -141,8 +146,35 @@ lua_State* g_LuaState = nullptr;
 // same phase and dispatch order is deterministic. Probe and production builds
 // share it; the legacy per-phase single slots were deleted with the migration.
 isaac::runtime::CallbackRegistry g_CallbackRegistry;
-constexpr isaac::runtime::ModHandle kRuntimeOwner{1, 1};  // RegisterMod allows one Mod
-bool g_ModRegistered = false;
+// 既有的兼容常量：**没有**自己的 Mod 对象的调用方（内嵌测试脚本、诊断阶段 13）用它当 owner。
+// 多模组加载（2026-09-16）之后，真正的 Mod 各自拿一个独立句柄，见 `NextModOwner()`。
+constexpr isaac::runtime::ModHandle kRuntimeOwner{1, 1};
+// `g_ModRegistered`：至少登记过一个 Mod 的 1 字节量。
+//
+// 多模组加载（2026-09-16）之后它**只被写、模块内部没人读** —— 读者在模块外面：
+// 设备侧的读数工具（`tools/read_device_state_via_gdb.py` 的符号表）与错误通道探针直接按
+// 这个名字读 bss 里的那个字节，用来判断"Lua 到底有没有跑到 `RegisterMod`"。
+//
+// ★ `[[gnu::used]]` 是**必须的**：写而不读的静态全局会被优化掉，符号一没，真机读数就永远
+// 显示"模组没登记"，而游戏其实一切正常（这是最坏的一类误判：把人引去查完全不存在的问题）。
+// 本项目已有同样用法（`saltynx_symbol_resolver.cpp` 的 `g_find_symbol`）。
+[[gnu::used]] bool g_ModRegistered = false;
+// 已经登记了几个 Mod（多模组加载的验收量：真机上"清单里 2 个 Mod，登记数也必须是 2"）。
+std::atomic<u32> g_ModRegisteredCount{0};
+// owner 句柄的分配器：index 从 2 起（1 留给 `kRuntimeOwner`），generation 恒 1
+// （本运行时不做"槽位复用"，一个 Mod 一辈子一个句柄）。
+std::atomic<u32> g_NextModOwnerIndex{2};
+
+isaac::runtime::ModHandle NextModOwner() noexcept {
+    const u32 index = g_NextModOwnerIndex.fetch_add(1, std::memory_order_relaxed);
+    return isaac::runtime::ModHandle{static_cast<std::uint16_t>(index), 1};
+}
+
+// `ModHandle::ownerPacked` 的打包/解包（低 16 位 index、高 16 位 generation）。
+// 打包只为了不让 `lua_runtime_state.hpp` 依赖 domain 头（见那个字段的注释）。
+u32 PackModOwner(isaac::runtime::ModHandle handle) noexcept {
+    return static_cast<u32>(handle.index) | (static_cast<u32>(handle.generation) << 16);
+}
 std::atomic<u32> g_Ready{false};
 std::atomic<u32> g_CallbackError{false};
 std::atomic<u32> g_InManagedCallbackDispatch{false};
@@ -256,6 +288,8 @@ std::atomic<uintptr_t> g_LevelIsAscent{0};
 // 批次 8（2026-09-15）：`Level:GetAbsoluteStage()` / `Level:IsNextStageAvailable()` 的入口地址。
 std::atomic<uintptr_t> g_LevelGetAbsoluteStage{0};
 std::atomic<uintptr_t> g_LevelIsNextStageAvailable{0};
+// 2026-09-16：`Room:GetFrameCount()`（`Room::GetFrameCount @ 0x470B0C`）的入口地址。
+std::atomic<uintptr_t> g_RoomGetFrameCount{0};
 std::atomic<uintptr_t> g_ItemPoolGetCollectible{0};
 // 批次 10（2026-09-15）：`Room:WorldToScreenPosition()` 要调的引擎函数（PLT 桩地址）。
 std::atomic<uintptr_t> g_GetRenderPosition{0};
@@ -263,6 +297,8 @@ std::atomic<uintptr_t> g_GetRenderPosition{0};
 // 与 `HasCollectible` 的宿主钩子同一形态（`#if !defined(__SWITCH__)` 才存在）。
 #if !defined(__SWITCH__)
 RenderPositionHostFunction g_GetRenderPositionHost{nullptr};
+// 2026-09-16：`Room:GetFrameCount()` 的宿主替身（设备构建里这段被 `#if` 排除）。
+RoomFrameCountHostFunction g_RoomGetFrameCountHost{nullptr};
 #endif
 std::atomic<uintptr_t> g_MusicGetCurrentMusicId{0};
 std::atomic<uintptr_t> g_MusicPause{0};
@@ -476,28 +512,13 @@ const char* BuildRequireNotFoundMessage(std::array<char, kStage13RequirePathCapa
     return text;
 }
 
-bool ContainsAscii(const char* value, std::size_t valueLength, const char* needle) {
-    if (value == nullptr || needle == nullptr) {
-        return false;
-    }
-    const std::size_t needleLength = std::strlen(needle);
-    if (needleLength == 0 || needleLength > valueLength) {
-        return false;
-    }
-    for (std::size_t index = 0; index <= valueLength - needleLength; ++index) {
-        if (std::memcmp(value + index, needle, needleLength) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
 u32 ClassifyRequireExecutionFailure(lua_State* state) {
-    std::size_t errorLength = 0;
-    const char* error = lua_tolstring(state, -1, &errorLength);
-    if (ContainsAscii(error, errorLength, "RegisterMod accepts exactly one Mod")) {
-        return 26;
-    }
+    // 这里曾经把 "RegisterMod accepts exactly one Mod" 单独分类成失败码 26。
+    // **2026-09-16（多模组加载）之后这一条不再存在**：每个 Mod 各自调用一次 `RegisterMod`
+    // 是常态，`require` 出来的模块里再登记一个 Mod 也合法 —— 所以所有执行期失败一律记 27
+    // （"其它执行失败"），并把内层错误文本原样抛出去（调用方的 `errorTail` 仍然拿得到尾部）。
+    // 设备侧的解码表 `tools/decode_isaacerr_payload.py` 同步把 26 标成"已退役"。
+    static_cast<void>(state);
     return 27;
 }
 
@@ -756,15 +777,25 @@ int ModNewIndex(lua_State* state) {
 }
 
 int RegisterMod(lua_State* state) {
-    if (lua_gettop(state) != 2 || g_ModRegistered) {
-        return luaL_error(state, "RegisterMod accepts exactly one Mod");
+    if (lua_gettop(state) != 2) {
+        return luaL_error(state, "RegisterMod expects a name and a version");
     }
     const char* name = luaL_checkstring(state, 1);
     luaL_checkinteger(state, 2);
+    // 多模组（2026-09-16）：**不再限制一个 Mod**。
+    //
+    // 之前这里 `g_ModRegistered` 一次性拦住第二次调用、并报 "RegisterMod accepts exactly one
+    // Mod" —— 那是"一次只加载一个模组"时代的产物。多模组加载下每个 Mod 都会调用它一次，
+    // 而且 PC 上 `RegisterMod` 本来就可以调用多次（每次返回一个新的 Mod 对象）。
+    //
+    // 每个 Mod 拿一个**独立的 owner 句柄**：回调登记用它做归属（`CallbackRegistry` 的
+    // Find/Remove/RemoveOwner 都按 owner 区分），否则多个 Mod 的回调会混成一家。
     g_ModRegistered = true;
+    g_ModRegisteredCount.fetch_add(1, std::memory_order_release);
 
     auto* mod = static_cast<ModHandle*>(lua_newuserdata(state, sizeof(ModHandle)));
     mod->persistenceNamespace = ModPersistence::HashModNamespace(name, std::strlen(name));
+    mod->ownerPacked = PackModOwner(NextModOwner());
     lua_newtable(state);
     lua_setuservalue(state, -2);
     luaL_getmetatable(state, kModMetatable);
@@ -1029,6 +1060,11 @@ void RegisterGameApi(lua_State* state) {
     // `interfaces/lua/game_api.cpp`; every owner registers from its own family
     // unit in layered builds.
     static_cast<void>(isaac::runtime::AttachGameMethods(state));
+    // 2026-09-16：`__index` 从"方法表"改成"**先认字段、再落方法表**"的 C 闭包 —— PC 的
+    // `game.Challenge` / `game.Difficulty` / `game.TimeCounter` / `game.ScreenShakeOffset`
+    // 是**字段**（点访问），挂在表上会被当成方法（返回函数而不是值）。
+    // 方法表作为闭包的上值 1 带进去，认不出的键原样落回它。
+    lua_pushcclosure(state, isaac::runtime::GameIndex, 1);
     lua_setfield(state, -2, "__index");
     lua_pop(state, 1);
 
@@ -1474,6 +1510,9 @@ void RegisterModApi(lua_State* state) {
     RegisterMusicApi(state);
     RegisterRngApi(state);
     RegisterFontApi(state);
+    // 模组开关菜单的控制面（`RuntimeMods`，运行时自己的接口，不是 PC API）：
+    // 菜单脚本要用它读清单、改开关、落盘。见 `interfaces/lua/mod_menu_api.hpp`。
+    static_cast<void>(isaac::runtime::RegisterModMenuApi(state));
     RegisterColorApi(state);
     RegisterVectorApi(state);
     RegisterSpriteApi(state);
@@ -1570,6 +1609,42 @@ LuaInitResult ResetAfterFailure(lua_State* state, LuaInitResult result) {
     return result;
 }
 
+// 建立流程的**唯一实现**：建 Lua 状态 → 跑 `PrepareRuntime` → 跑自带菜单脚本。
+// 成功时把 `g_LuaState`/`g_Ready` 设好（模组随后往同一个状态里追加）。
+LuaInitResult EnsureRuntimeWithMenuInternal() {
+    if (g_LuaState != nullptr && g_Ready.load(std::memory_order_acquire)) {
+        return LuaInitResult::Success;      // 幂等
+    }
+    lua_State* state = luaL_newstate();
+    if (state == nullptr) {
+        return LuaInitResult::StateCreateFailed;
+    }
+    lua_pushcfunction(state, PrepareRuntime);
+    const int preparationStatus = lua_pcallk(state, 0, 0, 0, 0, nullptr);
+    if (preparationStatus != LUA_OK) {
+        g_PreparationStatus.store(static_cast<u32>(preparationStatus), std::memory_order_release);
+        CaptureLuaErrorTop(state);
+        lua_pop(state, 1);
+        return ResetAfterFailure(state, preparationStatus == LUA_ERRMEM
+            ? LuaInitResult::RuntimePreparationMemoryFailed
+            : LuaInitResult::RuntimePreparationFailed);
+    }
+    // ------------------------------------------------------------------------
+    // 模组开关菜单（2026-09-16，路线 B）：在**第一个模组的入口脚本之前**跑一遍。
+    // ------------------------------------------------------------------------
+    //
+    // 放这里的原因：菜单要用 `RegisterMod` 登记自己的回调（于是它和普通模组走同一条派发路径），
+    // 而第一个模组跑完之后再登记就会排在它后面 —— 菜单的开关键要最先看到，晚了会被模组抢走。
+    // 失败**不影响模组加载**：菜单出错时只把它自己关掉（脚本内部用 pcall 兜住），
+    // 这里连失败都只记账、不改变返回结果。
+    // 菜单**不再**在这里加载：它现在作为一个模组走标准路径（InitializeEmbeddedMenuMod），
+    // 于是与真实模组共用同一套上下文/文件绑定/owner 编号（见头文件里的真机结论）。
+    // 宿主 harness 里也不会再因为它多出两条回调。
+    g_LuaState = state;
+    g_Ready.store(true, std::memory_order_release);
+    return LuaInitResult::Success;
+}
+
 LuaInitResult InitializeScript(const char* script, std::size_t length, const char* chunkName) {
     if (script == nullptr || length == 0 || chunkName == nullptr) {
         return LuaInitResult::ScriptLoadFailed;
@@ -1593,20 +1668,11 @@ LuaInitResult InitializeScript(const char* script, std::size_t length, const cha
     g_MusicDiagnosticCurrentIdReady.store(false, std::memory_order_release);
     g_MusicDiagnosticCurrentId.store(0, std::memory_order_release);
 #endif
-    lua_State* state = luaL_newstate();
-    if (state == nullptr) {
-        return LuaInitResult::StateCreateFailed;
+    const LuaInitResult ready = EnsureRuntimeWithMenuInternal();
+    if (ready != LuaInitResult::Success) {
+        return ready;
     }
-    lua_pushcfunction(state, PrepareRuntime);
-    const int preparationStatus = lua_pcallk(state, 0, 0, 0, 0, nullptr);
-    if (preparationStatus != LUA_OK) {
-        g_PreparationStatus.store(static_cast<u32>(preparationStatus), std::memory_order_release);
-        CaptureLuaErrorTop(state);
-        lua_pop(state, 1);
-        return ResetAfterFailure(state, preparationStatus == LUA_ERRMEM
-            ? LuaInitResult::RuntimePreparationMemoryFailed
-            : LuaInitResult::RuntimePreparationFailed);
-    }
+    lua_State* state = g_LuaState;
     if (luaL_loadbufferx(state, script, length, chunkName, "t") != LUA_OK) {
         CaptureLuaErrorTop(state);
         lua_pop(state, 1);
@@ -1620,12 +1686,21 @@ LuaInitResult InitializeScript(const char* script, std::size_t length, const cha
     if (g_CallbackRegistry.Count() == 0) {
         return ResetAfterFailure(state, LuaInitResult::MissingPostUpdateCallback);
     }
-    g_LuaState = state;
-    g_Ready.store(true, std::memory_order_release);
+    // `g_LuaState`/`g_Ready` 由 `EnsureRuntimeWithMenuInternal()` 设好（模组只是往同一个状态里追加）。
     return LuaInitResult::Success;
 }
 
 } // namespace
+
+
+// 对外入口（`lua_runtime.hpp` 声明的那一个）：匿名命名空间里的实现不导出符号，所以这层是必须的。
+// 幂等：已经有状态就直接成功。
+LuaInitResult EnsureRuntimeWithMenu() noexcept {
+    if (g_LuaState != nullptr && g_Ready.load(std::memory_order_acquire)) {
+        return LuaInitResult::Success;
+    }
+    return EnsureRuntimeWithMenuInternal();
+}
 // 把**任意** Lua 值记成可读文本（2026-09-12，见头文件里的长注释）。
 //
 // 与下面 `CaptureLuaErrorTop` 的区别：那个只在"栈顶是字符串"时成功，而这个**保证**产出文本
@@ -1827,6 +1902,11 @@ std::uintptr_t LevelGetAbsoluteStageThunk() noexcept {
     return g_LevelGetAbsoluteStage.load(std::memory_order_acquire);
 }
 
+// 2026-09-16：`Room:GetFrameCount()` 的入口（安装期校验 16 字节后发布；0 = 不可用）。
+std::uintptr_t RoomGetFrameCountThunk() noexcept {
+    return g_RoomGetFrameCount.load(std::memory_order_acquire);
+}
+
 std::uintptr_t LevelIsNextStageAvailableThunk() noexcept {
     return g_LevelIsNextStageAvailable.load(std::memory_order_acquire);
 }
@@ -1842,6 +1922,14 @@ void SetGetRenderPositionHostFunction(RenderPositionHostFunction function) noexc
 
 RenderPositionHostFunction GetRenderPositionHostFunction() noexcept {
     return g_GetRenderPositionHost;
+}
+
+void SetRoomGetFrameCountHostFunction(RoomFrameCountHostFunction function) noexcept {
+    g_RoomGetFrameCountHost = function;
+}
+
+RoomFrameCountHostFunction GetRoomGetFrameCountHostFunction() noexcept {
+    return g_RoomGetFrameCountHost;
 }
 #endif
 
@@ -2047,6 +2135,11 @@ isaac::runtime::ModHandle RuntimeOwnerHandle() noexcept {
     return kRuntimeOwner;
 }
 
+isaac::runtime::ModHandle UnpackModOwner(std::uint32_t packed) noexcept {
+    return isaac::runtime::ModHandle{static_cast<std::uint16_t>(packed & 0xFFFFU),
+                                     static_cast<std::uint16_t>(packed >> 16)};
+}
+
 // Read by `interfaces/lua/mod_api.cpp` when it maps a Lua `ModCallbacks` value
 // onto a catalog callback id: the Stage13 diagnostic only allows its own
 // POST_UPDATE phase.
@@ -2063,6 +2156,15 @@ LuaInitResult InitializeFromBuffer(const char* script, std::size_t length, const
 }
 
 #if !defined(EXL_DIAGNOSTIC_STAGE) || EXL_DIAGNOSTIC_STAGE == 13
+// 把内嵌菜单当成"第一个模组"加载（见头文件说明）。它内部就是标准的模组初始化路径，
+// 所以菜单与真实模组在上下文、文件绑定、owner 编号、回调派发上是同一套东西。
+LuaInitResult InitializeEmbeddedMenuMod(const char* modRoot,
+                                        const GameFileReader::Bindings& bindings) noexcept {
+    return InitializeManifestMod(isaac::runtime::kEmbeddedModMenuScript.data(),
+                                 isaac::runtime::kEmbeddedModMenuScript.size(),
+                                 isaac::runtime::kModMenuChunkName, modRoot, bindings);
+}
+
 LuaInitResult InitializeManifestMod(const char* entry, std::size_t entryLength,
                                     const char* chunkName, const char* modRoot,
                                     const GameFileReader::Bindings& bindings) {
@@ -2078,6 +2180,41 @@ LuaInitResult InitializeManifestMod(const char* entry, std::size_t entryLength,
         RecordRequireFailure(19);
         ResetStage13Context();
         return LuaInitResult::ScriptLoadFailed;
+    }
+
+    // ------------------------------------------------------------------------
+    // 多模组（2026-09-16）：已经有 Lua 状态时，这一份脚本**追加**进同一个状态执行。
+    // ------------------------------------------------------------------------
+    //
+    // PC 的语义就是这样：多个 Mod 共享**一个** Lua 状态（同一个 `Isaac`、同一张全局表、
+    // 同一份回调登记表），各 Mod 的入口脚本按清单里的顺序依次执行。此前这里无条件
+    // `luaL_newstate()`，于是第二个 Mod 会把第一个 Mod 的状态整个丢掉 —— 症状不是"只加载一个"，
+    // 而是"只剩最后一个"。
+    //
+    // 追加路径与首建路径的区别只有三点，其余一律相同：
+    //   * 不重建状态、不重跑 `PrepareRuntime`（那些全局已经在，重跑只会重复注册）；
+    //   * 不要求"必须登记了回调"—— 只声明命名回调、或者干脆什么都不登记的 Mod 是合法的；
+    //   * 失败时**不关掉**状态：已经跑起来的 Mod 不该因为后来者出错而一起消失
+    //     （PC 上一个 Mod 的加载错误也不会把别的 Mod 卸载掉）。
+    //
+    // `require` 的根逐 Mod 重设（上面那句 `SetStage13Context` 已经做过），所以入口脚本里的
+    // `require` 按各自的 Mod 目录解析。⚠️ 已知局限：**运行期**（回调里）的 `require` 用的是
+    // 最后一次设置的根；多模组下这意味着后加载的 Mod 的目录。记录见
+    // `docs/问题与解决记录.md`，后续要做"按调用者所在 chunk 解析"才能彻底对齐 PC。
+    if (g_LuaState != nullptr && g_Ready.load(std::memory_order_acquire)) {
+        lua_State* state = g_LuaState;
+        if (luaL_loadbufferx(state, entry, entryLength, chunkName, "t") != LUA_OK) {
+            CaptureLuaErrorTop(state);
+            lua_pop(state, 1);
+            RecordRequireFailure(22);
+            return LuaInitResult::ScriptLoadFailed;
+        }
+        if (lua_pcallk(state, 0, 0, 0, 0, nullptr) != LUA_OK) {
+            CaptureLuaErrorTop(state);
+            lua_pop(state, 1);
+            return LuaInitResult::ScriptRunFailed;
+        }
+        return LuaInitResult::Success;
     }
 
     g_Ready.store(false, std::memory_order_release);
@@ -2154,6 +2291,12 @@ void SetLevelGetAbsoluteStageBinding(uintptr_t method) {
 
 void SetLevelIsNextStageAvailableBinding(uintptr_t method) {
     g_LevelIsNextStageAvailable.store(method, std::memory_order_release);
+}
+
+// 2026-09-16：`Room:GetFrameCount()` 的发布点，与上面两条同形（一次 release 存储，
+// handler 一次 acquire 读，不会看到"半个已校验记录"）。
+void SetRoomGetFrameCountBinding(uintptr_t method) {
+    g_RoomGetFrameCount.store(method, std::memory_order_release);
 }
 
 void SetItemPoolGetCollectibleBinding(uintptr_t method) {

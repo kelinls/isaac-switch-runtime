@@ -4,6 +4,7 @@
 #include "interfaces/lua/engine_memory_guard.hpp"
 #include "interfaces/lua/isaac_api.hpp"
 #include "interfaces/lua/owner_binding.hpp"
+#include "interfaces/lua/vector_api.hpp"
 
 #include "application/callback/callback_dispatcher.hpp"
 #include "game_observer.hpp"
@@ -408,6 +409,93 @@ int GameGetRoom(lua_State* state) {
 }
 
 } // namespace
+
+// `Game` 的**字段**访问（2026-09-16，字段缺口台账的 planned 项）。
+//
+// PC 契约里这几个是字段（`game.Challenge`、`game.Difficulty`、`game.TimeCounter`、
+// `game.ScreenShakeOffset`），不是方法 ⇒ 必须挂在 `__index` 上。`__index` 原来直接是**方法表**，
+// 所以这里改成一个 C 函数：先认这几个字段，认不出就落到方法表（方法表作为上值 1 带进来）。
+// **绝不能**让字段查找吞掉方法名 —— 那会让 `game:GetRoom()` 之类静默失效。
+//
+// 偏移证据（全部 2026-09-16 静态取证，NRO 文件偏移 = 运行时模块偏移；每条在两处不同函数里复核）：
+//   * `Challenge = Game + 0x26FA88`：`Game::Start(ePlayerType,eChallenge,Seeds,eDifficulty) @ 0x34E570`
+//     `str w2,[this+0x26FA88]`（w2 = 第 2 个参数）；`Game::GetChallengeParams @ 0x34EA9C` 读它后
+//     尾跳 `Manager::GetChallengeParams(eChallenge)`；`Game::SaveState @ 0x350678` 也抄它。
+//   * `Difficulty = Game + 0x2F0028`：`Game::Start @ 0x34E56C` `str w4,[this+0x2F0028]`（w4 = 第 4 个参数）；
+//     `Game::IsHardMode @ 0x3501EC` 读它并 `and #0xfffffffd; cmp #1`（`IsGreedMode @ 0x350208` 同址
+//     `and #0xfffffffe; cmp #2` —— 正是本项目已在打补丁的那条函数，互为印证）。
+//   * `TimeCounter = Game + 0x24F9A0`：`Game::Update @ 0x352114-0x352120` 每帧与 `FrameCount(0x24F99C)`
+//     一起 `+1`（`ldp w8,w9,[x24,#0x4]` … `stp`，x24 = Game+0x24F998）；控制台 `time` 命令 @0x3EF48
+//     用 `ldrsw`（**有符号**）读它再除以 30。
+//   * `ScreenShakeOffset = Game + 0x24F9B0`：与既有常量 `kGameToScreenAdjustOffset` **同一个字段**
+//     （结构名 vs PC 名），这里只加一个更贴 PC 的别名，不新增第二个偏移。
+//     `Game::Update @ 0x3518EC-0x35191C` 在震动帧数 `+0x24F9AC` 归零那一帧把它设成 `Vector2::Zero`；
+//     `Camera::update_drag2 @ 0x34164` 写它；`Room::Render @ 0x47FD60` 把它加进渲染坐标。
+//
+// 读不到时按 PC 的"字段不存在"口径给 nil（而不是编 0/编向量）—— EID 用
+// `game.ScreenShakeOffset` 做减法，编一个 0 向量会让画面抖动时描述位置偏掉。
+int GameIndex(lua_State* state) {
+    if (lua_type(state, 2) != LUA_TSTRING) {
+        lua_pushnil(state);
+        return 1;
+    }
+    const char* field = lua_tostring(state, 2);
+    const std::uintptr_t game = ResolveGame();
+    if (game != 0) {
+        if (std::strcmp(field, "Challenge") == 0) {
+            std::int32_t value = 0;
+            if (game <= UINTPTR_MAX - kGameChallengeOffset &&
+                ReadEngine(game + kGameChallengeOffset, &value)) {
+                lua_pushinteger(state, static_cast<lua_Integer>(value));
+                return 1;
+            }
+            lua_pushnil(state);
+            return 1;
+        }
+        if (std::strcmp(field, "Difficulty") == 0) {
+            std::int32_t value = 0;
+            if (game <= UINTPTR_MAX - kGameDifficultyOffset &&
+                ReadEngine(game + kGameDifficultyOffset, &value)) {
+                lua_pushinteger(state, static_cast<lua_Integer>(value));
+                return 1;
+            }
+            lua_pushnil(state);
+            return 1;
+        }
+        if (std::strcmp(field, "TimeCounter") == 0) {
+            // **有符号**读：控制台 `time` 命令用的是 `ldrsw`。
+            std::int32_t value = 0;
+            if (game <= UINTPTR_MAX - kGameTimeCounterOffset &&
+                ReadEngine(game + kGameTimeCounterOffset, &value)) {
+                lua_pushinteger(state, static_cast<lua_Integer>(value));
+                return 1;
+            }
+            lua_pushnil(state);
+            return 1;
+        }
+        if (std::strcmp(field, "ScreenShakeOffset") == 0) {
+            float x = 0.0F;
+            float y = 0.0F;
+            if (game <= UINTPTR_MAX - kGameScreenShakeOffsetOffset &&
+                ReadEngine(game + kGameScreenShakeOffsetOffset, &x) &&
+                ReadEngine(game + kGameScreenShakeOffsetOffset + sizeof(float), &y)) {
+                // 用 `Vector` userdata（不是一张只有 X/Y 的表）：PC 侧这个字段就是 `Vector`，
+                // Mod 会继续对它调 `:Length()` 一类的方法。
+                // 也顺便避开契约门禁那条"Game 家族不许自己写注册/建表循环"的字符串判据。
+                isaac::runtime::PushLuaVector(state, x, y);
+                return 1;
+            }
+            lua_pushnil(state);
+            return 1;
+        }
+    }
+    // 不是字段 ⇒ 落到方法表（上值 1）。方法表里没有就是 nil，与原来"`__index` 是表"的行为一致。
+    lua_pushvalue(state, lua_upvalueindex(1));
+    lua_pushvalue(state, 2);
+    lua_rawget(state, -2);
+    lua_remove(state, -2);
+    return 1;
+}
 
 std::size_t AttachGameMethods(lua_State* state) noexcept {
     return AttachOwnerMethods(state, kGameOwner, kGameHandlers,

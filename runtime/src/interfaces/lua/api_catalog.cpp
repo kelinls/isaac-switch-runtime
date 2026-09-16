@@ -219,6 +219,13 @@ constexpr LuaApiDescriptor kDefaultApis[] = {
     // 加上房间滚动偏移、再加上 Game 的调整量（三个常量的证据见 `runtime_constants.hpp`）。
     {MakeId(ApiDomain::Room, 1, 0x0009), ApiDomain::Room, "Room", "WorldToScreenPosition", kV1,
      0, ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+    // 批次 14（2026-09-16）：`Room:GetFrameCount()` —— "这个房间已经活动了多少帧"。
+    // EID 的背包合成渲染路径无条件调它（`features/eid_bagofcrafting.lua:967` 的 `< 2`），
+    // 之前完全没有 ⇒ 拿着背包合成时每帧抛错、描述渲染整段被打断（真机 `g_LastLuaErrorText` 坐实）。
+    // 实现是调引擎自己的 `Room::GetFrameCount()`（`0x470B0C`，安装期 16 字节守卫），
+    // 所以成熟度先记 `HostVerified`（宿主夹具覆盖"调到/绑定不可用"两条路），真机验收后再上 `HardwareVerified`。
+    {MakeId(ApiDomain::Room, 1, 0x000A), ApiDomain::Room, "Room", "GetFrameCount", kV1,
+     0, ThreadAffinity::ManagedCallback, ApiMaturity::HostVerified},
     {MakeId(ApiDomain::ItemPool, 1, 0x0001), ApiDomain::ItemPool, "ItemPool", "GetCollectible", kV1,
      0, ThreadAffinity::ManagedCallback, ApiMaturity::HostVerified},
     {MakeId(ApiDomain::ItemPool, 1, 0x0002), ApiDomain::ItemPool, "ItemPool", "GetLastPool", kV1,
@@ -515,6 +522,16 @@ constexpr LuaApiDescriptor kDefaultApis[] = {
      kV1, 0, ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
     {MakeId(ApiDomain::Isaac, 1, 0x0050), ApiDomain::Isaac, "ItemConfig_Item", "IsTrinket",
      kV1, 0, ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+
+    // 批次"IsAvailable 一族"（2026-09-16）：EID 在 `features/eid_api.lua:1988`/`:2013` 与
+    // `eid_bagofcrafting.lua:826` 上**无保护**地调 `item:IsAvailable()`（收藏品条目），
+    // 缺它就是"attempt to call a nil value"，整条回调被摘 ⇒ Spindown Dice / 背包合成失效。
+    // 语义：PC 文档"true = 已解锁；false = 没解锁或被 tags 挡掉"；实现按条目所属向量分派引擎的
+    // `Item`/`Card`/`PillEffect::IsAvailable`，其中 `Item` 那条的 `flags` 是我们的兼容层定义
+    // （已登记偏离）。取证见 `docs/问题与解决记录.md` 续十二。
+    {MakeId(ApiDomain::Isaac, 1, 0x0055), ApiDomain::Isaac, "ItemConfig_Item", "IsAvailable",
+     kV1, 0, ThreadAffinity::ManagedCallback, ApiMaturity::Experimental},
+
     // 批次 9（2026-09-15）：`Entity:ToFamiliar()` —— EID 用到而运行时里没有的一条。
     // 判据同 `Entity:ToPickup()`：`Type == ENTITY_FAMILIAR(3)` 且 vptr 精确等于
     // `base + 0xA35728`（`_ZTVN15IsaacRepentance15Entity_FamiliarE` @ `0xA35718` 加 `0x10`，
@@ -697,6 +714,21 @@ constexpr LuaApiDescriptor kDefaultApis[] = {
     {MakeId(ApiDomain::Diagnostic, 1, 0x0005), ApiDomain::Diagnostic, "RuntimeTest",
      "MarkMusicDiagnosticCurrentId", kV1, 0, ThreadAffinity::MainRender,
      ApiMaturity::Experimental},
+
+    // `RuntimeMods`：运行时自带的模组开关菜单的控制面（2026-09-16，路线 B）。
+    // 这四个成员**不是 PC API**（PC 的模组开关在游戏菜单里，Lua 看不到模组清单），
+    // 只给运行时自带的那个菜单脚本用：读清单 / 改开关 / 落盘 / 重读。
+    {MakeId(ApiDomain::ModMenu, 1, 0x0001), ApiDomain::ModMenu, "RuntimeMods", "List", kV1, 0,
+     ThreadAffinity::MainUpdate, ApiMaturity::Experimental},
+    {MakeId(ApiDomain::ModMenu, 1, 0x0002), ApiDomain::ModMenu, "RuntimeMods", "SetEnabled", kV1,
+     0, ThreadAffinity::MainUpdate, ApiMaturity::Experimental},
+    {MakeId(ApiDomain::ModMenu, 1, 0x0003), ApiDomain::ModMenu, "RuntimeMods", "Save", kV1, 0,
+     ThreadAffinity::MainUpdate, ApiMaturity::Experimental},
+    {MakeId(ApiDomain::ModMenu, 1, 0x0004), ApiDomain::ModMenu, "RuntimeMods", "Reload", kV1, 0,
+     ThreadAffinity::MainUpdate, ApiMaturity::Experimental},
+    // `Report` 只给菜单脚本上报"走到哪一步"用（真机排障），不参与 PC 覆盖率口径。
+    {MakeId(ApiDomain::ModMenu, 1, 0x0005), ApiDomain::ModMenu, "RuntimeMods", "Report", kV1, 0,
+     ThreadAffinity::MainUpdate, ApiMaturity::Experimental},
 };
 
 // Constant-initialized: no guard variable and no .init_array dependency.
@@ -782,6 +814,7 @@ const char* ToString(ApiDomain domain) noexcept {
         case ApiDomain::Sprite: return "Sprite";
         case ApiDomain::Isaac: return "Isaac";
         case ApiDomain::Seed: return "Seed";
+        case ApiDomain::ModMenu: return "ModMenu";
     }
     return "Unknown";
 }

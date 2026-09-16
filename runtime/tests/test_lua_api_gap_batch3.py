@@ -208,7 +208,9 @@ void FakeRenderLayer(void* self, int, const void*, const void*, const void*) {
     ++g_RenderLayerCalls;
 }
 
-// 应用入口的观察窗：设备侧这一步是空操作，宿主用注入实现证明"绘制路径确实读了句柄里的缓存"。
+// 应用入口的观察窗：宿主用注入实现证明"绘制路径确实读了句柄里的缓存"
+// （2026-09-16 起设备侧也**真的写进** `ANM2` 了，写通道的字节级证据由下面
+// `ExpectEngineBytes` 直接读那块伪造内存给出）。
 struct AppliedProperties {
     int calls = 0;
     float scaleX = 0.0F;
@@ -229,6 +231,57 @@ void HarnessApplyProperties(void* sprite, const void* handle) {
     g_Applied.colorRed = cached->colorRed;
     g_Applied.colorAlpha = cached->colorAlpha;
     g_Applied.flipX = cached->flipX;
+}
+
+// 读伪造 `ANM2` 里某个偏移上的 float/字节，用来断言"Mod 写的值真的落进了原生对象"。
+bool ReadEngineFloat(std::uintptr_t base, std::size_t offset, float* out) {
+    if (base == 0 || out == nullptr) return false;
+    std::memcpy(out, reinterpret_cast<const void*>(base + offset), sizeof(float));
+    return true;
+}
+
+bool ReadEngineByte(std::uintptr_t base, std::size_t offset, unsigned* out) {
+    if (base == 0 || out == nullptr) return false;
+    *out = *reinterpret_cast<const unsigned char*>(base + offset);
+    return true;
+}
+
+// `Sprite.Scale` / `Sprite.Color` / `Sprite.FlipX` 的落点（常量来自 `runtime_constants.hpp`，
+// 也就是写通道真正引用的那几个名字 —— 这样"测试与实现同源"，不会各写一份偏移）。
+bool ExpectSpriteBytes(std::uintptr_t base) {
+    float scaleX = 0.0F;
+    float scaleY = 0.0F;
+    float tintRed = 0.0F;
+    float tintGreen = 0.0F;
+    float tintBlue = 0.0F;
+    float tintAlpha = 0.0F;
+    unsigned flipX = 0U;
+    const bool read = ReadEngineFloat(base, kSpriteScaleOffset, &scaleX) &&
+                      ReadEngineFloat(base, kSpriteScaleOffset + sizeof(float), &scaleY) &&
+                      ReadEngineFloat(base, kSpriteColorOffset + kColorModTintOffset, &tintRed) &&
+                      ReadEngineFloat(base, kSpriteColorOffset + kColorModTintOffset + sizeof(float),
+                                      &tintGreen) &&
+                      ReadEngineFloat(base,
+                                      kSpriteColorOffset + kColorModTintOffset + 2 * sizeof(float),
+                                      &tintBlue) &&
+                      ReadEngineFloat(base,
+                                      kSpriteColorOffset + kColorModTintOffset + 3 * sizeof(float),
+                                      &tintAlpha) &&
+                      ReadEngineByte(base, kSpriteFlipXOffset, &flipX);
+    if (!read) {
+        std::printf("GAP_FAIL: could not read the ANM2 bytes back\n");
+        return false;
+    }
+    // 脚本写的是 `Scale = Vector(2.5, 0.5)`、`Color = Color(1, 0.5, 0.25, 0.25)`、`FlipX = true`。
+    const bool ok = scaleX == 2.5F && scaleY == 0.5F && tintRed == 1.0F && tintGreen == 0.5F &&
+                    tintBlue == 0.25F && tintAlpha == 0.25F && flipX == 1U;
+    if (!ok) {
+        std::printf("GAP_FAIL: ANM2 bytes scale=(%.3f,%.3f) tint=(%.3f,%.3f,%.3f,%.3f) flipX=%u\n",
+                    static_cast<double>(scaleX), static_cast<double>(scaleY),
+                    static_cast<double>(tintRed), static_cast<double>(tintGreen),
+                    static_cast<double>(tintBlue), static_cast<double>(tintAlpha), flipX);
+    }
+    return ok;
 }
 
 bool ExpectNumber(const char* name, double expected) {
@@ -335,6 +388,12 @@ int main(int argc, char** argv) {
                     static_cast<double>(g_Applied.scaleX), static_cast<double>(g_Applied.scaleY),
                     static_cast<double>(g_Applied.colorRed),
                     static_cast<double>(g_Applied.colorAlpha), g_Applied.flipX);
+        return 1;
+    }
+
+    // 2026-09-16 起：三个属性还要**真的写进原生对象**（写通道），不只是留在句柄里。
+    // 判据是直接读那块伪造 `ANM2` 的字节 —— 与设备上 `GetDestQuad` 读的是同一批偏移。
+    if (!ExpectSpriteBytes(g_Applied.sprite)) {
         return 1;
     }
 

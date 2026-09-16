@@ -90,4 +90,46 @@ Result<ModLoadOutcome> ModLoadService::Load(const ModLoadRequest& request,
     return outcome;
 }
 
+Status ModLoadService::LoadAll(const ResolvedManifestModBatch& batch,
+                               std::uint8_t* entryBuffer, std::size_t entryCapacity,
+                               ModLoadBatchOutcome* outcome,
+                               ModLoadFailure* failure) noexcept {
+    if (failure != nullptr) {
+        *failure = ModLoadFailure{};
+    }
+    if (outcome == nullptr) {
+        return Status{StatusCode::InvalidArgument};
+    }
+    *outcome = ModLoadBatchOutcome{};
+    if (batch.count > ModLoadBatchOutcome::kCapacity) {
+        return Status{StatusCode::CapacityExceeded};
+    }
+    if (batch.count == 0) {
+        // 空批次不是错误：一个启用的 Mod 都没有时 `ResolveAll` 早就报 `NoEnabledMod` 了。
+        return Status{StatusCode::Ok};
+    }
+
+    // 逐个加载，入口缓冲**共用**（读完一个、跑完一个，再读下一个）。
+    // 某个 Mod 失败**不中断这一批**：PC 上一个坏掉的 Mod 不会连带拖死其它 Mod，
+    // 而"哪个 Mod 坏了"通过 `outcome->failedIndex` 如实报出来。
+    for (std::size_t index = 0; index < batch.count; ++index) {
+        ModLoadRequest request{};
+        request.resolved = &batch.mods[index];
+        request.entryBuffer = entryBuffer;
+        request.entryCapacity = entryCapacity;
+        ModLoadFailure perModFailure{};
+        const Result<ModLoadOutcome> loaded = Load(request, &perModFailure);
+        outcome->scripts[index] = loaded.ok() ? loaded.value() : ModLoadOutcome{};
+        outcome->count = index + 1;
+        if (!loaded.ok() && !outcome->anyFailure) {
+            outcome->anyFailure = true;
+            outcome->failedIndex = index;
+            if (failure != nullptr) {
+                *failure = perModFailure;
+            }
+        }
+    }
+    return Status{StatusCode::Ok};
+}
+
 } // namespace isaac::runtime

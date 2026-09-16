@@ -151,7 +151,16 @@ int ModAddCallback(lua_State* state) {
     // 旧实现先 `Remove(id, owner)` 再登记，注释写的是"避免 Lua 引用泄漏" —— 泄漏确实要防，
     // 但正确的做法是**追加**（引用各自归各自的登记），而不是把 Mod 的回调吃掉。
     CallbackRegistry& registry = LuaRuntime::ManagedCallbackRegistry();
-    const isaac::runtime::ModHandle owner = LuaRuntime::RuntimeOwnerHandle();  // domain handle, not the userdata
+    // 归属 = **登记这个回调的那个 Mod**（多模组，2026-09-16）。
+    //
+    // 此前所有回调都挂同一个常量 owner（`kRuntimeOwner{1,1}`），前提是"只加载一个 Mod"。
+    // 多模组之后那样会把两个 Mod 的回调混成一家：`Find`/`Remove`/`RemoveOwner` 全部按 owner
+    // 区分，混成一家之后"摘掉某个 Mod 的回调"会连别人的一起摘掉。
+    // owner 就存在 Mod userdata 里（`ModHandle::ownerPacked`，见 `lua_runtime.cpp` 的
+    // `RegisterMod`），而 `self`（栈下标 1）正是这个 Mod 对象。
+    const auto* modHandle = static_cast<const LuaRuntime::ModHandle*>(
+        luaL_checkudata(state, 1, LuaRuntime::kModMetatable));
+    const isaac::runtime::ModHandle owner = LuaRuntime::UnpackModOwner(modHandle->ownerPacked);
     CallbackDescriptor descriptor{};
     descriptor.id = id;
     descriptor.owner = owner;

@@ -50,6 +50,17 @@ public:
         : cursor_(reinterpret_cast<const unsigned char*>(json)), end_(cursor_ + length) {}
 
     ModManifest::ParseResult Parse(ModManifest::SelectedMod* selected) {
+        ModManifest::SelectedMods selectedMods{};
+        const ModManifest::ParseResult result = Parse(&selectedMods);
+        if (result == ModManifest::ParseResult::Success) {
+            *selected = selectedMods.mods[0];
+        }
+        return result;
+    }
+
+    // 收下**全部**启用的 Mod（多模组加载，2026-09-16）。`SelectFirstEnabled` 走上面那个
+    // 薄包装 —— 两者共用同一份解析逻辑，不会出现"单模组路径修了、多模组路径没修"的分叉。
+    ModManifest::ParseResult Parse(ModManifest::SelectedMods* selected) {
         SkipWhitespace();
         if (!ParseRoot(1)) {
             return failure_;
@@ -58,10 +69,14 @@ public:
         if (cursor_ != end_) {
             return ModManifest::ParseResult::InvalidJson;
         }
-        if (!hasSelected_) {
+        if (selectedCount_ == 0) {
             return ModManifest::ParseResult::NoEnabledMod;
         }
-        *selected = selected_;
+        // `count` 与 `mods[]` 必须一起给出去：解析期间只累加 `selectedCount_`（成员），
+        // 这里才把它落到结果对象上 —— 漏了这一行会得到"结构体里明明有 Mod、count 却是 0"
+        // 的诡异现象（本文件的第一次实现在测试里就是这么红的）。
+        selectedMods_.count = selectedCount_;
+        *selected = selectedMods_;
         return ModManifest::ParseResult::Success;
     }
 
@@ -609,9 +624,15 @@ private:
             failure_ = ModManifest::ParseResult::InvalidMod;
             return false;
         }
-        if (enabled && !hasSelected_) {
-            selected_ = candidate;
-            hasSelected_ = true;
+        if (enabled) {
+            // 每个启用的 Mod 都要留下（多模组加载）。超上限**不截断**：那会让某个 Mod
+            // 安静地不加载，症状是"某个 Mod 没生效"却查不出原因。
+            if (selectedCount_ >= ModManifest::kMaximumSelectedMods) {
+                failure_ = ModManifest::ParseResult::TooManyMods;
+                return false;
+            }
+            selectedMods_.mods[selectedCount_] = candidate;
+            ++selectedCount_;
         }
         return true;
     }
@@ -619,8 +640,8 @@ private:
     const unsigned char* cursor_;
     const unsigned char* end_;
     ModManifest::ParseResult failure_{ModManifest::ParseResult::Success};
-    ModManifest::SelectedMod selected_{};
-    bool hasSelected_{};
+    ModManifest::SelectedMods selectedMods_{};
+    std::size_t selectedCount_{};
 };
 
 } // namespace
@@ -632,6 +653,19 @@ ParseResult SelectFirstEnabled(const char* json, std::size_t length, SelectedMod
         return ParseResult::InvalidArgument;
     }
     SelectedMod selected{};
+    Parser parser(json, length);
+    const ParseResult result = parser.Parse(&selected);
+    if (result == ParseResult::Success) {
+        *output = selected;
+    }
+    return result;
+}
+
+ParseResult SelectAllEnabled(const char* json, std::size_t length, SelectedMods* output) {
+    if (json == nullptr || length == 0 || output == nullptr) {
+        return ParseResult::InvalidArgument;
+    }
+    SelectedMods selected{};
     Parser parser(json, length);
     const ParseResult result = parser.Parse(&selected);
     if (result == ParseResult::Success) {

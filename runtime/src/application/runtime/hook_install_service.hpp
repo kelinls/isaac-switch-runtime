@@ -62,6 +62,13 @@ struct HookInstallReport {
     [[nodiscard]] std::uint32_t FirstFailureSlot() const noexcept;
 };
 
+// "这一轮别装某个挂点"的判据。返回 true 的点**不碰游戏内存**、在报告里记 `Skipped`。
+//
+// 为什么把它做成一个可注入的判据而不是写死在服务里：这个能力**只服务于真机排障**
+// （2026-09-16 卡上开关，见 `runtime/source/hook_manager.cpp` 的说明）—— 应用层不该知道
+// "卡上有没有某个文件"。默认不设判据时行为与以前完全一致（一个点都不跳过）。
+using HookSkipPredicate = bool (*)(void* context, HookId id) noexcept;
+
 class HookInstallService {
 public:
     explicit HookInstallService(IHookPort& hooks) noexcept : hooks_(hooks) {}
@@ -73,8 +80,20 @@ public:
     [[nodiscard]] Status InstallProductionHooks(const ModuleInfo& module,
                                                 HookInstallReport* report) noexcept;
 
+    // 装上"跳过判据"（排障用）。`predicate` 为 nullptr 表示不跳过任何点。
+    void SetSkipPredicate(HookSkipPredicate predicate, void* context) noexcept {
+        skipPredicate_ = predicate;
+        skipContext_ = context;
+    }
+
 private:
+    [[nodiscard]] bool ShouldSkip(HookId id) const noexcept {
+        return skipPredicate_ != nullptr && skipPredicate_(skipContext_, id);
+    }
+
     IHookPort& hooks_;
+    HookSkipPredicate skipPredicate_ = nullptr;
+    void* skipContext_ = nullptr;
 };
 
 } // namespace isaac::runtime

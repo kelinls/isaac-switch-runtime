@@ -42,9 +42,12 @@ using isaac::runtime::EngineGuardCacheEnabled;
 using isaac::runtime::EngineGuardDispatchActive;
 using isaac::runtime::EngineGuardEnterDispatch;
 using isaac::runtime::EngineGuardLeaveDispatch;
+using isaac::runtime::EngineGuardLookupWritable;
 using isaac::runtime::EngineGuardRegionCache;
 using isaac::runtime::EngineGuardRangeUsable;
+using isaac::runtime::EngineGuardRememberWritable;
 using isaac::runtime::EngineGuardSetCacheEnabled;
+using isaac::runtime::EngineGuardWritableRegionCache;
 
 namespace {
 
@@ -121,6 +124,37 @@ int main() {
     check(!EngineGuardRangeUsable(0x1000, 0), "check-zero-length");
     check(!EngineGuardRangeUsable(static_cast<std::uintptr_t>(-8), 16), "check-overflow");
     check(EngineGuardRangeUsable(0x1000, 8), "check-ok");
+
+    // 8b) **写**侧缓存（2026-09-16 引擎写通道）：与读缓存分家、作用域同生共死。
+    //
+    //     为什么单列一条：可读（`Perm_R`）不等于可写（`Perm_W`）——模块映像的代码段与只读
+    //     数据段就是"可读不可写"。若写路径查读缓存，`Sprite.Scale = 2` 会去写只读页，
+    //     真机表现为 `Data Abort`。
+    EngineGuardEnterDispatch();
+    EngineGuardWritableRegionCache().Clear();
+    EngineGuardRegionCache().Clear();
+    EngineGuardRegionCache().Insert(0x1000, 0x2000);          // 只登记"可读"
+    check(!EngineGuardLookupWritable(0x1000, 4),
+          "write-lookup-must-not-use-readable-cache");
+    EngineGuardRememberWritable(0x3000, 0x4000);
+    check(EngineGuardLookupWritable(0x3FFC, 4), "write-cache-hit");
+    check(!EngineGuardLookupWritable(0x4000, 1), "write-cache-miss-after-end");
+    check(!EngineGuardLookupWritable(0x1000, 4),
+          "readable-region-must-not-become-writable");
+    // 非派发期间：写缓存同样不可用（缓存只在一次受管回调派发内有效）。
+    EngineGuardLeaveDispatch();
+    check(!EngineGuardLookupWritable(0x3FFC, 4), "write-scope-closed");
+    check(EngineGuardWritableRegionCache().count == 0, "write-scope-cleared");
+    // 关掉缓存 / 重新进入派发都要丢掉写侧条目。
+    EngineGuardEnterDispatch();
+    EngineGuardRememberWritable(0x3000, 0x4000);
+    EngineGuardSetCacheEnabled(false);
+    check(EngineGuardWritableRegionCache().count == 0, "write-disable-clears");
+    EngineGuardSetCacheEnabled(true);
+    EngineGuardRememberWritable(0x3000, 0x4000);
+    EngineGuardEnterDispatch();
+    check(EngineGuardWritableRegionCache().count == 0, "write-reenter-clears");
+    EngineGuardLeaveDispatch();
 
     // 9) 并发：写侧是游戏线程，读侧可能是宿主插件的线程（绑定解析阶段）。
     //

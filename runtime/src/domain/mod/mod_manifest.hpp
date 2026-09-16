@@ -45,4 +45,20 @@ struct ModManifest {
     [[nodiscard]] bool HasEntry() const noexcept { return entry[0] != '\0'; }
 };
 
+// 同一次加载里最多几个 Mod（2026-09-16，多模组加载）。
+//
+// 与旧解析器 `ModManifest::kMaximumSelectedMods` 必须一致（`hook_manager.cpp` 里有
+// `static_assert` 兜住，理由同 `kRomfsModScriptMaximumLength`：两份常量各自演化过就埋过坑）。
+// 取 4 的依据：整个集合是**按值传递**的解析结果，8 个 Mod 会让它涨到 10 KiB 以上。
+inline constexpr std::size_t kModManifestCapacity = 4;
+
+// 一次解析的结果：清单里**所有** `enabled = true` 的 Mod，顺序 = 清单里的书写顺序
+// （PC 正是按这个顺序依次执行各 Mod 的入口脚本）。
+struct ModManifestSet {
+    std::array<ModManifestEntry, kModManifestCapacity> entries{};
+    std::size_t count{0};
+
+    [[nodiscard]] bool empty() const noexcept { return count == 0; }
+};
+
 } // namespace isaac::runtime

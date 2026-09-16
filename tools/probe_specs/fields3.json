@@ -1,0 +1,332 @@
+{
+ "schema": "isaac-probe-spec/1",
+ "batch": "fields3-20260916",
+ "tag": "f3",
+ "note": "2026-09-16 第三批（缺口台账清账批）的两通道逐值验收。A 通道 = EID 侧临时探针报出来的值（Lua 读字段），B 通道 = 调试桩沿指针链独立读同一块引擎内存。覆盖：Game 的 Challenge/Difficulty/TimeCounter/ScreenShakeOffset、Room 的 Flags 与 Data.Shape、EntityPlayer 的四个 float 属性 + CanFly + ControlsCooldown、ItemConfig_Item.Hidden、卡/胶囊的 MimicCharge。（修正：Game/Room/玩家链走 g_Game 槽 0xAAC698；RoomDescriptor 走 Room+0x8；ItemConfig 系仍走 g_Manager）",
+ "anchors": [
+  "identity",
+  "exl_main",
+  "manifest_install"
+ ],
+ "chains": {
+  "game": {
+   "label": "Game/Level 对象（同一个地址）",
+   "steps": [
+    [
+     "game_slot_ptr",
+     "0xAAC698"
+    ],
+    [
+     "deref_ptr"
+    ]
+   ],
+   "dump_bytes": 64
+  },
+  "room": {
+   "label": "当前 Room（Game + 0x21550 解一层）",
+   "steps": [
+    [
+     "game_slot_ptr",
+     "0xAAC698"
+    ],
+    [
+     "deref_ptr"
+    ],
+    [
+     "add",
+     "0x21550"
+    ],
+    [
+     "load_ptr",
+     "0x0"
+    ]
+   ],
+   "dump_bytes": 96
+  },
+  "roomdata": {
+   "label": "RoomDescriptor.Data（RoomData + 0x10 解一层）——RoomConfig::Room",
+   "steps": [
+    [
+     "game_slot_ptr",
+     "0xAAC698"
+    ],
+    [
+     "deref_ptr"
+    ],
+    [
+     "add",
+     "0x21550"
+    ],
+    [
+     "load_ptr",
+     "0x0"
+    ],
+    [
+     "load_ptr",
+     "0x8"
+    ],
+    [
+     "load_ptr",
+     "0x10"
+    ]
+   ],
+   "dump_bytes": 112
+  },
+  "player": {
+   "label": "players[0]（Game + 0x25C50 的 vector 第 0 项）",
+   "steps": [
+    [
+     "game_slot_ptr",
+     "0xAAC698"
+    ],
+    [
+     "deref_ptr"
+    ],
+    [
+     "add",
+     "0x25C50"
+    ],
+    [
+     "load_ptr",
+     "0x0"
+    ],
+    [
+     "vector_elem",
+     0
+    ]
+   ],
+   "dump_bytes": 64
+  },
+  "item1": {
+   "label": "ItemConfig 收藏品向量第 1 项（与 fields2 同一条链）",
+   "steps": [
+    [
+     "game_slot_ptr",
+     "0xAAC648"
+    ],
+    [
+     "deref_ptr"
+    ],
+    [
+     "add",
+     "0x36538"
+    ],
+    [
+     "load_ptr",
+     "0x0"
+    ],
+    [
+     "vector_elem",
+     1
+    ]
+   ],
+   "dump_bytes": 256
+  },
+  "card0": {
+   "label": "ItemConfig 卡牌向量第 0 项（IC + 0x48 处 begin）",
+   "steps": [
+    [
+     "game_slot_ptr",
+     "0xAAC648"
+    ],
+    [
+     "deref_ptr"
+    ],
+    [
+     "add",
+     "0x36538"
+    ],
+    [
+     "load_ptr",
+     "0x48"
+    ],
+    [
+     "vector_elem",
+     0
+    ]
+   ],
+   "dump_bytes": 128
+  },
+  "pill1": {
+   "label": "ItemConfig 胶囊向量第 1 项（IC + 0x60 处 begin）",
+   "steps": [
+    [
+     "game_slot_ptr",
+     "0xAAC648"
+    ],
+    [
+     "deref_ptr"
+    ],
+    [
+     "add",
+     "0x36538"
+    ],
+    [
+     "load_ptr",
+     "0x60"
+    ],
+    [
+     "vector_elem",
+     1
+    ]
+   ],
+   "dump_bytes": 128
+  },
+  "desc": {
+   "label": "RoomDescriptor（Room + 0x8 解一层；证据 Room::Init @ 0x45C534）",
+   "steps": [
+    [
+     "game_slot_ptr",
+     "0xAAC698"
+    ],
+    [
+     "deref_ptr"
+    ],
+    [
+     "add",
+     "0x21550"
+    ],
+    [
+     "load_ptr",
+     "0x0"
+    ],
+    [
+     "load_ptr",
+     "0x8"
+    ]
+   ],
+   "dump_bytes": 96
+  }
+ },
+ "targets": [
+  {
+   "name": "Game.Challenge",
+   "chain": "game",
+   "offset": "0x26FA88",
+   "width": 4,
+   "signed": false,
+   "lua_key": "gc"
+  },
+  {
+   "name": "Game.Difficulty",
+   "chain": "game",
+   "offset": "0x2F0028",
+   "width": 4,
+   "signed": false,
+   "lua_key": "gd"
+  },
+  {
+   "name": "Game.TimeCounter",
+   "chain": "game",
+   "offset": "0x24F9A0",
+   "width": 4,
+   "signed": true,
+   "lua_key": "gt",
+   "note": "每帧递增的活计数器：A 通道的值是探针上一次报的那一刻，B 是 attach 时刻，两者天然差一个『间隔帧数』。判据是差值等于 Game.FrameCount 的差值（两条都能从本读数算出），不是逐值相等。"
+  },
+  {
+   "name": "Game.ScreenShakeOffset.X",
+   "chain": "game",
+   "offset": "0x24F9B0",
+   "width": 4,
+   "kind": "float",
+   "lua_key": "gsx"
+  },
+  {
+   "name": "RoomDescriptor.Flags",
+   "chain": "desc",
+   "offset": "0x50",
+   "width": 4,
+   "signed": false,
+   "lua_key": "rf"
+  },
+  {
+   "name": "RoomConfigRoom.Shape",
+   "chain": "roomdata",
+   "offset": "0x5C",
+   "width": 4,
+   "signed": false,
+   "lua_key": "rs"
+  },
+  {
+   "name": "EntityPlayer.Damage",
+   "chain": "player",
+   "offset": "0x1844",
+   "width": 4,
+   "kind": "float",
+   "lua_key": "pd"
+  },
+  {
+   "name": "EntityPlayer.MoveSpeed",
+   "chain": "player",
+   "offset": "0x194C",
+   "width": 4,
+   "kind": "float",
+   "lua_key": "pm"
+  },
+  {
+   "name": "EntityPlayer.MaxFireDelay",
+   "chain": "player",
+   "offset": "0x1834",
+   "width": 4,
+   "kind": "float",
+   "lua_key": "pf"
+  },
+  {
+   "name": "EntityPlayer.TearRange",
+   "chain": "player",
+   "offset": "0x1854",
+   "width": 4,
+   "kind": "float",
+   "lua_key": "pr"
+  },
+  {
+   "name": "EntityPlayer.CanFly",
+   "chain": "player",
+   "offset": "0x1954",
+   "width": 1,
+   "signed": false,
+   "lua_key": "pc"
+  },
+  {
+   "name": "EntityPlayer.ControlsCooldown",
+   "chain": "player",
+   "offset": "0x404",
+   "width": 4,
+   "signed": true,
+   "lua_key": "pcc"
+  },
+  {
+   "name": "ItemConfig_Item.Hidden",
+   "chain": "item1",
+   "offset": "0xB7",
+   "width": 1,
+   "signed": false,
+   "lua_key": "1h"
+  },
+  {
+   "name": "ItemConfigCard.MimicCharge",
+   "chain": "card0",
+   "offset": "0x64",
+   "width": 4,
+   "signed": true,
+   "lua_key": "c0"
+  },
+  {
+   "name": "ItemConfigPillEffect.MimicCharge",
+   "chain": "pill1",
+   "offset": "0x48",
+   "width": 4,
+   "signed": true,
+   "lua_key": "p1"
+  },
+  {
+   "name": "Game.FrameCount",
+   "chain": "game",
+   "offset": "0x24F99C",
+   "width": 4,
+   "signed": false,
+   "note": "只登记不比对（没有 lua_key）：给 TimeCounter 的时序修正当参照。"
+  }
+ ]
+}

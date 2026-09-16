@@ -55,6 +55,23 @@ inline constexpr std::uintptr_t kRoomDescriptorVisitedCountWidth = 4;
 inline constexpr std::uintptr_t kRoomDescriptorClearOffset = 0x50;
 inline constexpr std::uintptr_t kRoomDescriptorClearWidth = 4;
 
+// PC 的 `RoomDescriptor.Flags`：**32 位位掩码**（不是布尔）。低六位分别是 `FLAG_CLEAR`=bit0、`PRESSURE_PLATES_TRIGGERED`=bit1、`SACRIFICE_DONE`=bit2、`CHALLENGE_DONE`=bit3、`SURPRISE_MINIBOSS`=bit4、`HAS_WATER`=bit5；更高位另有用途（bit10 显房、bit16 Rotgut 已清）。★ 与本表 `Clear` 行是**同一个偏移**：`Clear` 只是它的第 0 位（旧实现按『非零即真』读，会把 bit3/bit10/bit16 也算成清房，现在按 PC 契约只看 bit0）（confirmed）
+//   证据：0x0036ffc0 —— 存档读取：`add x1, x23, #0x50` 把 desc+0x50 当**对象地址**交给读通道，紧随 0x36FFC4 `mov w2, #0x4` ⇒ 按 4 字节读（旧存档格式 <0x3f 时改走『六次 ldr/orr #1|2|4|8|0x10|0x20/str』把六个布尔合成低六位 ⇒ 低六位确实都是独立位）
+//   证据：0x0036889c —— 存档写回：`ldr w8, [x19, #0x50]` 同样按 4 字节读同一个字段（同函数 0x368884 也把 desc+0x50 交给写通道）
+//   证据：0x0046ac68 —— 第三处独立读取：`ldr w8, [x0, #0x50]`，其中 x0 是上一条 `bl` 返回的**当前房间描述符** —— 同函数 0x46AC54 `ldr x8, [x0, #0x10]`（本表 `Data` 行）+ 0x46AC5C `ldr w8, [x8, #0x8]`（`Data.Type`，本表 `Data.Type` 行）`cmp #0x5`（ROOM_BOSS）⇒ 只有 BOSS 房才置位，反证 x0 就是 RoomDescriptor
+//   证据：0x003e6c50 —— ★ 取值锚点：该函数用 `tbnz w9, #0x3` 单独测 **bit3**（`CHALLENGE_DONE`）—— 一个布尔字段容不下『第 3 位有独立含义』这件事 ⇒ 它是位掩码
+//   证据：0x0046ac70 —— ★ 第二个取值锚点：参数为真时 `orr w8, w8, #0x10000` 置 **bit16**，为假时 0x46AC78 `and w8, w8, #0xfffeffff` 清它，再 0x46AC7C `str w8, [x0, #0x50]` 写回 —— `1<<16` 更不可能是布尔
+inline constexpr std::uintptr_t kRoomDescriptorFlagsOffset = 0x50;
+inline constexpr std::uintptr_t kRoomDescriptorFlagsWidth = 4;
+
+// 房间配置里的房间形状（PC 的 `RoomConfig::Room.Shape`，`RoomShape` 枚举；相对本表 `Data` 指针 +0x5C）。⚠️ 与 `RoomDescriptor+0x50` 的 `Flags` 是两回事：那一格在描述符上，这一格在 `Data` 指过去的配置对象里（confirmed，相对 Data）
+//   证据：0x0048f6ec —— XML 房间表解析：`str w0, [x20, #0x5c]` 存的是紧邻上一条 0x48F6E8 `bl atoi` 的返回值（该组件自己的属性名就是 `shape`）；相邻的 `strb …, #0x5b`/`#0x5a` 是 height/width（**1 字节**）⇒ 这一格按 4 字节写，不可能是宽高
+//   证据：0x00491774 —— 二进制房间表加载器：`str w8, [x20, #0x5c]!`（后索引写，同样 4 字节）
+//   证据：0x0045f97c —— 进房间初始化：`ldr w8, [x8, #0x5c]`，其中 x8 由 0x45F974 `ldr x8, [x19, #0x8]` + 0x45F978 `ldr x8, [x8, #0x10]` 得到（描述符的 `Data`，本表 `Data` 行）⇒ 这一格确实在 `Data` 指向的对象里
+//   证据：0x0045f980 —— ★ 取值锚点：读到之后 `sub w8, w8, #0x9` + `cmp w8, #0x3` + `b.hi`（不命中就跳过一整段特判）⇒ 只有 **9..12** 四个取值走 L 形房间的特判，与 PC 的 `RoomShape`（9..12 正好是四个 L 形）逐值吻合 ⇒ 这一格是形状枚举
+inline constexpr std::uintptr_t kRoomDescriptorDataShapeOffset = 0x5C;
+inline constexpr std::uintptr_t kRoomDescriptorDataShapeWidth = 4;
+
 // 同上函数的第二个条件（值 == 0x22），字段名未定（候选 Variant/Difficulty）；**不进对外 API**（candidate，相对 Data）
 //   证据：0x003d0e88 —— 解引用 Data 之后按 4 字节读 Data+0x10
 //   证据：0x003d0e8c —— 与常量 0x22 比较；字段名未定 ⇒ 只登记、不进 API
@@ -91,6 +108,6 @@ inline constexpr std::uintptr_t kRoomDescriptorContainerVectorBOffset = 0xC0;
 inline constexpr std::uintptr_t kRoomDescriptorContainerVectorBWidth = 16;
 
 // 对外 API 只允许读这些字段（`confidence == confirmed`）。
-// 当前可用：Data、Data.Type、GridIndex、SafeGridIndex、VisitedCount、Clear
+// 当前可用：Data、Data.Type、GridIndex、SafeGridIndex、VisitedCount、Clear、Flags、Data.Shape
 
 } // namespace isaac::runtime::layout

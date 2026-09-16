@@ -196,6 +196,34 @@ EXL_TEST_BUILD_ID_CFLAGS := -DEXL_TEST_BUILD_ID=$(TEST_BUILD_ID)
 # visible error, so a crash report (module base, offsets, registers) carries the
 # evidence when file writes do not.
 PROBE_BREAK ?= 0
+# Worker 启动延迟（秒）—— 实验开关，2026-09-16 加。
+#
+# 作用：让 `ModuleWorker` 一进来先等 N 秒，把"我们自己的启动期动作"（扫内存找游戏模块、装挂点、
+# 自校验、读模组文件）挪到"系统装载游戏本体模块"那个窗口之后。**入口不动**（入口被游戏同步等待，
+# 在那儿等等于直接给开机加秒数 —— 2026-09-15 的 E1 实验就是栽在这里：延迟 8 秒版就"约 8 秒"崩、
+# 栈一模一样）。背景、实测秒数与本方案的不确定性见 `docs/问题与解决记录.md` 2026-09-16 续十六。
+#
+# 为什么是开关而不是写死的秒数：门禁 `test_worker_does_not_depend_on_fixed_sdk_initialization_delay`
+# （`runtime/tests/test_runtime_state.py`）明令禁止 worker 依赖一个固定的初始化延迟
+# —— 那条结论是 2026-08-23 用"改用独立 fs 服务"换来的。所以默认 **0**（生产形状不变、门禁不变），
+# 真机实验包显式传 `WORKER_STARTUP_DELAY_SECONDS=5`。
+WORKER_STARTUP_DELAY_SECONDS ?= 0
+ifeq ($(shell expr "$(WORKER_STARTUP_DELAY_SECONDS)" : '^[0-9][0-9]*$$'),0)
+$(error WORKER_STARTUP_DELAY_SECONDS must be a non-negative integer (seconds))
+endif
+EXL_WORKER_STARTUP_DELAY_CFLAGS := -DEXL_WORKER_STARTUP_DELAY_SECONDS=$(WORKER_STARTUP_DELAY_SECONDS)
+# 二分开关（2026-09-16）：`ONLY_REQUIRED_HOOK=1` 时这一版**只装必需挂点**
+# （登记表里 `required` 的那些，当前只有 `ManagerUpdate`），五个可选挂点一个都不装。
+#
+# 用来回答"模组全关时主界面停 10 秒崩 / 退出对局必崩"是不是**可选挂点**引起的：
+# 上一版（卡上开关）本来想用卡上文件做这件事，但**装挂点跑在我们自己的 worker 线程上**，
+# 在那条路上读卡会调游戏 nnSdk 的文件 API ⇒ 每次开机必崩（442190，两份崩溃报告）。
+# 因此挂点层面的二分改为编译期开关：一条构建一个配置。默认 **0**（生产形状不变）。
+ONLY_REQUIRED_HOOK ?= 0
+ifneq ($(filter 0 1,$(ONLY_REQUIRED_HOOK)),$(ONLY_REQUIRED_HOOK))
+$(error ONLY_REQUIRED_HOOK must be 0 or 1)
+endif
+EXL_ONLY_REQUIRED_HOOK_CFLAGS := -DEXL_ONLY_REQUIRED_HOOK=$(ONLY_REQUIRED_HOOK)
 # 探针子开关（2026-09-13，用于二分定位探针包的启动故障）。`PROBE_BREAK=1` 时默认全开。
 #
 # `PROBE_BREAK_FILEIO=0` 关掉"启动路径上的文件 / IPC 写入探针"这一组：
@@ -380,7 +408,7 @@ endif
 .PHONY: clean all FORCE
 
 # Built internal C flags variable.
-EXL_CFLAGS   := $(C_FLAGS) -DEXL_LOAD_KIND=$(LOAD_KIND) -DEXL_LOAD_KIND_ENUM=$(LOAD_KIND_ENUM) -DEXL_PROGRAM_ID=0x$(PROGRAM_ID) $(EXL_DIAGNOSTIC_CFLAGS) $(EXL_STARTUP_PROBE_CFLAGS) $(EXL_SALTYNX_DIAGNOSTIC_BRIDGE_CFLAGS) $(EXL_PERSISTENCE_TRACE_CFLAGS) $(EXL_PERSISTENCE_EVENT_DIAGNOSTIC_CFLAGS) $(EXL_PERSISTENCE_REQUIRED_CFLAGS) $(EXL_LAYERED_RUNTIME_CFLAGS) $(EXL_TEST_BUILD_ID_CFLAGS) $(EXL_PROBE_BREAK_CFLAGS)
+EXL_CFLAGS   := $(C_FLAGS) -DEXL_LOAD_KIND=$(LOAD_KIND) -DEXL_LOAD_KIND_ENUM=$(LOAD_KIND_ENUM) -DEXL_PROGRAM_ID=0x$(PROGRAM_ID) $(EXL_DIAGNOSTIC_CFLAGS) $(EXL_STARTUP_PROBE_CFLAGS) $(EXL_SALTYNX_DIAGNOSTIC_BRIDGE_CFLAGS) $(EXL_PERSISTENCE_TRACE_CFLAGS) $(EXL_PERSISTENCE_EVENT_DIAGNOSTIC_CFLAGS) $(EXL_PERSISTENCE_REQUIRED_CFLAGS) $(EXL_LAYERED_RUNTIME_CFLAGS) $(EXL_TEST_BUILD_ID_CFLAGS) $(EXL_PROBE_BREAK_CFLAGS) $(EXL_WORKER_STARTUP_DELAY_CFLAGS) $(EXL_ONLY_REQUIRED_HOOK_CFLAGS)
 EXL_CXXFLAGS := $(CXX_FLAGS) $(EXL_STAGE48_CXXFLAGS)
 
 # Export all of our variables to sub-makes and sub-processes.

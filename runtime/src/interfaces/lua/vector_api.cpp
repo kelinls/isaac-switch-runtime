@@ -253,6 +253,11 @@ constexpr LuaHandlerBinding kVectorHandlers[] = {
 
 }  // namespace
 
+void PushLuaVector(lua_State* state, float x, float y) {
+    // 转发给 TU 内部那个匿名命名空间的实现（同一个元表、同一块 `VectorHandle` 内存）。
+    PushVector(state, x, y);
+}
+
 int CreateVectorHandle(lua_State* state) {
     // 全局 `Vector` 是一个可调用的类表，所以本函数同时要应付两种调用形状：
     //   `Vector(1, 2)` —— 经类表的 `__call`，栈是 (类表, x, y)；

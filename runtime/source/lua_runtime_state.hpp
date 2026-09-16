@@ -44,6 +44,13 @@ inline constexpr char kModMetatable[] = "IsaacRuntime.Mod";
 
 struct ModHandle {
     std::uint64_t persistenceNamespace;
+    // 这个 Mod 的 **owner 句柄**，按 `(index, generation)` 打包成一个 32 位量
+    // （低 16 位 index、高 16 位 generation）。回调登记用它做归属（多模组加载，2026-09-16）。
+    //
+    // 为什么不直接存 `isaac::runtime::ModHandle`：本头文件对它的依赖**刻意**保持在前向声明
+    // （见上面的注释：宿主测试不该被迫编译回调登记表）。打包成 `std::uint32_t` 既维持了那条
+    // 约束，又让"这个 Mod 对象属于哪一家"随身携带、不必再查全局表。
+    std::uint32_t ownerPacked;
 };
 
 // Which persistence operation the current managed callback is running. The
@@ -144,6 +151,15 @@ void SetEngineModuleBase(std::uintptr_t base) noexcept;
 [[nodiscard]] std::uintptr_t LevelIsAscentThunk() noexcept;
 // 批次 8（2026-09-15）：`Level` 家族另外两个方法入口。0 表示"没通过安装期守卫 ⇒ 不可用"。
 [[nodiscard]] std::uintptr_t LevelGetAbsoluteStageThunk() noexcept;
+// 2026-09-16：`Room:GetFrameCount()` 要调的引擎函数（`Room::GetFrameCount @ 0x470B0C`）。
+// 0 表示"没通过安装期守卫 ⇒ 不可用"；handler 那时报"绑定不可用"，**不返回编造的帧数**
+// （编个 0 会让 EID 以为"刚进房间"，把合成结果显示整段跳过）。
+[[nodiscard]] std::uintptr_t RoomGetFrameCountThunk() noexcept;
+#if !defined(__SWITCH__)
+// 宿主注入钩子（与 `GetRenderPositionHostFunction` 同一形态，类型别名与 `lua_runtime.hpp` 逐字一致）。
+using RoomFrameCountHostFunction = std::int32_t (*)(const void* room);
+[[nodiscard]] RoomFrameCountHostFunction GetRoomGetFrameCountHostFunction() noexcept;
+#endif
 // 批次 10（2026-09-15）：`Room:WorldToScreenPosition()` 要调的引擎函数（PLT 桩地址，
 // 由 hook_manager 校验 16 字节入口后发布）。
 [[nodiscard]] std::uintptr_t GetRenderPositionThunk() noexcept;
@@ -235,6 +251,12 @@ using RenderPositionHostFunction = void (*)(const float* input, float* output, b
 
 [[nodiscard]] isaac::runtime::CallbackRegistry& ManagedCallbackRegistry() noexcept;
 [[nodiscard]] isaac::runtime::ModHandle RuntimeOwnerHandle() noexcept;
+
+// 多模组（2026-09-16）：把 `ModHandle::ownerPacked` 还原成 domain 的 owner 句柄。
+//
+// 为什么要有它：`ModHandle` 的字段是打包过的（那个头不能依赖 domain 头），而
+// `CallbackDescriptor::owner` 要的是 domain 类型。解包只在这一处做，调用方不必知道打包格式。
+[[nodiscard]] isaac::runtime::ModHandle UnpackModOwner(std::uint32_t packed) noexcept;
 
 // --- Lua 报错通道的加固（2026-09-12）-------------------------------------------------
 //

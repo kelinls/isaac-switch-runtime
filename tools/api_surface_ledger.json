@@ -1,0 +1,112 @@
+{
+ "schema": "isaac-api-surface-ledger/1",
+ "note": "接口面（字段）人工分诊台账。工具（tools/eid_api_gap_report.py 第 ⑤ 段）只能说出\"模组读了哪个字段、我们没实现\"；要不要补、为什么不补是人的判断，就落在这里。门禁 runtime/tests/test_api_surface_ledger.py 要求两者一一对应：没有台账条目的缺口 ⇒ 红；台账里已实现或模组不再用的条目 ⇒ 也红（过期条目要删）。**字段一旦实现就从这里删掉**（处置过程与证据写在 docs/问题与解决记录.md 与代码注释里，台账只记\"还没做完的\"）。口径与已知局限见 docs/开发规范.md 第 28 条与 CONTRIBUTING.md 的\"第 0 维\"。 **2026-09-16 引擎写通道批次**：`Sprite.Color`/`Sprite.FlipX`（写）+ `Scale`（模组自己的表那条假阳性条目）随实现一起删除；工具同时补认第三种载体写法（命名常量 + `strcmp`），见 `tools/eid_api_gap_report.py` 的 `CARRIER_NAMED_CONSTANT_RE`。",
+ "dispositions": {
+  "planned": "确认是缺口，要补（可能要先取证偏移）",
+  "blocked": "确认是缺口，但有前置条件没满足，写明缺什么",
+  "wontfix": "不是缺口或不补，必须写明理由（典型：按名字匹配出来的假阳性）"
+ },
+ "rows": [
+  {
+   "name": "VarData",
+   "owners": [
+    "GridEntity",
+    "PlayerTypesActiveItemDesc"
+   ],
+   "disposition": "planned",
+   "why": "`eid_grid_descriptions.lua:99` 用 `Entity.VarData` 选献祭房描述；`eid_modifiers.lua:437` 用 `GetActiveItemDesc().VarData` 算主动道具使用次数。"
+  },
+  {
+   "name": "Item",
+   "owners": [
+    "QueueItemData",
+    "PlayerTypesActiveItemDesc",
+    "TemporaryEffect"
+   ],
+   "disposition": "blocked",
+   "why": "`eid_api.lua:2373-2375` 读 `player.QueuedItem.Item.ID`；但 `QueuedItem` 整族现在**有意**返回空的只读表（理由见 `runtime/src/interfaces/lua/isaac_api.cpp` 里 `PushEntityField` 的 `QueuedItem` 分支）⇒ 要先把那一族做实，`Item` 才有意义。"
+  },
+  {
+   "name": "Entity",
+   "owners": [
+    "EntityRef"
+   ],
+   "disposition": "wontfix",
+   "why": "假阳性：`description.Entity = entity or nil`（`eid_api.lua:671`）是 EID 自己的描述对象字段，不是 `EntityRef.Entity`。"
+  },
+  {
+   "name": "Entries",
+   "owners": [
+    "RoomConfigSpawn"
+   ],
+   "disposition": "wontfix",
+   "why": "假阳性：只出现在描述文件的注释里（`descriptions/rep/en_us.lua:750`），不是代码。"
+  },
+  {
+   "name": "Priority",
+   "owners": [
+    "ItemConfigCostume"
+   ],
+   "disposition": "wontfix",
+   "why": "假阳性：`EID.ModuleBehaviors[...].Priority`（`eid_modular_descriptions.lua:425`）是模组自己的模块排序字段。"
+  },
+  {
+   "name": "MaxDistance",
+   "owners": [
+    "EntityKnife",
+    "EntityLaser"
+   ],
+   "disposition": "wontfix",
+   "why": "假阳性：`EID.Config[\"MaxDistance\"]`（`main.lua:1466`）是模组配置项。"
+  },
+  {
+   "name": "Pathfinder",
+   "owners": [
+    "EntityNPC"
+   ],
+   "disposition": "wontfix",
+   "why": "假阳性：`EID.Pathfinder = require(\"features.pathfinder.luafinding\")`（`eid_api.lua:40`）是模组自带的寻路库。"
+  },
+  {
+   "name": "V1",
+   "owners": [
+    "EntityNPC"
+   ],
+   "disposition": "wontfix",
+   "why": "假阳性：命中的是注释里的版本号 `.V1.9.7.7`（`main.lua:9`）。这条同时是工具的待改进点 —— 应该先剔除 Lua 注释再扫（本次未做，先登记）。"
+  },
+  {
+   "name": "Spawns",
+   "owners": [
+    "RoomConfigRoom"
+   ],
+   "disposition": "wontfix",
+   "why": "假阳性：`eid_modular_descriptions.lua:90` 的模组表键，不是 `RoomConfigRoom.Spawns`。"
+  },
+  {
+   "name": "TearHeight",
+   "owners": [
+    "EntityPlayer",
+    "TearParams"
+   ],
+   "disposition": "wontfix",
+   "why": "假阳性：`eid_modular_descriptions.lua:25` 的模组表键。"
+  },
+  {
+   "name": "Shrink",
+   "owners": [
+    "EntityLaser"
+   ],
+   "disposition": "wontfix",
+   "why": "假阳性：`eid_data.lua:544` 的模组表键（状态效果表）。"
+  },
+  {
+   "name": "ShotSpeed",
+   "owners": [
+    "EntityPlayer"
+   ],
+   "disposition": "wontfix",
+   "why": "假阳性：`eid_modular_descriptions.lua:36` 的模组表键。注：`player.ShotSpeed` 目前没人读，将来若读到就是真缺口（那时改判 planned）。"
+  }
+ ]
+}
